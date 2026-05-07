@@ -1,5 +1,5 @@
-// Service Worker — cache offline-first do app shell
-const CACHE = 'financas-v5';
+// Service Worker — cache offline + auto-update no celular
+const CACHE = 'financas-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -21,19 +21,46 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Permite que a página force a troca para uma versão nova já instalada.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Estratégia: HTML / app.js / app.css / manifest sempre tentam rede primeiro
+// (com fallback no cache se estiver offline). Demais assets vão direto do
+// cache para velocidade. Isso garante que mudanças em código apareçam logo
+// na próxima abertura, mesmo com a PWA fixada na tela inicial.
+const NETWORK_FIRST = /\/(index\.html|app\.js|app\.css|manifest\.webmanifest|sw\.js)$|\/$/;
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  e.respondWith(
-    caches.match(req).then(cached => {
-      const fetchPromise = fetch(req).then(res => {
-        if (res && res.status === 200 && (res.type === 'basic' || res.type === 'cors')) {
+  const url = new URL(req.url);
+  const isAppShell = url.origin === self.location.origin && NETWORK_FIRST.test(url.pathname);
+
+  if (isAppShell) {
+    e.respondWith(
+      fetch(req).then(res => {
+        if (res && res.status === 200) {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
-      }).catch(() => cached);
-      return cached || fetchPromise;
-    })
-  );
+      }).catch(() => caches.match(req))
+    );
+  } else {
+    // cache-first com revalidação em background (assets estáticos / CDN)
+    e.respondWith(
+      caches.match(req).then(cached => {
+        const fetchPromise = fetch(req).then(res => {
+          if (res && res.status === 200 && (res.type === 'basic' || res.type === 'cors')) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put(req, copy));
+          }
+          return res;
+        }).catch(() => cached);
+        return cached || fetchPromise;
+      })
+    );
+  }
 });

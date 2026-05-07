@@ -38,7 +38,33 @@
   <script type="module" src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+      // Se já tinha um SW controlando a página antes do registro, é um update —
+      // quando o controlador trocar, recarrega para puxar os assets novos.
+      const wasControlled = !!navigator.serviceWorker.controller;
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!wasControlled || refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
+          // Quando o app volta para o primeiro plano (PWA fixada), checa update.
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reg.update();
+          });
+          // Toda vez que detecta uma versão nova instalada, manda o SW assumir.
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', () => {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                nw.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        }).catch(() => {});
+      });
     }
   </script>
 </body>
