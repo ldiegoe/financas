@@ -165,29 +165,41 @@ const periodMatches = (iso, period) => {
   return true;
 };
 
-// "current month" expansion considering recurring items: returns array of
-// virtual occurrences within the period. Recurring items repeat every month
-// from their start date forward.
+// Expande lançamentos para o período pedido considerando:
+//  - recorrentes (recorrente=true): repete todo mês indefinidamente a partir da data
+//  - parcelados (parcelas>1): repete por N meses consecutivos e encerra
+//  - únicos: aparecem só na data exata
+// Ocorrências projetadas (não a original) ganham _virtual=true para a UI.
 const expandWithRecurring = (items, period) => {
   const out = [];
   for (const it of items) {
-    if (!it.recorrente) {
+    const parcelas = it.parcelas && it.parcelas > 1 ? it.parcelas : 0;
+    const isRecurring = !!it.recorrente;
+    const isInstallment = parcelas > 1;
+
+    if (!isRecurring && !isInstallment) {
       if (periodMatches(it.data, period)) out.push({ ...it, _virtual: false });
       continue;
     }
-    // Recurring: occurs from item's start date every month thereafter
+
     const start = partsOf(it.data);
-    // Determine all months in period to project
+    const day = parseInt(it.data.split('-')[2], 10);
     const months = monthsInPeriod(period);
+
     for (const { y, m } of months) {
-      const after = (y > start.y) || (y === start.y && m >= start.m);
-      if (!after) continue;
-      const day = it.data.split('-')[2];
-      const projectedDay = clampDay(y, m, parseInt(day, 10));
+      const monthsFromStart = (y - start.y) * 12 + (m - start.m);
+      if (monthsFromStart < 0) continue;
+      if (isInstallment && monthsFromStart >= parcelas) continue;
+
+      const projectedDay = clampDay(y, m, day);
       const iso = `${y}-${String(m).padStart(2,'0')}-${String(projectedDay).padStart(2,'0')}`;
-      // Original occurrence keeps its real id; projections are "virtual" copies
       const isOriginal = (y === start.y && m === start.m);
-      out.push({ ...it, data: iso, _virtual: !isOriginal });
+      const occ = { ...it, data: iso, _virtual: !isOriginal };
+      if (isInstallment) {
+        occ._parcelaNum = monthsFromStart + 1;
+        occ._parcelaTotal = parcelas;
+      }
+      out.push(occ);
     }
   }
   return out;
@@ -599,6 +611,7 @@ views.despesas = (root) => {
             <div class="grow">
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
                 ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
+                ${d._parcelaTotal ? `<span class="tag installment">${d._parcelaNum}/${d._parcelaTotal}</span>` : ''}
               </div>
               <div class="s">${fmtDate(d.data)} · ${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</div>
               ${dTags.length > 0 ? `
@@ -859,16 +872,19 @@ const sheetRenda = (renda) => {
 
 const sheetDespesa = (desp) => {
   const isEdit = !!desp;
-  const d = desp || { descricao: '', valor: 0, data: todayISO(), categoriaId: state.categorias[0]?.id || null, recorrente: false, tags: [] };
+  const d = desp || { descricao: '', valor: 0, data: todayISO(), categoriaId: state.categorias[0]?.id || null, recorrente: false, parcelas: 1, tags: [] };
   const existingTags = allTags();
+  // Determina o "tipo" inicial a partir do estado atual da despesa
+  const tipoInicial = d.recorrente ? 'mensal' : ((d.parcelas || 1) > 1 ? 'parcelada' : 'unica');
+
   openSheet(isEdit ? 'Editar despesa' : 'Nova despesa', () => `
     <label class="field"><span>Descrição</span>
-      <input id="f-desc" type="text" placeholder="Ex.: Mercado, Uber, Aluguel" value="${escapeAttr(d.descricao || '')}" required />
+      <input id="f-desc" type="text" placeholder="Ex.: Mercado, Uber, Geladeira" value="${escapeAttr(d.descricao || '')}" required />
     </label>
-    <label class="field"><span>Valor (R$)</span>
+    <label class="field"><span>Valor (R$)${tipoInicial==='parcelada'?' — valor de cada parcela':''}</span>
       <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(d.valor)}" required />
     </label>
-    <label class="field"><span>Data</span>
+    <label class="field"><span>Data ${tipoInicial==='parcelada'?'(1ª parcela)':'(início)'}</span>
       <input id="f-data" type="date" value="${d.data}" required />
     </label>
     <label class="field"><span>Categoria</span>
@@ -876,6 +892,19 @@ const sheetDespesa = (desp) => {
         <option value="">— Sem categoria —</option>
         ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${escapeHTML(c.nome)}</option>`).join('')}
       </select>
+    </label>
+    <label class="field"><span>Tipo</span>
+      <select id="f-tipo">
+        <option value="unica"     ${tipoInicial==='unica'?'selected':''}>Apenas neste mês</option>
+        <option value="mensal"    ${tipoInicial==='mensal'?'selected':''}>Mensal fixa (sem fim)</option>
+        <option value="parcelada" ${tipoInicial==='parcelada'?'selected':''}>Parcelada</option>
+      </select>
+    </label>
+    <label class="field" id="row-parcelas" ${tipoInicial==='parcelada'?'':'hidden'}>
+      <span>Número de parcelas</span>
+      <input id="f-parcelas" type="number" min="2" max="120" inputmode="numeric"
+             value="${(d.parcelas && d.parcelas > 1) ? d.parcelas : 10}" />
+      <small id="parcelas-info" style="display:block;color:var(--text-2);margin-top:6px;font-size:13px;"></small>
     </label>
     <label class="field"><span>Tags (separadas por vírgula)</span>
       <input id="f-tags" type="text" list="tag-suggestions" autocapitalize="none" autocorrect="off"
@@ -890,10 +919,6 @@ const sheetDespesa = (desp) => {
         </div>
       ` : ''}
     </label>
-    <div class="checkbox-row">
-      <input id="f-rec" type="checkbox" ${d.recorrente ? 'checked' : ''}/>
-      <label for="f-rec">Despesa mensal fixa</label>
-    </div>
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
@@ -901,6 +926,28 @@ const sheetDespesa = (desp) => {
   `, (body) => {
     bindCurrencyInput(body.querySelector('#f-valor'));
     body.querySelector('#cancel').addEventListener('click', closeSheet);
+
+    const tipoEl     = body.querySelector('#f-tipo');
+    const parcRow    = body.querySelector('#row-parcelas');
+    const parcEl     = body.querySelector('#f-parcelas');
+    const valorEl    = body.querySelector('#f-valor');
+    const parcInfo   = body.querySelector('#parcelas-info');
+    const updateInfo = () => {
+      const isParc = tipoEl.value === 'parcelada';
+      parcRow.hidden = !isParc;
+      if (isParc) {
+        const valor = parseAmount(valorEl.value);
+        const n = Math.max(2, Math.min(120, parseInt(parcEl.value, 10) || 0));
+        parcInfo.textContent = (valor > 0 && n >= 2)
+          ? `Total: ${fmtBRL(valor * n)} em ${n}× de ${fmtBRL(valor)}.`
+          : '';
+      }
+    };
+    tipoEl.addEventListener('change', updateInfo);
+    parcEl.addEventListener('input', updateInfo);
+    valorEl.addEventListener('input', updateInfo);
+    updateInfo();
+
     // Toque numa tag sugerida → anexa ao input
     body.querySelectorAll('#tag-quick [data-tag]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -915,16 +962,24 @@ const sheetDespesa = (desp) => {
       });
     });
     body.querySelector('#save').addEventListener('click', () => {
+      const tipo = tipoEl.value;
+      let recorrente = false, parcelas = 1;
+      if (tipo === 'mensal') recorrente = true;
+      if (tipo === 'parcelada') {
+        parcelas = Math.max(2, Math.min(120, parseInt(parcEl.value, 10) || 0));
+      }
       const data = {
         descricao: body.querySelector('#f-desc').value.trim(),
-        valor: parseAmount(body.querySelector('#f-valor').value),
+        valor: parseAmount(valorEl.value),
         data: body.querySelector('#f-data').value,
         categoriaId: body.querySelector('#f-cat').value || null,
-        recorrente: body.querySelector('#f-rec').checked,
+        recorrente,
+        parcelas,
         tags: parseTags(body.querySelector('#f-tags').value),
       };
       if (!data.descricao) { alert('Informe uma descrição.'); return; }
       if (data.valor <= 0) { alert('Informe um valor válido.'); return; }
+      if (tipo === 'parcelada' && data.parcelas < 2) { alert('Mínimo de 2 parcelas.'); return; }
       if (isEdit) db.updateDespesa(d.id, data); else db.addDespesa(data);
       closeSheet();
       toast(isEdit ? 'Despesa atualizada' : 'Despesa adicionada');

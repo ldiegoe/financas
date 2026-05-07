@@ -295,8 +295,9 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   margin-left: 6px;
   font-weight: 500;
 }
-.tag.recurring { background: rgba(10,132,255,.15); color: var(--tint); }
-.tag.usertag   { background: rgba(94, 92, 230, .15); color: #5e5ce6; margin-left: 4px; }
+.tag.recurring   { background: rgba(10,132,255,.15);  color: var(--tint); }
+.tag.installment { background: rgba(255,159,10,.15);  color: var(--orange); }
+.tag.usertag     { background: rgba(94, 92, 230,.15); color: #5e5ce6; margin-left: 4px; }
 
 .tags-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tags-row .tag { margin-left: 0; }
