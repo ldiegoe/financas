@@ -194,8 +194,18 @@ input, select, textarea {
   font-family: inherit;
   background: var(--bg);
   color: var(--text);
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 44px;
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--tint); outline-offset: -1px; }
+
+/* iOS Safari renderiza input[type="date"] centralizado e com padding interno
+   diferente — normaliza para alinhar com os demais campos. */
+input[type="date"] { text-align: left; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 1.4em; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
+select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23999' d='M6 8 0 0h12z'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 32px; }
 
 button.primary, button.secondary, button.danger {
   appearance: none; border: 0;

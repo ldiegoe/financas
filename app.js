@@ -88,6 +88,35 @@ const db = {
 const fmtBRL = (cents) =>
   ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+// "12345" centavos -> "123,45"  |  "1234567" -> "12.345,67"
+const formatCentsDisplay = (cents) => {
+  if (!cents) return '';
+  const reais = Math.floor(cents / 100);
+  const c2    = String(cents % 100).padStart(2, '0');
+  return `${reais.toLocaleString('pt-BR')},${c2}`;
+};
+
+// Faz o input se comportar como campo de moeda (estilo Nubank): cada dígito
+// digitado entra pela direita como centavo, separadores são re-aplicados.
+const bindCurrencyInput = (input) => {
+  const reformat = () => {
+    const digits = input.value.replace(/\D/g, '').replace(/^0+/, '');
+    if (!digits) { input.value = ''; return; }
+    input.value = formatCentsDisplay(parseInt(digits, 10));
+    // cursor sempre no fim para o padrão "digitar da direita p/ esquerda"
+    requestAnimationFrame(() => {
+      const end = input.value.length;
+      try { input.setSelectionRange(end, end); } catch {}
+    });
+  };
+  input.addEventListener('input', reformat);
+  // Bloqueia teclas que não façam sentido (deixa só dígitos, backspace, navegação)
+  input.addEventListener('keydown', (e) => {
+    const ok = /^[0-9]$/.test(e.key) || ['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Home','End'].includes(e.key) || e.metaKey || e.ctrlKey;
+    if (!ok) e.preventDefault();
+  });
+};
+
 // "1.234,56" / "1234,56" / "1234.56" / "1234" -> integer cents
 const parseAmount = (s) => {
   if (s == null || s === '') return 0;
@@ -792,7 +821,7 @@ const sheetRenda = (renda) => {
       <input id="f-fonte" type="text" placeholder="Ex.: Salário, Freela, Dividendos" value="${escapeAttr(r.fonte || '')}" required />
     </label>
     <label class="field"><span>Valor (R$)</span>
-      <input id="f-valor" type="text" inputmode="decimal" placeholder="0,00" value="${r.valor ? (r.valor/100).toFixed(2).replace('.', ',') : ''}" required />
+      <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(r.valor)}" required />
     </label>
     <label class="field"><span>Data</span>
       <input id="f-data" type="date" value="${r.data}" required />
@@ -809,6 +838,7 @@ const sheetRenda = (renda) => {
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
     </div>
   `, (body) => {
+    bindCurrencyInput(body.querySelector('#f-valor'));
     body.querySelector('#cancel').addEventListener('click', closeSheet);
     body.querySelector('#save').addEventListener('click', () => {
       const data = {
@@ -836,7 +866,7 @@ const sheetDespesa = (desp) => {
       <input id="f-desc" type="text" placeholder="Ex.: Mercado, Uber, Aluguel" value="${escapeAttr(d.descricao || '')}" required />
     </label>
     <label class="field"><span>Valor (R$)</span>
-      <input id="f-valor" type="text" inputmode="decimal" placeholder="0,00" value="${d.valor ? (d.valor/100).toFixed(2).replace('.', ',') : ''}" required />
+      <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(d.valor)}" required />
     </label>
     <label class="field"><span>Data</span>
       <input id="f-data" type="date" value="${d.data}" required />
@@ -869,6 +899,7 @@ const sheetDespesa = (desp) => {
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
     </div>
   `, (body) => {
+    bindCurrencyInput(body.querySelector('#f-valor'));
     body.querySelector('#cancel').addEventListener('click', closeSheet);
     // Toque numa tag sugerida → anexa ao input
     body.querySelectorAll('#tag-quick [data-tag]').forEach(btn => {
@@ -917,14 +948,15 @@ const sheetCategoria = (cat) => {
       </div>
     </label>
     <label class="field"><span>Meta mensal (R$, opcional)</span>
-      <input id="f-meta" type="text" inputmode="decimal" placeholder="Ex.: 500,00 — deixe vazio para sem meta"
-             value="${c.meta ? (c.meta/100).toFixed(2).replace('.', ',') : ''}" />
+      <input id="f-meta" type="text" inputmode="numeric" placeholder="Deixe vazio para sem meta"
+             value="${formatCentsDisplay(c.meta)}" />
     </label>
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
     </div>
   `, (body) => {
+    bindCurrencyInput(body.querySelector('#f-meta'));
     let chosen = c.cor;
     body.querySelectorAll('#f-cores .swatch-pick').forEach(el => {
       el.addEventListener('click', () => {

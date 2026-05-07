@@ -1,5 +1,5 @@
 // Service Worker — cache offline-first do app shell
-const CACHE = 'financas-v2';
+const CACHE = 'financas-v3';
 const ASSETS = [
   './',
   './index.html',
