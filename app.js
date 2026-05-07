@@ -186,6 +186,33 @@ const clampDay = (y, m, d) => {
 
 const sumAmount = (arr) => arr.reduce((acc, x) => acc + (x.valor || 0), 0);
 
+// Normaliza string de tags vinda do form: "Mercado, viagem, viagem" -> ["Mercado","viagem"]
+const parseTags = (str) => {
+  if (!str) return [];
+  const seen = new Set();
+  return String(str)
+    .split(',')
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+    .filter(t => {
+      const k = t.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+};
+
+// Lista única de tags já usadas no banco (para datalist + filtro)
+const allTags = () => {
+  const set = new Map(); // key=lower, value=label original
+  for (const d of state.despesas) {
+    for (const t of (d.tags || [])) {
+      const k = t.toLowerCase();
+      if (!set.has(k)) set.set(k, t);
+    }
+  }
+  return [...set.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+};
+
 const toast = (msg) => {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -502,25 +529,41 @@ views.carteira = (root) => {
 };
 
 // ----- Despesas -----
+let tagFilter = null; // tag ativa no filtro (lowercase) ou null
+
 views.despesas = (root) => {
-  const despesasPeriod = expandWithRecurring(state.despesas, period);
+  let despesasPeriod = expandWithRecurring(state.despesas, period);
+  if (tagFilter) {
+    despesasPeriod = despesasPeriod.filter(d =>
+      (d.tags || []).some(t => t.toLowerCase() === tagFilter)
+    );
+  }
   const total = sumAmount(despesasPeriod);
+  const tags = allTags();
 
   root.innerHTML = `
     ${periodHeader()}
     <div class="card">
-      <h2>Total de despesas em ${periodLabel()}</h2>
+      <h2>Total de despesas em ${periodLabel()}${tagFilter ? ` · #${escapeHTML(tagFilter)}` : ''}</h2>
       <div class="big negative">${fmtBRL(total)}</div>
     </div>
 
+    ${tags.length > 0 ? `
+      <div class="filter-bar" id="tag-filter">
+        <button class="chip ${!tagFilter?'active':''}" data-tag="">Todas</button>
+        ${tags.map(t => `<button class="chip ${tagFilter===t.toLowerCase()?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
+      </div>
+    ` : ''}
+
     <div class="section-title">Lançamentos</div>
     ${despesasPeriod.length === 0 ? `
-      <div class="empty"><span class="ico">💸</span>Nenhuma despesa no período.<br/><br/>
+      <div class="empty"><span class="ico">💸</span>${tagFilter ? 'Nenhuma despesa com essa tag.' : 'Nenhuma despesa no período.'}<br/><br/>
         <button class="primary" id="add-desp">Adicionar despesa</button></div>
     ` : `
       <ul class="list">
         ${despesasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(d => {
           const cat = state.categorias.find(c => c.id === d.categoriaId);
+          const dTags = d.tags || [];
           return `
           <li class="swipe-row" data-id="${d.id}" data-real="${!d._virtual}">
             <span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>
@@ -529,6 +572,11 @@ views.despesas = (root) => {
                 ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
               </div>
               <div class="s">${fmtDate(d.data)} · ${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</div>
+              ${dTags.length > 0 ? `
+                <div class="tags-row">
+                  ${dTags.map(t => `<span class="tag usertag">#${escapeHTML(t)}</span>`).join('')}
+                </div>
+              ` : ''}
             </div>
             <div class="amount neg">${fmtBRL(d.valor)}</div>
             ${!d._virtual ? `
@@ -553,6 +601,10 @@ views.despesas = (root) => {
   root.querySelectorAll('[data-action="del-desp"]').forEach(b => b.addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]').dataset.id;
     if (confirm('Excluir esta despesa?')) { db.removeDespesa(id); toast('Despesa excluída'); render(); }
+  }));
+  root.querySelectorAll('#tag-filter .chip').forEach(b => b.addEventListener('click', () => {
+    tagFilter = b.dataset.tag || null;
+    render();
   }));
   const addBtn = root.querySelector('#add-desp');
   if (addBtn) addBtn.addEventListener('click', () => sheetDespesa());
@@ -777,7 +829,8 @@ const sheetRenda = (renda) => {
 
 const sheetDespesa = (desp) => {
   const isEdit = !!desp;
-  const d = desp || { descricao: '', valor: 0, data: todayISO(), categoriaId: state.categorias[0]?.id || null, recorrente: false };
+  const d = desp || { descricao: '', valor: 0, data: todayISO(), categoriaId: state.categorias[0]?.id || null, recorrente: false, tags: [] };
+  const existingTags = allTags();
   openSheet(isEdit ? 'Editar despesa' : 'Nova despesa', () => `
     <label class="field"><span>Descrição</span>
       <input id="f-desc" type="text" placeholder="Ex.: Mercado, Uber, Aluguel" value="${escapeAttr(d.descricao || '')}" required />
@@ -794,6 +847,19 @@ const sheetDespesa = (desp) => {
         ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${escapeHTML(c.nome)}</option>`).join('')}
       </select>
     </label>
+    <label class="field"><span>Tags (separadas por vírgula)</span>
+      <input id="f-tags" type="text" list="tag-suggestions" autocapitalize="none" autocorrect="off"
+             placeholder="Ex.: viagem, trabalho, presente"
+             value="${escapeAttr((d.tags || []).join(', '))}" />
+      ${existingTags.length > 0 ? `
+        <datalist id="tag-suggestions">
+          ${existingTags.map(t => `<option value="${escapeAttr(t)}"></option>`).join('')}
+        </datalist>
+        <div class="tags-row" style="margin-top:8px;" id="tag-quick">
+          ${existingTags.slice(0, 8).map(t => `<button type="button" class="tag usertag" data-tag="${escapeAttr(t)}" style="border:0;cursor:pointer;">#${escapeHTML(t)}</button>`).join('')}
+        </div>
+      ` : ''}
+    </label>
     <div class="checkbox-row">
       <input id="f-rec" type="checkbox" ${d.recorrente ? 'checked' : ''}/>
       <label for="f-rec">Despesa mensal fixa</label>
@@ -804,6 +870,19 @@ const sheetDespesa = (desp) => {
     </div>
   `, (body) => {
     body.querySelector('#cancel').addEventListener('click', closeSheet);
+    // Toque numa tag sugerida → anexa ao input
+    body.querySelectorAll('#tag-quick [data-tag]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inp = body.querySelector('#f-tags');
+        const cur = parseTags(inp.value);
+        const tag = btn.dataset.tag;
+        if (!cur.some(t => t.toLowerCase() === tag.toLowerCase())) {
+          cur.push(tag);
+          inp.value = cur.join(', ');
+        }
+        inp.focus();
+      });
+    });
     body.querySelector('#save').addEventListener('click', () => {
       const data = {
         descricao: body.querySelector('#f-desc').value.trim(),
@@ -811,6 +890,7 @@ const sheetDespesa = (desp) => {
         data: body.querySelector('#f-data').value,
         categoriaId: body.querySelector('#f-cat').value || null,
         recorrente: body.querySelector('#f-rec').checked,
+        tags: parseTags(body.querySelector('#f-tags').value),
       };
       if (!data.descricao) { alert('Informe uma descrição.'); return; }
       if (data.valor <= 0) { alert('Informe um valor válido.'); return; }
