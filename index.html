@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0a84ff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Finanças" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="stylesheet" href="app.css" />
+  <title>Finanças</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <h1 id="title">Dashboard</h1>
+      <button id="quick-add" class="icon-btn" aria-label="Adicionar">+</button>
+    </header>
+
+    <main id="view"></main>
+
+    <nav class="tabbar">
+      <a href="#/dashboard" data-tab="dashboard"><span class="ico">📊</span><span>Dashboard</span></a>
+      <a href="#/carteira"  data-tab="carteira"><span class="ico">💰</span><span>Carteira</span></a>
+      <a href="#/despesas"  data-tab="despesas"><span class="ico">💸</span><span>Despesas</span></a>
+      <a href="#/categorias" data-tab="categorias"><span class="ico">🏷️</span><span>Categorias</span></a>
+      <a href="#/config"    data-tab="config"><span class="ico">⚙️</span><span>Ajustes</span></a>
+    </nav>
+
+    <div id="modal-root"></div>
+    <div id="toast"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script type="module" src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+    }
+  </script>
+</body>
+</html>
