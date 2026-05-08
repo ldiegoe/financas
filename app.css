@@ -309,6 +309,50 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .chart-wrap { position: relative; height: 240px; }
 .chart-wrap.donut { height: 220px; }
 
+.search-row { margin-bottom: 8px; }
+.search-row input[type="search"] {
+  background: var(--bg-elev);
+  border: 1px solid var(--separator);
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--separator);
+}
+.compare-row:last-of-type { border-bottom: 0; }
+.compare-row .label { color: var(--text-2); font-size: 14px; }
+.compare-row .amount { font-weight: 600; font-variant-numeric: tabular-nums; }
+.compare-sub {
+  color: var(--text-2);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.delta {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+.delta.good { background: rgba(48,209,88,.15);  color: var(--green); }
+.delta.bad  { background: rgba(255,69,58,.15);  color: var(--red); }
+.delta.flat { background: var(--separator);     color: var(--text-2); }
+
+.compare-changes { list-style: none; padding: 0; margin: 0; }
+.compare-changes li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0;
+}
+.compare-changes .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.compare-changes .name { flex: 1; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compare-changes .diff { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+.compare-changes .diff.bad  { color: var(--red); }
+.compare-changes .diff.good { color: var(--green); }
+
 .tag {
   display: inline-block;
   padding: 2px 8px;

@@ -338,6 +338,55 @@ views.dashboard = (root) => {
   const totalDespesa  = sumAmount(despesasPeriod);
   const saldo         = totalRenda - totalDespesa;
 
+  // Período anterior: total + despesas por categoria, para comparação.
+  const prev = previousPeriod(period);
+  const prevRendas    = expandWithRecurring(state.rendas, prev);
+  const prevDespesas  = expandWithRecurring(state.despesas, prev);
+  const prevRenda     = sumAmount(prevRendas);
+  const prevDespesa   = sumAmount(prevDespesas);
+  const prevSaldo     = prevRenda - prevDespesa;
+
+  // calcula delta + classe ('good'/'bad'/'flat') já considerando que para
+  // despesas mais gasto = ruim, e para receitas mais é bom.
+  const computeDelta = (curr, prevVal, isExpense) => {
+    if (curr === prevVal) return { sign: '·', label: 'sem mudança', cls: 'flat' };
+    if (prevVal === 0) {
+      return {
+        sign: curr > 0 ? '↑' : '↓',
+        label: '—',
+        cls: curr > 0 ? (isExpense ? 'bad' : 'good') : (isExpense ? 'good' : 'bad'),
+      };
+    }
+    const diff = curr - prevVal;
+    const pct = Math.abs((diff / prevVal) * 100);
+    const cls = diff > 0
+      ? (isExpense ? 'bad' : 'good')
+      : (isExpense ? 'good' : 'bad');
+    return { sign: diff > 0 ? '↑' : '↓', label: `${pct.toFixed(0)}%`, cls };
+  };
+
+  const deltaDesp   = computeDelta(totalDespesa, prevDespesa, true);
+  const deltaRenda  = computeDelta(totalRenda,   prevRenda,   false);
+  const deltaSaldo  = computeDelta(saldo,        prevSaldo,   false);
+
+  // Variações por categoria (apenas despesas), top 3 em valor absoluto
+  const currCatMap = new Map();
+  for (const d of despesasPeriod) currCatMap.set(d.categoriaId || '_sem', (currCatMap.get(d.categoriaId || '_sem') || 0) + (d.valor || 0));
+  const prevCatMap = new Map();
+  for (const d of prevDespesas)   prevCatMap.set(d.categoriaId || '_sem', (prevCatMap.get(d.categoriaId || '_sem') || 0) + (d.valor || 0));
+  const allIds = new Set([...currCatMap.keys(), ...prevCatMap.keys()]);
+  const topChanges = [...allIds].map(id => {
+    const c = state.categorias.find(x => x.id === id);
+    return {
+      id,
+      nome: c ? c.nome : 'Sem categoria',
+      cor:  c ? c.cor  : '#999',
+      diff: (currCatMap.get(id) || 0) - (prevCatMap.get(id) || 0),
+    };
+  }).filter(x => x.diff !== 0)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, 3);
+
   // Despesas por categoria
   const porCategoria = new Map();
   for (const d of despesasPeriod) {
@@ -390,6 +439,38 @@ views.dashboard = (root) => {
     <div class="card">
       <h2>Saldo</h2>
       <div class="big ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</div>
+    </div>
+
+    <div class="card">
+      <h2>Comparação com ${escapeHTML(labelOfPeriod(prev))}</h2>
+      <div class="compare-row">
+        <span class="label">Despesas</span>
+        <span class="amount">${fmtBRL(totalDespesa)}</span>
+        <span class="delta ${deltaDesp.cls}">${deltaDesp.sign} ${deltaDesp.label}</span>
+      </div>
+      <div class="compare-row">
+        <span class="label">Receitas</span>
+        <span class="amount">${fmtBRL(totalRenda)}</span>
+        <span class="delta ${deltaRenda.cls}">${deltaRenda.sign} ${deltaRenda.label}</span>
+      </div>
+      <div class="compare-row">
+        <span class="label">Saldo</span>
+        <span class="amount">${fmtBRL(saldo)}</span>
+        <span class="delta ${deltaSaldo.cls}">${deltaSaldo.sign} ${deltaSaldo.label}</span>
+      </div>
+      <div class="compare-sub">vs ${fmtBRL(prevDespesa)} / ${fmtBRL(prevRenda)} / ${fmtBRL(prevSaldo)}</div>
+
+      ${topChanges.length > 0 ? `
+        <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
+        <ul class="compare-changes">
+          ${topChanges.map(c => `
+            <li>
+              <span class="swatch" style="background:${c.cor}"></span>
+              <span class="name">${escapeHTML(c.nome)}</span>
+              <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
+            </li>`).join('')}
+        </ul>
+      ` : ''}
     </div>
 
     <div class="card">
@@ -632,35 +713,86 @@ views.carteira = (root) => {
 };
 
 // ----- Despesas -----
-let tagFilter = null; // tag ativa no filtro (lowercase) ou null
+let tagFilter = null;       // tag ativa no filtro (lowercase) ou null
+let searchQuery = '';       // texto digitado na busca
+let categoryFilter = null;  // id da categoria filtrada ou null
 
-views.despesas = (root) => {
-  let despesasPeriod = expandWithRecurring(state.despesas, period);
+// Aplica busca textual + filtro de categoria + filtro de tag em sequência.
+const filterDespesas = (despesas) => {
+  let result = despesas;
+  if (categoryFilter) {
+    result = result.filter(d => d.categoriaId === categoryFilter);
+  }
   if (tagFilter) {
-    despesasPeriod = despesasPeriod.filter(d =>
-      (d.tags || []).some(t => t.toLowerCase() === tagFilter)
+    result = result.filter(d => (d.tags || []).some(t => t.toLowerCase() === tagFilter));
+  }
+  const q = searchQuery.trim().toLowerCase();
+  if (q) {
+    result = result.filter(d =>
+      (d.descricao || '').toLowerCase().includes(q) ||
+      (d.tags || []).some(t => t.toLowerCase().includes(q))
     );
   }
+  return result;
+};
+
+// Período imediatamente anterior, mantendo o mesmo "tipo" (mês/tri/sem/ano).
+const previousPeriod = (p) => {
+  const np = { ...p };
+  if (p.type === 'year') { np.year--; return np; }
+  const wrap = p.type === 'month' ? 12 : (p.type === 'quarter' ? 4 : 2);
+  if (p.value === 1) { np.year--; np.value = wrap; } else { np.value--; }
+  return np;
+};
+
+const labelOfPeriod = (p) => {
+  if (p.type === 'year')     return String(p.year);
+  if (p.type === 'month')    return `${monthName(p.value)} ${p.year}`;
+  if (p.type === 'quarter')  return `${p.value}º Tri ${p.year}`;
+  if (p.type === 'semester') return `${p.value}º Sem ${p.year}`;
+  return '';
+};
+
+views.despesas = (root) => {
+  const expanded = expandWithRecurring(state.despesas, period);
+  const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
+  const hasFilter = !!searchQuery || !!categoryFilter || !!tagFilter;
 
   root.innerHTML = `
     ${periodHeader()}
     <div class="card">
-      <h2>Total de despesas em ${periodLabel()}${tagFilter ? ` · #${escapeHTML(tagFilter)}` : ''}</h2>
+      <h2>Total ${hasFilter ? '(filtrado)' : ''} em ${periodLabel()}</h2>
       <div class="big negative">${fmtBRL(total)}</div>
+      ${hasFilter ? `<button class="link" id="clear-filters" style="padding:8px 0 0;">Limpar filtros</button>` : ''}
     </div>
+
+    <div class="search-row">
+      <input id="search" type="search" inputmode="search" autocapitalize="none" autocorrect="off"
+             placeholder="Buscar por descrição ou tag" value="${escapeAttr(searchQuery)}" />
+    </div>
+
+    ${state.categorias.length > 0 ? `
+      <div class="filter-bar" id="cat-filter">
+        <button class="chip ${!categoryFilter?'active':''}" data-cat="">Todas categorias</button>
+        ${state.categorias.map(c => `
+          <button class="chip ${categoryFilter===c.id?'active':''}" data-cat="${c.id}">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.cor};margin-right:6px;vertical-align:middle;"></span>${escapeHTML(c.nome)}
+          </button>`).join('')}
+      </div>
+    ` : ''}
 
     ${tags.length > 0 ? `
       <div class="filter-bar" id="tag-filter">
-        <button class="chip ${!tagFilter?'active':''}" data-tag="">Todas</button>
+        <button class="chip ${!tagFilter?'active':''}" data-tag="">Todas tags</button>
         ${tags.map(t => `<button class="chip ${tagFilter===t.toLowerCase()?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
       </div>
     ` : ''}
 
     <div class="section-title">Lançamentos</div>
     ${despesasPeriod.length === 0 ? `
-      <div class="empty"><span class="ico">💸</span>${tagFilter ? 'Nenhuma despesa com essa tag.' : 'Nenhuma despesa no período.'}<br/><br/>
+      <div class="empty"><span class="ico">💸</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
         <button class="primary" id="add-desp">Adicionar despesa</button></div>
     ` : `
       <ul class="list">
@@ -710,6 +842,30 @@ views.despesas = (root) => {
     tagFilter = b.dataset.tag || null;
     render();
   }));
+  root.querySelectorAll('#cat-filter .chip').forEach(b => b.addEventListener('click', () => {
+    categoryFilter = b.dataset.cat || null;
+    render();
+  }));
+  const searchEl = root.querySelector('#search');
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      searchQuery = searchEl.value;
+      render();
+      // O re-render destrói o input antigo; recoloca o foco e o cursor no fim
+      // do novo input para que a digitação continue sem perder o teclado.
+      const newSearch = document.querySelector('#search');
+      if (newSearch) {
+        newSearch.focus();
+        const len = newSearch.value.length;
+        try { newSearch.setSelectionRange(len, len); } catch {}
+      }
+    });
+  }
+  const clearBtn = root.querySelector('#clear-filters');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    searchQuery = ''; categoryFilter = null; tagFilter = null;
+    render();
+  });
   const addBtn = root.querySelector('#add-desp');
   if (addBtn) addBtn.addEventListener('click', () => sheetDespesa());
   root.querySelector('#fab-desp').addEventListener('click', () => sheetDespesa());
