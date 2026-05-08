@@ -1160,7 +1160,7 @@ const sheetDespesa = (desp) => {
     </label>
     <label class="field" id="row-parcelas" ${tipoInicial==='parcelada'?'':'hidden'}>
       <span>Número de parcelas</span>
-      <input id="f-parcelas" type="number" min="2" max="120" inputmode="numeric"
+      <input id="f-parcelas" type="number" min="2" max="360" inputmode="numeric"
              value="${(d.parcelas && d.parcelas > 1) ? d.parcelas : 10}" />
       <small id="parcelas-info" style="display:block;color:var(--text-2);margin-top:6px;font-size:13px;"></small>
     </label>
@@ -1195,7 +1195,7 @@ const sheetDespesa = (desp) => {
       parcRow.hidden = !isParc;
       if (isParc) {
         const valor = parseAmount(valorEl.value);
-        const n = Math.max(2, Math.min(120, parseInt(parcEl.value, 10) || 0));
+        const n = Math.max(2, Math.min(360, parseInt(parcEl.value, 10) || 0));
         parcInfo.textContent = (valor > 0 && n >= 2)
           ? `Total: ${fmtBRL(valor * n)} em ${n}× de ${fmtBRL(valor)}.`
           : '';
@@ -1224,7 +1224,7 @@ const sheetDespesa = (desp) => {
       let recorrente = false, parcelas = 1;
       if (tipo === 'mensal') recorrente = true;
       if (tipo === 'parcelada') {
-        parcelas = Math.max(2, Math.min(120, parseInt(parcEl.value, 10) || 0));
+        parcelas = Math.max(2, Math.min(360, parseInt(parcEl.value, 10) || 0));
       }
       const data = {
         descricao: body.querySelector('#f-desc').value.trim(),
