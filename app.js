@@ -727,7 +727,7 @@ views.carteira = (root) => {
     ` : `
       <ul class="list">
         ${rendasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(r => `
-          <li class="swipe-row" data-id="${r.id}" data-real="${!r._virtual}">
+          <li class="swipe-row" data-id="${r.id}" data-data="${r.data}" data-real="${!r._virtual}">
             <span class="swatch" style="background:#30d158"></span>
             <div class="grow">
               <div class="t">${escapeHTML(r.fonte || 'Receita')}
@@ -751,6 +751,19 @@ views.carteira = (root) => {
   `;
 
   bindSwipe(root);
+
+  // Tap na linha abre os detalhes (descricao completa, valor, tipo, etc).
+  // Ignora clicks nas swipe-actions (editar/excluir) e tambem se a linha
+  // estiver com swipe aberto — ai o tap so fecha o swipe.
+  root.querySelectorAll('.swipe-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.swipe-actions')) return;
+      if (row.classList.contains('open')) { row.classList.remove('open'); return; }
+      const occ = rendasPeriod.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
+      if (occ) sheetRendaDetalhes(occ);
+    });
+  });
+
   root.querySelectorAll('[data-action="edit-renda"]').forEach(b => b.addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]').dataset.id;
     sheetRenda(state.rendas.find(x => x.id === id));
@@ -853,7 +866,7 @@ views.despesas = (root) => {
           const cat = state.categorias.find(c => c.id === d.categoriaId);
           const dTags = d.tags || [];
           return `
-          <li class="swipe-row" data-id="${d.id}" data-real="${!d._virtual}">
+          <li class="swipe-row" data-id="${d.id}" data-data="${d.data}" data-real="${!d._virtual}">
             <span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>
             <div class="grow">
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
@@ -883,6 +896,19 @@ views.despesas = (root) => {
   `;
 
   bindSwipe(root);
+
+  // Tap na linha abre os detalhes (descricao completa, valor, tipo, etc).
+  // Ignora clicks nas swipe-actions (editar/excluir) e tambem se a linha
+  // estiver com swipe aberto — ai o tap so fecha o swipe.
+  root.querySelectorAll('.swipe-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.swipe-actions')) return;
+      if (row.classList.contains('open')) { row.classList.remove('open'); return; }
+      const occ = expanded.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
+      if (occ) sheetDespesaDetalhes(occ);
+    });
+  });
+
   root.querySelectorAll('[data-action="edit-desp"]').forEach(b => b.addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]').dataset.id;
     sheetDespesa(state.despesas.find(x => x.id === id));
@@ -1395,6 +1421,123 @@ const sheetCategoria = (cat) => {
       closeSheet();
       toast(isEdit ? 'Categoria atualizada' : 'Categoria adicionada');
       render();
+    });
+  });
+};
+
+// --------------------------- Sheets (detalhes) ------------------------------
+// Mostra os dados completos de uma despesa quando o usuario toca na linha,
+// inclusive descricoes longas que ficam truncadas na lista. Aceita tanto o
+// registro original quanto uma ocorrencia projetada (recorrente/parcelada),
+// mas Editar/Excluir afetam sempre o registro base.
+const sheetDespesaDetalhes = (d) => {
+  const cat = state.categorias.find(c => c.id === d.categoriaId);
+  const tipo = d.recorrente
+    ? 'Mensal recorrente'
+    : (d._parcelaTotal ? `Parcelada (${d._parcelaNum}/${d._parcelaTotal})` : 'Apenas neste mês');
+  const tags = d.tags || [];
+
+  openSheet('Detalhes da despesa', () => `
+    <div style="margin-bottom:12px;">
+      <div style="font-size:18px;font-weight:600;word-break:break-word;line-height:1.3;">
+        ${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${cat ? cat.cor : '#999'};"></span>
+        <span style="color:var(--text-2);font-size:14px;">${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</span>
+      </div>
+    </div>
+
+    <div class="big negative" style="margin-bottom:14px;">${fmtBRL(d.valor)}</div>
+
+    <ul class="details-list">
+      <li><span>Data</span><span>${fmtDate(d.data)}</span></li>
+      <li><span>Tipo</span><span>${tipo}</span></li>
+      ${d._parcelaTotal ? `
+        <li><span>Total geral</span><span>${fmtBRL(d.valor * d._parcelaTotal)}</span></li>
+      ` : ''}
+      ${tags.length > 0 ? `
+        <li><span>Tags</span><span>${tags.map(t => `#${escapeHTML(t)}`).join(' ')}</span></li>
+      ` : ''}
+    </ul>
+
+    ${d._virtual ? `
+      <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
+        Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original.
+      </p>
+    ` : ''}
+
+    <div class="actions">
+      <button class="secondary" id="close">Fechar</button>
+      <button class="primary"   id="edit">Editar</button>
+      <button class="danger"    id="del">Excluir</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#close').addEventListener('click', closeSheet);
+    body.querySelector('#edit').addEventListener('click', () => {
+      closeSheet();
+      sheetDespesa(state.despesas.find(x => x.id === d.id));
+    });
+    body.querySelector('#del').addEventListener('click', () => {
+      const msg = d._virtual
+        ? 'Excluir o lançamento original? Isso remove esta e todas as outras ocorrências.'
+        : 'Excluir esta despesa?';
+      if (confirm(msg)) {
+        db.removeDespesa(d.id);
+        closeSheet();
+        toast('Despesa excluída');
+        render();
+      }
+    });
+  });
+};
+
+const sheetRendaDetalhes = (r) => {
+  const tipo = r.recorrente ? 'Mensal recorrente' : 'Apenas neste mês';
+  openSheet('Detalhes da receita', () => `
+    <div style="margin-bottom:12px;">
+      <div style="font-size:18px;font-weight:600;word-break:break-word;line-height:1.3;">
+        ${escapeHTML(r.fonte || 'Receita')}
+      </div>
+    </div>
+
+    <div class="big positive" style="margin-bottom:14px;">${fmtBRL(r.valor)}</div>
+
+    <ul class="details-list">
+      <li><span>Data</span><span>${fmtDate(r.data)}</span></li>
+      <li><span>Tipo</span><span>${tipo}</span></li>
+      ${r.descricao ? `
+        <li><span>Descrição</span><span>${escapeHTML(r.descricao)}</span></li>
+      ` : ''}
+    </ul>
+
+    ${r._virtual ? `
+      <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
+        Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original.
+      </p>
+    ` : ''}
+
+    <div class="actions">
+      <button class="secondary" id="close">Fechar</button>
+      <button class="primary"   id="edit">Editar</button>
+      <button class="danger"    id="del">Excluir</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#close').addEventListener('click', closeSheet);
+    body.querySelector('#edit').addEventListener('click', () => {
+      closeSheet();
+      sheetRenda(state.rendas.find(x => x.id === r.id));
+    });
+    body.querySelector('#del').addEventListener('click', () => {
+      const msg = r._virtual
+        ? 'Excluir o lançamento original? Isso remove esta e todas as outras ocorrências.'
+        : 'Excluir esta receita?';
+      if (confirm(msg)) {
+        db.removeRenda(r.id);
+        closeSheet();
+        toast('Receita excluída');
+        render();
+      }
     });
   });
 };
