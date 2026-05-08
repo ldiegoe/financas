@@ -36,7 +36,11 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
-html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior-y: contain; }
+/* overflow:hidden no body para que o scroll aconteca dentro do #view e nao
+   no documento. Em iOS Safari/PWA o scroll do documento bagunca elementos
+   com position:fixed (tabbar "andando" no meio da tela), entao tiramos o
+   tabbar do fixed e ele fica colado no rodape via flex column. */
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; overscroll-behavior-y: contain; }
 body {
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
@@ -45,11 +49,10 @@ body {
 }
 
 #app {
-  min-height: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   padding-top: var(--safe-top);
-  padding-bottom: calc(64px + var(--safe-bottom));
 }
 
 .topbar {
@@ -68,10 +71,16 @@ body {
   cursor: pointer;
 }
 
-main#view { flex: 1; padding: 8px 16px 16px; }
+main#view {
+  flex: 1;
+  padding: 8px 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: 0;
+  flex: 0 0 auto;
   display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--bg-elev);
   border-top: 1px solid var(--separator);
