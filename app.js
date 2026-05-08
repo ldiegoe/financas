@@ -551,16 +551,21 @@ views.dashboard = (root) => {
             labels: {
               color: getCSS('--text'),
               font: { size: 11 },
-              // Acrescenta "— 23%" ao lado do nome da categoria na legenda
+              // Acrescenta "— 23%" ao lado do nome da categoria na legenda.
+              // fontColor por item garante contraste no tema escuro — quando
+              // generateLabels e custom, o labels.color global as vezes nao
+              // propaga e o Chart.js cai no default cinza ilegivel.
               generateLabels: (chart) => {
                 const ds = chart.data.datasets[0];
                 const total = ds.data.reduce((a, b) => a + b, 0);
+                const textColor = getCSS('--text');
                 return chart.data.labels.map((label, i) => {
                   const pct = total > 0 ? ((ds.data[i] / total) * 100).toFixed(0) : '0';
                   return {
                     text: `${label} — ${pct}%`,
                     fillStyle: ds.backgroundColor[i],
                     strokeStyle: ds.backgroundColor[i],
+                    fontColor: textColor,
                     lineWidth: 0,
                     hidden: false,
                     index: i,
