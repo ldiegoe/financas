@@ -541,12 +541,34 @@ views.dashboard = (root) => {
     });
 
     if (catData.length > 0) {
-      const base = chartOpts();
       const donutOptions = {
-        ...base,
+        responsive: true,
+        maintainAspectRatio: false,
         cutout: '62%',
         plugins: {
-          ...base.plugins,
+          legend: {
+            position: 'bottom',
+            labels: {
+              color: getCSS('--text'),
+              font: { size: 11 },
+              // Acrescenta "— 23%" ao lado do nome da categoria na legenda
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0];
+                const total = ds.data.reduce((a, b) => a + b, 0);
+                return chart.data.labels.map((label, i) => {
+                  const pct = total > 0 ? ((ds.data[i] / total) * 100).toFixed(0) : '0';
+                  return {
+                    text: `${label} — ${pct}%`,
+                    fillStyle: ds.backgroundColor[i],
+                    strokeStyle: ds.backgroundColor[i],
+                    lineWidth: 0,
+                    hidden: false,
+                    index: i,
+                  };
+                });
+              },
+            },
+          },
           tooltip: {
             callbacks: {
               label: (ctx) => {
@@ -569,7 +591,6 @@ views.dashboard = (root) => {
           }],
         },
         options: donutOptions,
-        plugins: [donutPctPlugin],
       });
     }
   }
@@ -611,30 +632,6 @@ const chartOpts = () => ({
 });
 
 const getCSS = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-
-// Desenha "23%" centralizado em cada fatia do donut. Pula fatias muito pequenas
-// para nao poluir; o tooltip mostra a porcentagem exata para todas.
-const donutPctPlugin = {
-  id: 'donutPct',
-  afterDatasetsDraw(chart) {
-    const { ctx } = chart;
-    const data = chart.data.datasets[0].data;
-    const total = data.reduce((a, b) => a + b, 0);
-    if (total === 0) return;
-    chart.getDatasetMeta(0).data.forEach((arc, i) => {
-      const pct = (data[i] / total) * 100;
-      if (pct < 6) return;
-      const { x, y } = arc.tooltipPosition();
-      ctx.save();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px -apple-system, system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${pct.toFixed(0)}%`, x, y);
-      ctx.restore();
-    });
-  },
-};
 
 // ----- Carteira -----
 views.carteira = (root) => {
@@ -964,7 +961,7 @@ views.config = (root) => {
         <button data-t="dark"   class="${tema==='dark'?'active':''}">Escuro</button>
       </div>
       <p style="color:var(--text-2);font-size:13px;margin:10px 2px 0;">
-        "Sistema" segue o tema do iPhone automaticamente.
+        "Sistema" segue o tema do dispositivo automaticamente.
       </p>
     </div>
 
