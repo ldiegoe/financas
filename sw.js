@@ -1,5 +1,5 @@
 // Service Worker — cache offline + auto-update no celular
-const CACHE = 'financas-v18';
+const CACHE = 'financas-v19';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './icon.svg',
   './manifest.webmanifest',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js',
 ];
 
 self.addEventListener('install', (e) => {

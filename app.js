@@ -73,14 +73,12 @@ const db = {
     state.categorias = state.categorias.filter(x => x.id !== id);
     persist();
   },
-  // direction: -1 sobe, +1 desce. Troca com o vizinho na ordem do array,
-  // que é a ordem usada para listar categorias em todas as telas.
-  moveCategoria(id, direction) {
-    const i = state.categorias.findIndex(c => c.id === id);
-    if (i < 0) return;
-    const j = i + direction;
-    if (j < 0 || j >= state.categorias.length) return;
-    [state.categorias[i], state.categorias[j]] = [state.categorias[j], state.categorias[i]];
+  // Reordena a lista inteira a partir de uma sequencia de ids. A ordem do
+  // array de categorias eh usada em todas as telas (combo de despesas, donut,
+  // etc), entao o drag-and-drop chama isso ao soltar.
+  reorderCategorias(orderedIds) {
+    const byId = new Map(state.categorias.map(c => [c.id, c]));
+    state.categorias = orderedIds.map(id => byId.get(id));
     persist();
   },
 
@@ -940,16 +938,15 @@ views.categorias = (root) => {
     gastoPorCat.set(d.categoriaId, (gastoPorCat.get(d.categoriaId) || 0) + (d.valor || 0));
   }
 
-  const last = state.categorias.length - 1;
   root.innerHTML = `
     <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
-      Use as setas para reordenar. Arraste a linha para a esquerda para editar ou excluir.
+      Toque e segure o ≡ para arrastar e reordenar. Arraste a linha para a esquerda para editar ou excluir.
     </p>
     ${state.categorias.length === 0 ? `
       <div class="empty"><span class="ico">🏷️</span>Nenhuma categoria.</div>
     ` : `
-      <ul class="list">
-        ${state.categorias.map((c, i) => {
+      <ul class="list" id="cat-list">
+        ${state.categorias.map(c => {
           const gasto = gastoPorCat.get(c.id) || 0;
           const pct = c.meta ? Math.min(100, Math.round((gasto / c.meta) * 100)) : null;
           const cls = !c.meta ? '' : (gasto > c.meta ? 'over' : (gasto > c.meta*0.8 ? 'warn' : ''));
@@ -963,10 +960,7 @@ views.categorias = (root) => {
                   <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
                 ` : `<div class="s">Sem meta · ${fmtBRL(gasto)} este mês</div>`}
               </div>
-              <div class="reorder">
-                <button class="reorder-btn" data-action="up"   ${i===0    ? 'disabled' : ''} aria-label="Subir">↑</button>
-                <button class="reorder-btn" data-action="down" ${i===last ? 'disabled' : ''} aria-label="Descer">↓</button>
-              </div>
+              <span class="drag-handle" aria-label="Arrastar para reordenar">≡</span>
               <div class="swipe-actions">
                 <button class="edit" data-action="edit-cat">Editar</button>
                 <button class="del"  data-action="del-cat">Excluir</button>
@@ -980,16 +974,26 @@ views.categorias = (root) => {
   `;
 
   bindSwipe(root);
-  root.querySelectorAll('[data-action="up"]').forEach(b => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const id = e.target.closest('[data-id]').dataset.id;
-    db.moveCategoria(id, -1); render();
-  }));
-  root.querySelectorAll('[data-action="down"]').forEach(b => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const id = e.target.closest('[data-id]').dataset.id;
-    db.moveCategoria(id, +1); render();
-  }));
+
+  // Drag-and-drop para reordenar. Long-press de 200ms na "alça" (≡) inicia o
+  // arrasto — sem isso o swipe horizontal pra revelar editar/excluir conflita.
+  const ulCat = root.querySelector('#cat-list');
+  if (ulCat && window.Sortable) {
+    new Sortable(ulCat, {
+      animation: 150,
+      handle: '.drag-handle',
+      delay: 200,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      onEnd: () => {
+        const ids = [...ulCat.querySelectorAll('[data-id]')].map(li => li.dataset.id);
+        db.reorderCategorias(ids);
+      },
+    });
+  }
+
   root.querySelectorAll('[data-action="edit-cat"]').forEach(b => b.addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]').dataset.id;
     sheetCategoria(state.categorias.find(x => x.id === id));

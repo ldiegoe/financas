@@ -301,21 +301,25 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .progress > i.warn { background: var(--orange); }
 .progress > i.over { background: var(--red); }
 
-.reorder { display: flex; gap: 2px; flex: 0 0 auto; margin-left: 4px; }
-.reorder-btn {
-  appearance: none; -webkit-appearance: none;
-  border: 0;
-  background: transparent;
+.drag-handle {
+  flex: 0 0 auto;
+  padding: 8px 6px;
+  margin-left: 4px;
   color: var(--text-2);
-  width: 32px; height: 32px;
-  border-radius: 16px;
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1;
-  cursor: pointer;
-  font-family: inherit;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  /* touch-action:none impede o scroll quando o dedo segura no handle, garantindo
+     que o long-press do Sortable comece o drag em vez do navegador rolar a tela */
+  touch-action: none;
 }
-.reorder-btn:active { background: var(--separator); }
-.reorder-btn[disabled] { opacity: .25; cursor: default; }
+.drag-handle:active { cursor: grabbing; }
+
+/* Feedback visual durante o drag-and-drop (Sortable) */
+.sortable-ghost   { opacity: .35; }
+.sortable-chosen  { background: var(--separator); }
 
 .swipe-row { position: relative; overflow: hidden; }
 .swipe-actions {
