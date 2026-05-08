@@ -53,10 +53,7 @@ body {
 }
 
 .topbar {
-  position: sticky;
-  top: var(--safe-top);
   background: var(--bg);
-  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -281,6 +278,22 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 }
 .progress > i.warn { background: var(--orange); }
 .progress > i.over { background: var(--red); }
+
+.reorder { display: flex; gap: 2px; flex: 0 0 auto; margin-left: 4px; }
+.reorder-btn {
+  appearance: none; -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  width: 32px; height: 32px;
+  border-radius: 16px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+.reorder-btn:active { background: var(--separator); }
+.reorder-btn[disabled] { opacity: .25; cursor: default; }
 
 .swipe-row { position: relative; overflow: hidden; }
 .swipe-actions {

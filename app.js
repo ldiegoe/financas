@@ -73,6 +73,16 @@ const db = {
     state.categorias = state.categorias.filter(x => x.id !== id);
     persist();
   },
+  // direction: -1 sobe, +1 desce. Troca com o vizinho na ordem do array,
+  // que é a ordem usada para listar categorias em todas as telas.
+  moveCategoria(id, direction) {
+    const i = state.categorias.findIndex(c => c.id === id);
+    if (i < 0) return;
+    const j = i + direction;
+    if (j < 0 || j >= state.categorias.length) return;
+    [state.categorias[i], state.categorias[j]] = [state.categorias[j], state.categorias[i]];
+    persist();
+  },
 
   exportJSON() { return JSON.stringify(state, null, 2); },
   importJSON(json) {
@@ -450,6 +460,23 @@ views.dashboard = (root) => {
     });
 
     if (catData.length > 0) {
+      const base = chartOpts();
+      const donutOptions = {
+        ...base,
+        cutout: '62%',
+        plugins: {
+          ...base.plugins,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : '0';
+                return `${ctx.label}: ${fmtBRL(ctx.parsed * 100)} (${pct}%)`;
+              },
+            },
+          },
+        },
+      };
       new Chart(root.querySelector('#ch-donut'), {
         type: 'doughnut',
         data: {
@@ -460,7 +487,8 @@ views.dashboard = (root) => {
             borderWidth: 0,
           }],
         },
-        options: { ...chartOpts(), cutout: '62%' },
+        options: donutOptions,
+        plugins: [donutPctPlugin],
       });
     }
   }
@@ -502,6 +530,30 @@ const chartOpts = () => ({
 });
 
 const getCSS = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// Desenha "23%" centralizado em cada fatia do donut. Pula fatias muito pequenas
+// para nao poluir; o tooltip mostra a porcentagem exata para todas.
+const donutPctPlugin = {
+  id: 'donutPct',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const data = chart.data.datasets[0].data;
+    const total = data.reduce((a, b) => a + b, 0);
+    if (total === 0) return;
+    chart.getDatasetMeta(0).data.forEach((arc, i) => {
+      const pct = (data[i] / total) * 100;
+      if (pct < 6) return;
+      const { x, y } = arc.tooltipPosition();
+      ctx.save();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px -apple-system, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${pct.toFixed(0)}%`, x, y);
+      ctx.restore();
+    });
+  },
+};
 
 // ----- Carteira -----
 views.carteira = (root) => {
@@ -677,15 +729,16 @@ views.categorias = (root) => {
     gastoPorCat.set(d.categoriaId, (gastoPorCat.get(d.categoriaId) || 0) + (d.valor || 0));
   }
 
+  const last = state.categorias.length - 1;
   root.innerHTML = `
     <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
-      Metas são mensais. Progresso usa o mês atual.
+      Use as setas para reordenar. Arraste a linha para a esquerda para editar ou excluir.
     </p>
     ${state.categorias.length === 0 ? `
       <div class="empty"><span class="ico">🏷️</span>Nenhuma categoria.</div>
     ` : `
       <ul class="list">
-        ${state.categorias.map(c => {
+        ${state.categorias.map((c, i) => {
           const gasto = gastoPorCat.get(c.id) || 0;
           const pct = c.meta ? Math.min(100, Math.round((gasto / c.meta) * 100)) : null;
           const cls = !c.meta ? '' : (gasto > c.meta ? 'over' : (gasto > c.meta*0.8 ? 'warn' : ''));
@@ -698,6 +751,10 @@ views.categorias = (root) => {
                   <div class="s">${fmtBRL(gasto)} / ${fmtBRL(c.meta)} este mês · ${pct}%</div>
                   <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
                 ` : `<div class="s">Sem meta · ${fmtBRL(gasto)} este mês</div>`}
+              </div>
+              <div class="reorder">
+                <button class="reorder-btn" data-action="up"   ${i===0    ? 'disabled' : ''} aria-label="Subir">↑</button>
+                <button class="reorder-btn" data-action="down" ${i===last ? 'disabled' : ''} aria-label="Descer">↓</button>
               </div>
               <div class="swipe-actions">
                 <button class="edit" data-action="edit-cat">Editar</button>
@@ -712,6 +769,16 @@ views.categorias = (root) => {
   `;
 
   bindSwipe(root);
+  root.querySelectorAll('[data-action="up"]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = e.target.closest('[data-id]').dataset.id;
+    db.moveCategoria(id, -1); render();
+  }));
+  root.querySelectorAll('[data-action="down"]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = e.target.closest('[data-id]').dataset.id;
+    db.moveCategoria(id, +1); render();
+  }));
   root.querySelectorAll('[data-action="edit-cat"]').forEach(b => b.addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]').dataset.id;
     sheetCategoria(state.categorias.find(x => x.id === id));
