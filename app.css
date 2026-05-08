@@ -252,8 +252,21 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .color-picker .swatch-pick {
   width: 30px; height: 30px; border-radius: 50%;
   cursor: pointer; border: 2px solid transparent;
+  position: relative;
 }
 .color-picker .swatch-pick.active { border-color: var(--text); transform: scale(1.1); }
+/* Marca visual de "cor ja em uso por outra categoria" — nao bloqueia o clique */
+.color-picker .swatch-pick.used::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 8px; height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.55);
+  border: 1.5px solid #fff;
+  box-sizing: border-box;
+}
 
 #toast {
   position: fixed; bottom: calc(80px + var(--safe-bottom)); left: 50%;

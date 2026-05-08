@@ -1246,19 +1246,40 @@ const sheetDespesa = (desp) => {
   });
 };
 
-const palette = ['#FF6B6B','#FF9F0A','#FFD60A','#30D158','#4ECDC4','#0A84FF','#5E5CE6','#BF5AF2','#FF375F','#A8E6CF','#FFD93D','#95E1D3','#C9C9C9'];
+const palette = [
+  '#FF6B6B','#FF9F0A','#FFD60A','#30D158','#4ECDC4','#0A84FF','#5E5CE6',
+  '#BF5AF2','#FF375F','#A8E6CF','#FFD93D','#95E1D3','#C9C9C9',
+  '#5AC8FA','#FF2D92','#FF6B35','#7B68EE','#9ACD32','#D4A574','#FF85B3',
+];
 
 const sheetCategoria = (cat) => {
   const isEdit = !!cat;
-  const c = cat || { nome: '', cor: palette[Math.floor(Math.random()*palette.length)], meta: null };
+  // Cores em uso por outras categorias (na edicao, ignora a propria).
+  // Usado pra: (1) sugerir cor padrao nao-repetida em categorias novas,
+  // (2) marcar visualmente no picker as cores ja escolhidas.
+  const usedColors = new Set(
+    state.categorias.filter(x => !cat || x.id !== cat.id).map(x => x.cor)
+  );
+  const defaultCor = palette.find(p => !usedColors.has(p))
+    || palette[Math.floor(Math.random()*palette.length)];
+  const c = cat || { nome: '', cor: defaultCor, meta: null };
   openSheet(isEdit ? 'Editar categoria' : 'Nova categoria', () => `
     <label class="field"><span>Nome</span>
       <input id="f-nome" type="text" value="${escapeAttr(c.nome || '')}" required />
     </label>
     <label class="field"><span>Cor</span>
       <div class="color-picker" id="f-cores">
-        ${palette.map(p => `<div class="swatch-pick ${p===c.cor?'active':''}" data-cor="${p}" style="background:${p}"></div>`).join('')}
+        ${palette.map(p => {
+          const cls = ['swatch-pick'];
+          if (p === c.cor) cls.push('active');
+          if (usedColors.has(p)) cls.push('used');
+          const title = usedColors.has(p) ? ' title="Cor já em uso por outra categoria"' : '';
+          return `<div class="${cls.join(' ')}" data-cor="${p}" style="background:${p}"${title}></div>`;
+        }).join('')}
       </div>
+      <small style="display:block;color:var(--text-2);margin-top:8px;font-size:12px;">
+        O ponto indica cores já usadas em outras categorias.
+      </small>
     </label>
     <label class="field"><span>Meta mensal (R$, opcional)</span>
       <input id="f-meta" type="text" inputmode="numeric" placeholder="Deixe vazio para sem meta"
