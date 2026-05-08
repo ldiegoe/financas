@@ -282,6 +282,30 @@ const toast = (msg) => {
   toast._t = setTimeout(() => el.classList.remove('show'), 2000);
 };
 
+// Dias inteiros entre uma data ISO (yyyy-mm-dd) e hoje. null se iso for falsy.
+const daysSince = (iso) => {
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const then = new Date(y, m - 1, d).setHours(0,0,0,0);
+  const now  = new Date().setHours(0,0,0,0);
+  return Math.floor((now - then) / 86400000);
+};
+
+// Dispara o download do JSON e marca a data do ultimo backup. Compartilhado
+// entre o botao "Exportar dados" dos Ajustes e o banner do dashboard.
+const exportBackup = () => {
+  const blob = new Blob([db.exportJSON()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `financas-backup-${todayISO()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  state.lastBackupAt = todayISO();
+  persist();
+  toast('Backup exportado');
+};
+
 // --------------------------- Period state ----------------------------------
 const period = {
   type: 'month',
@@ -412,7 +436,33 @@ views.dashboard = (root) => {
   const monthsDespesa = months.map(({y, m}) =>
     sumAmount(expandWithRecurring(state.despesas, { type:'month', year:y, value:m })));
 
+  // Banner de lembrete de backup. Aparece quando o lembrete esta ativado e
+  // (a) nunca houve backup, ou (b) o intervalo configurado ja foi excedido.
+  const reminderDays = state.config.backupReminderDays | 0;
+  const dSinceBackup = daysSince(state.lastBackupAt);
+  let backupBanner = '';
+  if (reminderDays > 0) {
+    let msg = '';
+    if (dSinceBackup === null) {
+      msg = 'Você ainda não fez nenhum backup dos dados.';
+    } else if (dSinceBackup >= reminderDays) {
+      msg = `Faz ${dSinceBackup === 1 ? '1 dia' : `${dSinceBackup} dias`} desde seu último backup.`;
+    }
+    if (msg) {
+      backupBanner = `
+        <div class="card" style="display:flex;align-items:center;gap:12px;border-left:3px solid var(--orange);">
+          <div style="flex:1;">
+            <div style="font-weight:600;margin-bottom:2px;">Hora de fazer backup</div>
+            <div style="color:var(--text-2);font-size:14px;">${msg}</div>
+          </div>
+          <button class="primary" id="banner-backup">Exportar agora</button>
+        </div>
+      `;
+    }
+  }
+
   root.innerHTML = `
+    ${backupBanner}
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
       <div>
         <h2>Período</h2>
@@ -525,6 +575,9 @@ views.dashboard = (root) => {
   });
   root.querySelector('#prev-year').addEventListener('click', () => { period.year--; render(); });
   root.querySelector('#next-year').addEventListener('click', () => { period.year++; render(); });
+
+  const bannerBtn = root.querySelector('#banner-backup');
+  if (bannerBtn) bannerBtn.addEventListener('click', () => { exportBackup(); render(); });
 
   // Gráficos
   if (window.Chart) {
@@ -973,14 +1026,41 @@ views.config = (root) => {
     <div class="card">
       <h2>Backup</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-        Os dados ficam apenas neste dispositivo. Exporte um arquivo JSON
-        regularmente para não perder histórico.
+        Os dados ficam apenas neste dispositivo. Faça backup regularmente
+        para não perder histórico.
       </p>
+      ${state.lastBackupAt ? `
+        <p style="color:var(--text-2);font-size:13px;margin:0 0 12px;">
+          Último backup: ${fmtDate(state.lastBackupAt)}${(() => {
+            const d = daysSince(state.lastBackupAt);
+            if (d === null) return '';
+            if (d === 0) return ' · hoje';
+            if (d === 1) return ' · há 1 dia';
+            return ` · há ${d} dias`;
+          })()}
+        </p>
+      ` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="primary"   id="export">Exportar JSON</button>
-        <button class="secondary" id="import">Importar JSON</button>
+        <button class="primary"   id="export">Exportar dados</button>
+        <button class="secondary" id="import">Importar dados</button>
       </div>
       <input type="file" id="import-file" accept="application/json,.json" hidden />
+
+      <div style="margin-top:16px;border-top:1px solid var(--separator);padding-top:14px;">
+        <label class="field" style="margin-bottom:0;">
+          <span>Lembrete de backup</span>
+          <select id="backup-reminder">
+            <option value="0"  ${(state.config.backupReminderDays|0)===0?'selected':''}>Desativado</option>
+            <option value="7"  ${(state.config.backupReminderDays|0)===7?'selected':''}>A cada 7 dias</option>
+            <option value="14" ${(state.config.backupReminderDays|0)===14?'selected':''}>A cada 14 dias</option>
+            <option value="30" ${(state.config.backupReminderDays|0)===30?'selected':''}>A cada 30 dias</option>
+          </select>
+        </label>
+        <p style="color:var(--text-2);font-size:13px;margin:8px 0 0;">
+          O navegador não permite que o app salve arquivos sozinho no aparelho,
+          mas o dashboard vai avisar quando estiver na hora de exportar.
+        </p>
+      </div>
     </div>
 
     <div class="card">
@@ -1016,14 +1096,14 @@ views.config = (root) => {
   });
 
   root.querySelector('#export').addEventListener('click', () => {
-    const blob = new Blob([db.exportJSON()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `financas-backup-${todayISO()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('Backup exportado');
+    exportBackup();
+    render();
+  });
+
+  root.querySelector('#backup-reminder').addEventListener('change', (e) => {
+    const n = parseInt(e.target.value, 10) || 0;
+    state.config = { ...state.config, backupReminderDays: n };
+    persist();
   });
 
   root.querySelector('#import').addEventListener('click', () => root.querySelector('#import-file').click());
