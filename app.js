@@ -254,6 +254,16 @@ const allTags = () => {
   return [...set.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 };
 
+// 'system' (padrão) | 'light' | 'dark'. Atributo data-theme no <html> é
+// quem comanda o CSS; ausência do atributo = seguir sistema operacional.
+const applyTheme = (tema) => {
+  if (tema === 'light' || tema === 'dark') {
+    document.documentElement.setAttribute('data-theme', tema);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+};
+
 const toast = (msg) => {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -721,7 +731,20 @@ views.categorias = (root) => {
 
 // ----- Configurações -----
 views.config = (root) => {
+  const tema = state.config.tema || 'system';
   root.innerHTML = `
+    <div class="card">
+      <h2>Aparência</h2>
+      <div class="segmented" id="theme-picker">
+        <button data-t="system" class="${tema==='system'?'active':''}">Sistema</button>
+        <button data-t="light"  class="${tema==='light'?'active':''}">Claro</button>
+        <button data-t="dark"   class="${tema==='dark'?'active':''}">Escuro</button>
+      </div>
+      <p style="color:var(--text-2);font-size:13px;margin:10px 2px 0;">
+        "Sistema" segue o tema do iPhone automaticamente.
+      </p>
+    </div>
+
     <div class="card">
       <h2>Backup</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
@@ -756,6 +779,16 @@ views.config = (root) => {
       Finanças PWA · v1.0
     </p>
   `;
+
+  root.querySelectorAll('#theme-picker button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.t;
+      state.config = { ...state.config, tema: t };
+      persist();
+      applyTheme(t);
+      render();
+    });
+  });
 
   root.querySelector('#export').addEventListener('click', () => {
     const blob = new Blob([db.exportJSON()], { type: 'application/json' });

@@ -12,6 +12,17 @@
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="stylesheet" href="app.css" />
   <title>Finanças</title>
+  <script>
+    // Aplica o tema escolhido o mais cedo possível, antes do CSS pintar a tela,
+    // para nao haver flash de cor errada quando o usuario forca claro/escuro.
+    try {
+      var raw = localStorage.getItem('financas:v1');
+      var tema = raw ? (JSON.parse(raw).config || {}).tema : null;
+      if (tema === 'light' || tema === 'dark') {
+        document.documentElement.setAttribute('data-theme', tema);
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <div id="app">
