@@ -432,6 +432,8 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   z-index: 1000;
   display: flex; align-items: center; justify-content: center;
   padding: var(--safe-top) 24px var(--safe-bottom);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 #lock-screen .lock-content {
   text-align: center;
@@ -462,7 +464,6 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   font-size: 14px;
   margin: 16px 0 0;
 }
-#lock-screen #lock-wipe { margin-top: 28px; color: var(--text-2); }
 
 /* Lista chave-valor usada nos sheets de detalhes (despesa/receita). */
 .details-list { list-style: none; margin: 0; padding: 0; }

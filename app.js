@@ -376,7 +376,10 @@ const lockVerify = async (credentialIdB64) => {
 };
 
 // Tela cheia bloqueando o app ate o usuario passar pela biometria nativa.
-// onUnlock eh chamado quando a verificacao retorna sucesso.
+// Qualquer toque na tela dispara o prompt — em iOS Safari o WebAuthn precisa
+// de um gesto de usuario, entao o auto-fire na carga falha silenciosamente
+// e o primeiro toque cobre o caso. Em navegadores que aceitam, a biometria
+// abre direto sem interacao. onUnlock eh chamado em sucesso.
 const showLockScreen = (onUnlock) => {
   const wrap = document.createElement('div');
   wrap.id = 'lock-screen';
@@ -384,41 +387,48 @@ const showLockScreen = (onUnlock) => {
     <div class="lock-content">
       <span class="lock-ico">🔒</span>
       <h2>Finanças</h2>
-      <p class="lock-msg">Desbloqueie para ver seus dados.</p>
-      <button class="primary" id="unlock-btn">Desbloquear</button>
+      <p class="lock-msg">Toque para desbloquear</p>
       <p class="lock-error" id="lock-error" hidden></p>
-      <button class="link" id="lock-wipe">Apagar todos os dados</button>
     </div>
   `;
   document.body.appendChild(wrap);
 
-  const btn = wrap.querySelector('#unlock-btn');
   const errEl = wrap.querySelector('#lock-error');
+  let busy = false;
+  let hadUserGesture = false;
 
   const tryUnlock = async () => {
+    if (busy) return;
+    busy = true;
     errEl.hidden = true;
-    btn.disabled = true;
     try {
       const ok = await lockVerify(lockStore.get().credentialId);
       if (ok) { wrap.remove(); onUnlock(); return; }
-      errEl.textContent = 'Não foi possível desbloquear. Tente novamente.';
-      errEl.hidden = false;
+      if (hadUserGesture) {
+        errEl.textContent = 'Não foi possível desbloquear.';
+        errEl.hidden = false;
+      }
     } catch (err) {
-      errEl.textContent = 'Falha ao desbloquear. Toque em Desbloquear pra tentar novamente.';
-      errEl.hidden = false;
+      // Sem gesto de usuario o WebAuthn lanca NotAllowedError — esse caso eh
+      // a falha esperada do auto-fire em iOS, nao mostra erro pro usuario.
+      if (hadUserGesture) {
+        errEl.textContent = 'Toque para tentar novamente.';
+        errEl.hidden = false;
+      }
     } finally {
-      btn.disabled = false;
+      busy = false;
     }
   };
-  btn.addEventListener('click', tryUnlock);
 
-  wrap.querySelector('#lock-wipe').addEventListener('click', () => {
-    if (!confirm('Apagar TODOS os dados deste dispositivo? Esta ação não pode ser desfeita.')) return;
-    if (!confirm('Última chance — confirma APAGAR TUDO?')) return;
-    db.reset();
-    lockStore.clear();
-    location.reload();
+  wrap.addEventListener('click', () => {
+    hadUserGesture = true;
+    tryUnlock();
   });
+
+  // Tenta acionar a biometria imediatamente — funciona em browsers que
+  // permitem WebAuthn sem gesto. Em iOS falha silenciosamente e o primeiro
+  // toque do usuario cobre.
+  tryUnlock();
 };
 
 // --------------------------- Period state ----------------------------------
