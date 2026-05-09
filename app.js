@@ -93,8 +93,14 @@ const db = {
 };
 
 // --------------------------- Utils -----------------------------------------
-const fmtBRL = (cents) =>
-  ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const APP_VERSION = '1.5';
+
+// Quando o usuario ativa "Ocultar valores", todo R$ que aparece via fmtBRL
+// vira mascara — facilita compartilhar a tela sem revelar saldo.
+const fmtBRL = (cents) => {
+  if (state && state.config && state.config.valuesHidden) return 'R$ ••••';
+  return ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
 
 // "12345" centavos -> "123,45"  |  "1234567" -> "12.345,67"
 const formatCentsDisplay = (cents) => {
@@ -270,6 +276,43 @@ const applyTheme = (tema) => {
   } else {
     document.documentElement.removeAttribute('data-theme');
   }
+};
+
+// 'small' | 'normal' (padrão) | 'large'. Aplica via classe no html — CSS usa
+// `zoom` pra escalar tudo de forma uniforme.
+const applyTextSize = (size) => {
+  const html = document.documentElement;
+  html.classList.remove('text-small', 'text-large');
+  if (size === 'small') html.classList.add('text-small');
+  else if (size === 'large') html.classList.add('text-large');
+};
+
+// Atualiza o icone de olho na topbar de acordo com o estado atual de
+// state.config.valuesHidden. Chamado no boot e em cada toggle.
+const applyValuesVisibility = () => {
+  const btn = document.getElementById('toggle-values');
+  if (!btn) return;
+  const hidden = !!(state.config && state.config.valuesHidden);
+  btn.classList.toggle('off', hidden);
+  btn.setAttribute('aria-label', hidden ? 'Mostrar valores' : 'Ocultar valores');
+};
+
+// Limpa cache do service worker e recarrega — botao "Forcar atualizacao" nos
+// Ajustes pra resolver casos raros em que o usuario sente que ficou com
+// versao velha cacheada.
+const forceRefresh = async () => {
+  if (!confirm('Forçar atualização? O app vai recarregar — seus dados ficam intactos.')) return;
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) await r.unregister();
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch {}
+  location.reload();
 };
 
 const toast = (msg) => {
@@ -810,7 +853,13 @@ const chartOpts = () => ({
   },
   scales: {
     x: { ticks: { color: getCSS('--text-2'), font: { size: 10 } }, grid: { display: false } },
-    y: { ticks: { color: getCSS('--text-2'), callback: v => `R$${v}` }, grid: { color: getCSS('--separator') } },
+    y: {
+      ticks: {
+        color: getCSS('--text-2'),
+        callback: v => state.config.valuesHidden ? '' : `R$${v}`,
+      },
+      grid: { color: getCSS('--separator') },
+    },
   },
 });
 
@@ -1167,6 +1216,7 @@ views.categorias = (root) => {
 // ----- Configurações -----
 views.config = (root) => {
   const tema = state.config.tema || 'system';
+  const textSize = state.config.textSize || 'normal';
   root.innerHTML = `
     <div class="card">
       <h2>Aparência</h2>
@@ -1175,9 +1225,18 @@ views.config = (root) => {
         <button data-t="light"  class="${tema==='light'?'active':''}">Claro</button>
         <button data-t="dark"   class="${tema==='dark'?'active':''}">Escuro</button>
       </div>
-      <p style="color:var(--text-2);font-size:13px;margin:10px 2px 0;">
+      <p style="color:var(--text-2);font-size:13px;margin:10px 2px 14px;">
         "Sistema" segue o tema do dispositivo automaticamente.
       </p>
+
+      <label class="field" style="margin-bottom:0;">
+        <span>Tamanho do texto</span>
+        <div class="segmented" id="text-size">
+          <button data-size="small"  class="${textSize==='small' ?'active':''}">Pequeno</button>
+          <button data-size="normal" class="${textSize==='normal'?'active':''}">Padrão</button>
+          <button data-size="large"  class="${textSize==='large' ?'active':''}">Grande</button>
+        </div>
+      </label>
     </div>
 
     <div class="card">
@@ -1187,15 +1246,24 @@ views.config = (root) => {
           <input id="f-lock" type="checkbox" ${lockEnabled() ? 'checked' : ''}/>
           <label for="f-lock">Exigir biometria/PIN ao abrir o app</label>
         </div>
-        <p style="color:var(--text-2);font-size:13px;margin:8px 2px 0;">
+        <p style="color:var(--text-2);font-size:13px;margin:8px 2px 14px;">
           Usa o desbloqueio nativo do dispositivo (Face ID, Touch ID, digital ou PIN).
           Nenhum dado sai daqui.
         </p>
       ` : `
-        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 0;">
+        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 14px;">
           Este navegador não suporta biometria via WebAuthn.
         </p>
       `}
+
+      <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <input id="f-hide" type="checkbox" ${state.config.valuesHidden?'checked':''}/>
+        <label for="f-hide">Ocultar valores em R$ por padrão</label>
+      </div>
+      <p style="color:var(--text-2);font-size:13px;margin:6px 2px 0;">
+        Substitui valores por <code>R$ ••••</code> em toda a tela. Você pode alternar
+        rapidinho pelo ícone de olho na barra do topo.
+      </p>
     </div>
 
     <div class="card">
@@ -1248,6 +1316,15 @@ views.config = (root) => {
     </div>
 
     <div class="card">
+      <h2>Manutenção</h2>
+      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
+        Limpa o cache do app e recarrega — útil se algo travou ou se a versão
+        nova não chegou. Seus dados não são afetados.
+      </p>
+      <button class="secondary" id="force-refresh">Forçar atualização do app</button>
+    </div>
+
+    <div class="card">
       <h2>Zona perigosa</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
         Apaga todos os dados deste dispositivo. Faça backup antes.
@@ -1255,9 +1332,28 @@ views.config = (root) => {
       <button class="danger" id="reset">Apagar tudo</button>
     </div>
 
-    <p style="text-align:center;color:var(--text-2);font-size:12px;margin-top:24px;">
-      Finanças PWA · v1.0
-    </p>
+    <div class="card">
+      <h2>Sobre</h2>
+      <p style="margin:4px 0 4px;font-weight:600;font-size:16px;">Finanças PWA</p>
+      <p style="color:var(--text-2);font-size:14px;margin:0 0 12px;">
+        Feito em vanilla JS, sem servidor — todos os dados ficam neste aparelho.
+      </p>
+      <ul class="list" style="box-shadow:none;">
+        <li><div class="grow">Versão</div><div class="amount">${APP_VERSION}</div></li>
+        <li><div class="grow">Lançamentos</div><div class="amount">${state.rendas.length + state.despesas.length}</div></li>
+        ${(() => {
+          const all = [...state.rendas, ...state.despesas];
+          if (!all.length) return '';
+          const oldest = all.reduce((min, x) => x.data < min ? x.data : min, all[0].data);
+          const days = daysSince(oldest);
+          return `<li><div class="grow">Em uso há</div><div class="amount">${days === 0 ? 'hoje' : days === 1 ? '1 dia' : `${days} dias`}</div></li>`;
+        })()}
+      </ul>
+      <a href="https://github.com/ldiegoe/financas" target="_blank" rel="noopener"
+         style="display:inline-block;margin-top:12px;color:var(--tint);text-decoration:none;font-weight:500;">
+        Ver código no GitHub →
+      </a>
+    </div>
   `;
 
   root.querySelectorAll('#theme-picker button').forEach(btn => {
@@ -1269,6 +1365,28 @@ views.config = (root) => {
       render();
     });
   });
+
+  root.querySelectorAll('#text-size button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const size = btn.dataset.size;
+      state.config = { ...state.config, textSize: size };
+      persist();
+      applyTextSize(size);
+      render();
+    });
+  });
+
+  const hideToggle = root.querySelector('#f-hide');
+  if (hideToggle) {
+    hideToggle.addEventListener('change', () => {
+      state.config = { ...state.config, valuesHidden: hideToggle.checked };
+      persist();
+      applyValuesVisibility();
+      render();
+    });
+  }
+
+  root.querySelector('#force-refresh').addEventListener('click', forceRefresh);
 
   const lockToggle = root.querySelector('#f-lock');
   if (lockToggle) {
@@ -1779,8 +1897,19 @@ document.getElementById('quick-add').addEventListener('click', () => {
   else sheetDespesa(); // default no dashboard / config
 });
 
+// Olho na topbar: alterna a flag global, atualiza icone e re-renderiza para
+// que todos os fmtBRL na tela ja saiam mascarados/desmascarados.
+document.getElementById('toggle-values').addEventListener('click', () => {
+  state.config = { ...state.config, valuesHidden: !state.config.valuesHidden };
+  persist();
+  applyValuesVisibility();
+  render();
+});
+
 // Init
 const initApp = () => {
+  applyTextSize(state.config.textSize);
+  applyValuesVisibility();
   const initial = location.hash.replace('#/', '') || 'dashboard';
   if (!location.hash) location.hash = '#/dashboard';
   setTab(initial);
