@@ -659,42 +659,46 @@ views.dashboard = (root) => {
       <div class="big ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</div>
     </div>
 
-    <div class="card">
-      <h2>Comparação com ${escapeHTML(labelOfPeriod(prev))}</h2>
-      <div class="compare-row">
-        <span class="label">Despesas</span>
-        <span class="amount">${fmtBRL(totalDespesa)}</span>
-        <span class="delta ${deltaDesp.cls}">${deltaDesp.sign} ${deltaDesp.label}</span>
-      </div>
-      <div class="compare-row">
-        <span class="label">Receitas</span>
-        <span class="amount">${fmtBRL(totalRenda)}</span>
-        <span class="delta ${deltaRenda.cls}">${deltaRenda.sign} ${deltaRenda.label}</span>
-      </div>
-      <div class="compare-row">
-        <span class="label">Saldo</span>
-        <span class="amount">${fmtBRL(saldo)}</span>
-        <span class="delta ${deltaSaldo.cls}">${deltaSaldo.sign} ${deltaSaldo.label}</span>
-      </div>
-      <div class="compare-sub">vs ${fmtBRL(prevDespesa)} / ${fmtBRL(prevRenda)} / ${fmtBRL(prevSaldo)}</div>
+    ${state.config.dashCompareShow !== false ? `
+      <div class="card">
+        <h2>Comparação com ${escapeHTML(labelOfPeriod(prev))}</h2>
+        <div class="compare-row">
+          <span class="label">Despesas</span>
+          <span class="amount">${fmtBRL(totalDespesa)}</span>
+          <span class="delta ${deltaDesp.cls}">${deltaDesp.sign} ${deltaDesp.label}</span>
+        </div>
+        <div class="compare-row">
+          <span class="label">Receitas</span>
+          <span class="amount">${fmtBRL(totalRenda)}</span>
+          <span class="delta ${deltaRenda.cls}">${deltaRenda.sign} ${deltaRenda.label}</span>
+        </div>
+        <div class="compare-row">
+          <span class="label">Saldo</span>
+          <span class="amount">${fmtBRL(saldo)}</span>
+          <span class="delta ${deltaSaldo.cls}">${deltaSaldo.sign} ${deltaSaldo.label}</span>
+        </div>
+        <div class="compare-sub">vs ${fmtBRL(prevDespesa)} / ${fmtBRL(prevRenda)} / ${fmtBRL(prevSaldo)}</div>
 
-      ${topChanges.length > 0 ? `
-        <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
-        <ul class="compare-changes">
-          ${topChanges.map(c => `
-            <li>
-              <span class="swatch" style="background:${c.cor}"></span>
-              <span class="name">${escapeHTML(c.nome)}</span>
-              <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
-            </li>`).join('')}
-        </ul>
-      ` : ''}
-    </div>
+        ${topChanges.length > 0 ? `
+          <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
+          <ul class="compare-changes">
+            ${topChanges.map(c => `
+              <li>
+                <span class="swatch" style="background:${c.cor}"></span>
+                <span class="name">${escapeHTML(c.nome)}</span>
+                <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
+              </li>`).join('')}
+          </ul>
+        ` : ''}
+      </div>
+    ` : ''}
 
-    <div class="card">
-      <h2>Receitas vs Despesas</h2>
-      <div class="chart-wrap"><canvas id="ch-bars"></canvas></div>
-    </div>
+    ${state.config.dashBarsShow !== false ? `
+      <div class="card">
+        <h2>Receitas vs Despesas</h2>
+        <div class="chart-wrap"><canvas id="ch-bars"></canvas></div>
+      </div>
+    ` : ''}
 
     ${(() => {
       // Card "Despesas por categoria" eh montado conforme as preferencias do
@@ -770,17 +774,20 @@ views.dashboard = (root) => {
 
   // Gráficos
   if (window.Chart) {
-    new Chart(root.querySelector('#ch-bars'), {
-      type: 'bar',
-      data: {
-        labels: monthLabels,
-        datasets: [
-          { label: 'Receitas', data: monthsRenda.map(c => c/100),   backgroundColor: '#30d158' },
-          { label: 'Despesas', data: monthsDespesa.map(c => c/100), backgroundColor: '#ff453a' },
-        ],
-      },
-      options: chartOpts(),
-    });
+    const barsEl = root.querySelector('#ch-bars');
+    if (barsEl) {
+      new Chart(barsEl, {
+        type: 'bar',
+        data: {
+          labels: monthLabels,
+          datasets: [
+            { label: 'Receitas', data: monthsRenda.map(c => c/100),   backgroundColor: '#30d158' },
+            { label: 'Despesas', data: monthsDespesa.map(c => c/100), backgroundColor: '#ff453a' },
+          ],
+        },
+        options: chartOpts(),
+      });
+    }
 
     if (catData.length > 0 && root.querySelector('#ch-donut')) {
       const isPie = state.config.dashDonutType === 'pie';
@@ -1289,29 +1296,43 @@ views.config = (root) => {
     <div class="card">
       <h2>Personalizar dashboard</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 14px;">
-        Configure como o gráfico e a lista de "Despesas por categoria" aparecem.
+        Mostre ou oculte os cards do dashboard.
       </p>
 
       <div class="checkbox-row">
-        <input id="f-dash-donut-show" type="checkbox" ${state.config.dashDonutShow!==false?'checked':''}/>
-        <label for="f-dash-donut-show">Exibir gráfico</label>
+        <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
+        <label for="f-dash-compare-show">Exibir comparação com mês anterior</label>
       </div>
 
-      <label class="field" style="margin:10px 0 0;">
-        <span>Tipo do gráfico</span>
-        <div class="segmented" id="dash-donut-type">
-          <button data-type="donut" class="${(state.config.dashDonutType||'donut')==='donut'?'active':''}">Donut</button>
-          <button data-type="pie"   class="${state.config.dashDonutType==='pie'?'active':''}">Pizza</button>
-        </div>
-      </label>
-
-      <div class="checkbox-row" style="margin-top:14px;">
-        <input id="f-dash-donut-inner" type="checkbox" ${state.config.dashDonutInnerPct?'checked':''}/>
-        <label for="f-dash-donut-inner">Mostrar % dentro das fatias</label>
+      <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
+        <label for="f-dash-bars-show">Exibir gráfico de Receitas vs Despesas</label>
       </div>
 
       <div style="border-top:1px solid var(--separator);margin-top:14px;padding-top:14px;">
+        <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
+          Despesas por categoria
+        </p>
+
         <div class="checkbox-row">
+          <input id="f-dash-donut-show" type="checkbox" ${state.config.dashDonutShow!==false?'checked':''}/>
+          <label for="f-dash-donut-show">Exibir gráfico</label>
+        </div>
+
+        <label class="field" style="margin:10px 0 0;">
+          <span>Tipo do gráfico</span>
+          <div class="segmented" id="dash-donut-type">
+            <button data-type="donut" class="${(state.config.dashDonutType||'donut')==='donut'?'active':''}">Donut</button>
+            <button data-type="pie"   class="${state.config.dashDonutType==='pie'?'active':''}">Pizza</button>
+          </div>
+        </label>
+
+        <div class="checkbox-row" style="margin-top:14px;">
+          <input id="f-dash-donut-inner" type="checkbox" ${state.config.dashDonutInnerPct?'checked':''}/>
+          <label for="f-dash-donut-inner">Mostrar % dentro das fatias</label>
+        </div>
+
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
           <input id="f-dash-list-show" type="checkbox" ${state.config.dashListShow!==false?'checked':''}/>
           <label for="f-dash-list-show">Exibir lista de categorias</label>
         </div>
@@ -1455,10 +1476,12 @@ views.config = (root) => {
     const el = root.querySelector(id);
     if (el) el.addEventListener('change', () => persistConfig({ [key]: el.checked }));
   };
-  wireToggle('#f-dash-donut-show',  'dashDonutShow');
-  wireToggle('#f-dash-donut-inner', 'dashDonutInnerPct');
-  wireToggle('#f-dash-list-show',   'dashListShow');
-  wireToggle('#f-dash-list-pct',    'dashListPct');
+  wireToggle('#f-dash-compare-show', 'dashCompareShow');
+  wireToggle('#f-dash-bars-show',    'dashBarsShow');
+  wireToggle('#f-dash-donut-show',   'dashDonutShow');
+  wireToggle('#f-dash-donut-inner',  'dashDonutInnerPct');
+  wireToggle('#f-dash-list-show',    'dashListShow');
+  wireToggle('#f-dash-list-pct',     'dashListPct');
   root.querySelectorAll('#dash-donut-type button').forEach(btn => {
     btn.addEventListener('click', () => {
       persistConfig({ dashDonutType: btn.dataset.type });
