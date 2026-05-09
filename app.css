@@ -360,7 +360,7 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .swipe-actions .del { background: var(--red); }
 
 .chart-wrap { position: relative; height: 240px; }
-.chart-wrap.donut { height: 220px; }
+.chart-wrap.donut { height: 260px; }
 
 .search-row { margin-bottom: 8px; }
 .search-row input[type="search"] {

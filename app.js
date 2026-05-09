@@ -703,6 +703,7 @@ views.dashboard = (root) => {
         : `<div class="chart-wrap donut"><canvas id="ch-donut"></canvas></div>
            <ul class="list" style="margin-top:12px;">
              ${catData.map(c => {
+                const pctTotal = totalDespesa > 0 ? Math.round((c.valor / totalDespesa) * 100) : 0;
                 const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
                 const cls = !c.meta ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
                 return `
@@ -711,10 +712,11 @@ views.dashboard = (root) => {
                     <div class="grow">
                       <div class="t">${escapeHTML(c.nome)}</div>
                       ${c.meta ? `
-                        <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}%`:''}</div>
+                        <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
                         <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
                       ` : `<div class="s">${fmtBRL(c.valor)}</div>`}
                     </div>
+                    <div class="amount">${pctTotal}%</div>
                   </li>`;
              }).join('')}
            </ul>`
@@ -762,39 +764,15 @@ views.dashboard = (root) => {
     });
 
     if (catData.length > 0) {
+      // Sem legenda do Chart.js — com muitas categorias ela ocupava 3-4 linhas
+      // e esmagava o donut. A porcentagem por categoria agora vive na lista
+      // logo abaixo do grafico, junto com o valor.
       const donutOptions = {
         responsive: true,
         maintainAspectRatio: false,
         cutout: '62%',
         plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              color: getCSS('--text'),
-              font: { size: 11 },
-              // Acrescenta "— 23%" ao lado do nome da categoria na legenda.
-              // fontColor por item garante contraste no tema escuro — quando
-              // generateLabels e custom, o labels.color global as vezes nao
-              // propaga e o Chart.js cai no default cinza ilegivel.
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                const total = ds.data.reduce((a, b) => a + b, 0);
-                const textColor = getCSS('--text');
-                return chart.data.labels.map((label, i) => {
-                  const pct = total > 0 ? ((ds.data[i] / total) * 100).toFixed(0) : '0';
-                  return {
-                    text: `${label} — ${pct}%`,
-                    fillStyle: ds.backgroundColor[i],
-                    strokeStyle: ds.backgroundColor[i],
-                    fontColor: textColor,
-                    lineWidth: 0,
-                    hidden: false,
-                    index: i,
-                  };
-                });
-              },
-            },
-          },
+          legend: { display: false },
           tooltip: {
             callbacks: {
               label: (ctx) => {
