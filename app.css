@@ -98,6 +98,29 @@ body {
 html.text-small { zoom: 0.9; }
 html.text-large { zoom: 1.1; }
 
+/* Barra fina abaixo da topbar mostrando o perfil ativo. Tap abre o switcher. */
+.profile-bar {
+  background: var(--bg);
+  padding: 0 16px 8px;
+  flex: 0 0 auto;
+}
+.profile-chip {
+  appearance: none; border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 4px 0;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.profile-chip .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--tint);
+}
+.profile-chip .caret { color: var(--text-2); font-size: 10px; }
+.profile-chip:active { opacity: .6; }
+
 main#view {
   flex: 1;
   padding: 8px 16px 16px;

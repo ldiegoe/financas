@@ -4,7 +4,10 @@
 // ===========================================================================
 
 // --------------------------- DB --------------------------------------------
-const STORAGE_KEY = 'financas:v1';
+const PROFILES_KEY     = 'financas:profiles';
+const PROFILE_PREFIX   = 'financas:profile:';
+const DEVICE_CONFIG_KEY = 'financas:device-config';
+const LEGACY_KEY       = 'financas:v1';
 
 const uid = () =>
   (crypto.randomUUID && crypto.randomUUID()) ||
@@ -27,20 +30,132 @@ const defaultState = () => ({
   config: { moeda: 'BRL' },
 });
 
-let state = (function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    return { ...defaultState(), ...parsed };
-  } catch {
-    return defaultState();
+// Cada perfil tem dados/categorias proprios em storage separado. O bloqueio
+// continua device-wide (em lockStore). Configs visuais (tema, textSize,
+// dashboard prefs) tambem ficam device-wide via DEVICE_CONFIG_KEY pra
+// trocar de perfil nao bagunçar a aparencia.
+const profileStore = {
+  meta() {
+    try { return JSON.parse(localStorage.getItem(PROFILES_KEY)) || null; }
+    catch { return null; }
+  },
+  setMeta(m) { localStorage.setItem(PROFILES_KEY, JSON.stringify(m)); },
+  loadState(id) {
+    try {
+      const raw = localStorage.getItem(`${PROFILE_PREFIX}${id}`);
+      if (!raw) return defaultState();
+      return { ...defaultState(), ...JSON.parse(raw) };
+    } catch { return defaultState(); }
+  },
+  saveState(id, s) { localStorage.setItem(`${PROFILE_PREFIX}${id}`, JSON.stringify(s)); },
+  removeState(id) { localStorage.removeItem(`${PROFILE_PREFIX}${id}`); },
+};
+
+// Migracao: usuarios antigos tem state em LEGACY_KEY. Vira o perfil "Pessoal"
+// automaticamente sem perder nada. LEGACY_KEY fica como salvaguarda (pode ser
+// limpado manualmente em "Apagar tudo" depois).
+const initProfiles = () => {
+  let meta = profileStore.meta();
+  if (!meta || !Array.isArray(meta.list) || meta.list.length === 0) {
+    const id = uid();
+    meta = { list: [{ id, name: 'Pessoal' }], current: id };
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) localStorage.setItem(`${PROFILE_PREFIX}${id}`, legacy);
+    profileStore.setMeta(meta);
   }
-})();
+  if (!meta.list.find(p => p.id === meta.current)) {
+    meta.current = meta.list[0].id;
+    profileStore.setMeta(meta);
+  }
+  return meta;
+};
+
+const _profilesMeta = initProfiles();
+let activeProfileId = _profilesMeta.current;
+
+// Chaves de config que valem pro dispositivo todo (compartilhadas entre
+// perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
+const DEVICE_CONFIG_KEYS = [
+  'tema','textSize','valuesHidden','backupReminderDays',
+  'dashCompareShow','dashBarsShow','dashDonutShow','dashDonutType',
+  'dashDonutInnerPct','dashListShow','dashListPct',
+];
+const deviceConfigGet = () => {
+  try { return JSON.parse(localStorage.getItem(DEVICE_CONFIG_KEY)) || {}; }
+  catch { return {}; }
+};
+const deviceConfigUpdate = (patch) => {
+  localStorage.setItem(DEVICE_CONFIG_KEY, JSON.stringify({ ...deviceConfigGet(), ...patch }));
+};
+
+// Sobrepoe config device-wide sobre a config-do-perfil pra manter aparencia
+// consistente ao trocar de perfil/resetar/importar.
+const applyDeviceOverlay = (s) => {
+  const dev = deviceConfigGet();
+  for (const k of DEVICE_CONFIG_KEYS) {
+    if (dev[k] !== undefined) s.config[k] = dev[k];
+  }
+  return s;
+};
+
+let state = applyDeviceOverlay(profileStore.loadState(activeProfileId));
 
 const persist = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  profileStore.saveState(activeProfileId, state);
   document.dispatchEvent(new CustomEvent('db:changed'));
+};
+
+// Atualiza config do estado: salva no perfil ativo e tambem espelha chaves
+// device-wide no storage proprio. Use isso em vez de mexer state.config direto.
+const updateConfig = (patch) => {
+  state.config = { ...state.config, ...patch };
+  persist();
+  const devicePatch = {};
+  for (const k of DEVICE_CONFIG_KEYS) {
+    if (k in patch) devicePatch[k] = patch[k];
+  }
+  if (Object.keys(devicePatch).length) deviceConfigUpdate(devicePatch);
+};
+
+// --------------------------- Profiles --------------------------------------
+const switchProfile = (id) => {
+  const meta = profileStore.meta();
+  if (!meta.list.find(p => p.id === id) || id === meta.current) return;
+  meta.current = id;
+  profileStore.setMeta(meta);
+  location.reload();
+};
+
+const createProfile = (name) => {
+  const meta = profileStore.meta();
+  const id = uid();
+  meta.list.push({ id, name });
+  meta.current = id;
+  profileStore.setMeta(meta);
+  profileStore.saveState(id, defaultState());
+  location.reload();
+};
+
+const renameProfile = (id, name) => {
+  const meta = profileStore.meta();
+  const p = meta.list.find(x => x.id === id);
+  if (!p) return;
+  p.name = name;
+  profileStore.setMeta(meta);
+};
+
+const deleteProfileById = (id) => {
+  const meta = profileStore.meta();
+  if (meta.list.length <= 1 || id === meta.current) return;
+  meta.list = meta.list.filter(x => x.id !== id);
+  profileStore.setMeta(meta);
+  profileStore.removeState(id);
+};
+
+const currentProfileName = () => {
+  const meta = profileStore.meta();
+  const p = meta.list.find(x => x.id === meta.current);
+  return p ? p.name : '';
 };
 
 const db = {
@@ -86,10 +201,10 @@ const db = {
   importJSON(json) {
     const parsed = JSON.parse(json);
     if (!parsed || typeof parsed !== 'object') throw new Error('JSON inválido');
-    state = { ...defaultState(), ...parsed };
+    state = applyDeviceOverlay({ ...defaultState(), ...parsed });
     persist();
   },
-  reset() { state = defaultState(); persist(); },
+  reset() { state = applyDeviceOverlay(defaultState()); persist(); },
 };
 
 // --------------------------- Utils -----------------------------------------
@@ -287,6 +402,12 @@ const applyTextSize = (size) => {
   else if (size === 'large') html.classList.add('text-large');
 };
 
+// Atualiza o nome do perfil exibido no chip da topbar.
+const applyProfileChip = () => {
+  const el = document.getElementById('profile-name');
+  if (el) el.textContent = currentProfileName();
+};
+
 // Atualiza o icone de olho na topbar de acordo com o estado atual de
 // state.config.valuesHidden. Chamado no boot e em cada toggle.
 const applyValuesVisibility = () => {
@@ -339,7 +460,11 @@ const exportBackup = () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `financas-backup-${todayISO()}.json`;
+  // Nome do perfil entra no filename pra distinguir backups (financas-pessoal-2026-05-08.json).
+  const slug = currentProfileName().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'perfil';
+  a.download = `financas-${slug}-${todayISO()}.json`;
   a.click();
   URL.revokeObjectURL(url);
   state.lastBackupAt = todayISO();
@@ -1399,6 +1524,31 @@ views.config = (root) => {
       </ul>
     </div>
 
+    ${(() => {
+      const meta = profileStore.meta();
+      return `
+        <div class="card">
+          <h2>Perfis</h2>
+          <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
+            Cada perfil tem dados, categorias e backups separados. Bloqueio
+            biométrico e preferências visuais são compartilhados entre perfis.
+          </p>
+          <ul class="list" style="box-shadow:none;">
+            ${meta.list.map(p => `
+              <li data-pid="${p.id}">
+                <div class="grow">
+                  <div class="t">${escapeHTML(p.name)}${p.id===meta.current?' <span class="tag" style="background:rgba(10,132,255,.15);color:var(--tint);margin-left:6px;">atual</span>':''}</div>
+                </div>
+                <button class="link" data-action="rename-profile">Renomear</button>
+                ${meta.list.length > 1 && p.id !== meta.current ? `<button class="link" data-action="delete-profile" style="color:var(--red);">Excluir</button>` : ''}
+              </li>
+            `).join('')}
+          </ul>
+          <button class="primary" id="add-profile" style="margin-top:12px;">+ Novo perfil</button>
+        </div>
+      `;
+    })()}
+
     <div class="card">
       <h2>Manutenção</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
@@ -1439,8 +1589,7 @@ views.config = (root) => {
   root.querySelectorAll('#theme-picker button').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = btn.dataset.t;
-      state.config = { ...state.config, tema: t };
-      persist();
+      updateConfig({ tema: t });
       applyTheme(t);
       render();
     });
@@ -1449,8 +1598,7 @@ views.config = (root) => {
   root.querySelectorAll('#text-size button').forEach(btn => {
     btn.addEventListener('click', () => {
       const size = btn.dataset.size;
-      state.config = { ...state.config, textSize: size };
-      persist();
+      updateConfig({ textSize: size });
       applyTextSize(size);
       render();
     });
@@ -1459,8 +1607,7 @@ views.config = (root) => {
   const hideToggle = root.querySelector('#f-hide');
   if (hideToggle) {
     hideToggle.addEventListener('change', () => {
-      state.config = { ...state.config, valuesHidden: hideToggle.checked };
-      persist();
+      updateConfig({ valuesHidden: hideToggle.checked });
       applyValuesVisibility();
       render();
     });
@@ -1468,16 +1615,34 @@ views.config = (root) => {
 
   root.querySelector('#force-refresh').addEventListener('click', forceRefresh);
 
-  // Toggles do card "Personalizar dashboard" — sao 4 checkboxes mais o
-  // segmented de tipo (donut/pizza). Chave em state.config; nao precisa
-  // re-render o dashboard agora porque o usuario esta nos Ajustes.
-  const persistConfig = (patch) => {
-    state.config = { ...state.config, ...patch };
-    persist();
-  };
+  // Card "Perfis" — renomear/excluir/criar.
+  root.querySelectorAll('[data-action="rename-profile"]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      const id = e.target.closest('[data-pid]').dataset.pid;
+      sheetRenameProfile(id);
+    });
+  });
+  root.querySelectorAll('[data-action="delete-profile"]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      const id = e.target.closest('[data-pid]').dataset.pid;
+      const meta = profileStore.meta();
+      const p = meta.list.find(x => x.id === id);
+      if (!p) return;
+      if (!confirm(`Excluir o perfil "${p.name}"? Os dados desse perfil serão apagados deste dispositivo.`)) return;
+      deleteProfileById(id);
+      toast('Perfil excluído');
+      render();
+    });
+  });
+  const addProfileBtn = root.querySelector('#add-profile');
+  if (addProfileBtn) addProfileBtn.addEventListener('click', sheetNewProfile);
+
+  // Toggles do card "Personalizar dashboard". updateConfig ja persiste no
+  // perfil + espelha no device-config (chaves dash* estao na lista de
+  // device-wide), mantendo o layout consistente entre perfis.
   const wireToggle = (id, key) => {
     const el = root.querySelector(id);
-    if (el) el.addEventListener('change', () => persistConfig({ [key]: el.checked }));
+    if (el) el.addEventListener('change', () => updateConfig({ [key]: el.checked }));
   };
   wireToggle('#f-dash-compare-show', 'dashCompareShow');
   wireToggle('#f-dash-bars-show',    'dashBarsShow');
@@ -1487,7 +1652,7 @@ views.config = (root) => {
   wireToggle('#f-dash-list-pct',     'dashListPct');
   root.querySelectorAll('#dash-donut-type button').forEach(btn => {
     btn.addEventListener('click', () => {
-      persistConfig({ dashDonutType: btn.dataset.type });
+      updateConfig({ dashDonutType: btn.dataset.type });
       render();
     });
   });
@@ -1518,8 +1683,7 @@ views.config = (root) => {
 
   root.querySelector('#backup-reminder').addEventListener('change', (e) => {
     const n = parseInt(e.target.value, 10) || 0;
-    state.config = { ...state.config, backupReminderDays: n };
-    persist();
+    updateConfig({ backupReminderDays: n });
   });
 
   root.querySelector('#import').addEventListener('click', () => root.querySelector('#import-file').click());
@@ -1818,6 +1982,90 @@ const sheetCategoria = (cat) => {
   });
 };
 
+// --------------------------- Sheets (perfis) --------------------------------
+const sheetProfiles = () => {
+  const meta = profileStore.meta();
+  openSheet('Perfis', () => `
+    <ul class="list" style="margin-bottom:14px;">
+      ${meta.list.map(p => `
+        <li class="profile-row" data-id="${p.id}" style="cursor:pointer;">
+          <div class="grow">
+            <div class="t">${escapeHTML(p.name)}</div>
+          </div>
+          ${p.id===meta.current ? '<span style="color:var(--tint);font-weight:600;">✓</span>' : ''}
+        </li>
+      `).join('')}
+    </ul>
+    <div class="actions">
+      <button class="secondary" id="cancel">Fechar</button>
+      <button class="primary"   id="new-profile">+ Novo perfil</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#cancel').addEventListener('click', closeSheet);
+    body.querySelector('#new-profile').addEventListener('click', () => {
+      closeSheet();
+      sheetNewProfile();
+    });
+    body.querySelectorAll('.profile-row').forEach(li => {
+      li.addEventListener('click', () => {
+        const id = li.dataset.id;
+        if (id !== meta.current) switchProfile(id);  // dispara reload
+      });
+    });
+  });
+};
+
+const sheetNewProfile = () => {
+  openSheet('Novo perfil', () => `
+    <label class="field"><span>Nome</span>
+      <input id="f-pname" type="text" placeholder="Ex.: Empresa, Família, Viagem" required />
+    </label>
+    <p style="color:var(--text-2);font-size:13px;margin:0;">
+      Vai começar vazio com as categorias padrão. Você troca entre perfis a qualquer momento pelo nome no topo.
+    </p>
+    <div class="actions">
+      <button class="secondary" id="cancel">Cancelar</button>
+      <button class="primary"   id="create">Criar</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#cancel').addEventListener('click', closeSheet);
+    const create = () => {
+      const name = body.querySelector('#f-pname').value.trim();
+      if (!name) { alert('Informe um nome.'); return; }
+      createProfile(name);  // dispara reload
+    };
+    body.querySelector('#create').addEventListener('click', create);
+    body.querySelector('#f-pname').focus();
+  });
+};
+
+const sheetRenameProfile = (id) => {
+  const meta = profileStore.meta();
+  const p = meta.list.find(x => x.id === id);
+  if (!p) return;
+  openSheet('Renomear perfil', () => `
+    <label class="field"><span>Nome</span>
+      <input id="f-pname" type="text" value="${escapeAttr(p.name)}" required />
+    </label>
+    <div class="actions">
+      <button class="secondary" id="cancel">Cancelar</button>
+      <button class="primary"   id="save">Salvar</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#cancel').addEventListener('click', closeSheet);
+    body.querySelector('#save').addEventListener('click', () => {
+      const name = body.querySelector('#f-pname').value.trim();
+      if (!name) { alert('Informe um nome.'); return; }
+      renameProfile(id, name);
+      closeSheet();
+      toast('Perfil renomeado');
+      render();
+      applyProfileChip();
+    });
+    body.querySelector('#f-pname').focus();
+  });
+};
+
 // --------------------------- Sheets (detalhes) ------------------------------
 // Mostra os dados completos de uma despesa quando o usuario toca na linha,
 // inclusive descricoes longas que ficam truncadas na lista. Aceita tanto o
@@ -2008,11 +2256,13 @@ document.getElementById('quick-add').addEventListener('click', () => {
   else sheetDespesa(); // default no dashboard / config
 });
 
+// Chip do perfil na topbar: abre a sheet de troca/criacao.
+document.getElementById('profile-chip').addEventListener('click', sheetProfiles);
+
 // Olho na topbar: alterna a flag global, atualiza icone e re-renderiza para
 // que todos os fmtBRL na tela ja saiam mascarados/desmascarados.
 document.getElementById('toggle-values').addEventListener('click', () => {
-  state.config = { ...state.config, valuesHidden: !state.config.valuesHidden };
-  persist();
+  updateConfig({ valuesHidden: !state.config.valuesHidden });
   applyValuesVisibility();
   render();
 });
@@ -2021,6 +2271,7 @@ document.getElementById('toggle-values').addEventListener('click', () => {
 const initApp = () => {
   applyTextSize(state.config.textSize);
   applyValuesVisibility();
+  applyProfileChip();
   const initial = location.hash.replace('#/', '') || 'dashboard';
   if (!location.hash) location.hash = '#/dashboard';
   setTab(initial);
