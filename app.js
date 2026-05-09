@@ -304,6 +304,123 @@ const exportBackup = () => {
   toast('Backup exportado');
 };
 
+// --------------------------- Lock (WebAuthn) -------------------------------
+// Bloqueio de tela usando o desbloqueio nativo do dispositivo (Face ID, Touch
+// ID, digital, PIN). Implementado via WebAuthn como passkey local — chave
+// privada fica guardada pelo proprio aparelho. Sem servidor: nao "verificamos"
+// criptograficamente a assertiva, o que protege eh o SO ter validado a
+// biometria antes de devolver a resposta. Storage separado do state pra nao
+// vazar pro backup/import (a credencial eh especifica deste aparelho).
+const LOCK_KEY = 'financas:lock:v1';
+const lockStore = {
+  get() {
+    try { return JSON.parse(localStorage.getItem(LOCK_KEY)) || {}; }
+    catch { return {}; }
+  },
+  set(v) { localStorage.setItem(LOCK_KEY, JSON.stringify(v)); },
+  clear() { localStorage.removeItem(LOCK_KEY); },
+};
+
+const lockSupported = () =>
+  !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+
+const lockEnabled = () => {
+  const s = lockStore.get();
+  return !!(s.enabled && s.credentialId);
+};
+
+const b64encode = (buf) => {
+  let s = '';
+  for (const b of new Uint8Array(buf)) s += String.fromCharCode(b);
+  return btoa(s);
+};
+const b64decode = (str) => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+const randBytes = (n) => { const b = new Uint8Array(n); crypto.getRandomValues(b); return b; };
+
+const lockRegister = async () => {
+  const cred = await navigator.credentials.create({
+    publicKey: {
+      challenge: randBytes(32),
+      rp: { name: 'Finanças' },
+      user: {
+        id: randBytes(16),
+        name: 'financas-local',
+        displayName: 'Finanças (este aparelho)',
+      },
+      pubKeyCredParams: [
+        { type: 'public-key', alg: -7 },    // ES256
+        { type: 'public-key', alg: -257 },  // RS256
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+        residentKey: 'preferred',
+      },
+      timeout: 60000,
+    },
+  });
+  if (!cred) throw new Error('Não foi possível registrar.');
+  return b64encode(cred.rawId);
+};
+
+const lockVerify = async (credentialIdB64) => {
+  const result = await navigator.credentials.get({
+    publicKey: {
+      challenge: randBytes(32),
+      allowCredentials: [{ type: 'public-key', id: b64decode(credentialIdB64) }],
+      userVerification: 'required',
+      timeout: 60000,
+    },
+  });
+  return !!result;
+};
+
+// Tela cheia bloqueando o app ate o usuario passar pela biometria nativa.
+// onUnlock eh chamado quando a verificacao retorna sucesso.
+const showLockScreen = (onUnlock) => {
+  const wrap = document.createElement('div');
+  wrap.id = 'lock-screen';
+  wrap.innerHTML = `
+    <div class="lock-content">
+      <span class="lock-ico">🔒</span>
+      <h2>Finanças</h2>
+      <p class="lock-msg">Desbloqueie para ver seus dados.</p>
+      <button class="primary" id="unlock-btn">Desbloquear</button>
+      <p class="lock-error" id="lock-error" hidden></p>
+      <button class="link" id="lock-wipe">Apagar todos os dados</button>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  const btn = wrap.querySelector('#unlock-btn');
+  const errEl = wrap.querySelector('#lock-error');
+
+  const tryUnlock = async () => {
+    errEl.hidden = true;
+    btn.disabled = true;
+    try {
+      const ok = await lockVerify(lockStore.get().credentialId);
+      if (ok) { wrap.remove(); onUnlock(); return; }
+      errEl.textContent = 'Não foi possível desbloquear. Tente novamente.';
+      errEl.hidden = false;
+    } catch (err) {
+      errEl.textContent = 'Falha ao desbloquear. Toque em Desbloquear pra tentar novamente.';
+      errEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  btn.addEventListener('click', tryUnlock);
+
+  wrap.querySelector('#lock-wipe').addEventListener('click', () => {
+    if (!confirm('Apagar TODOS os dados deste dispositivo? Esta ação não pode ser desfeita.')) return;
+    if (!confirm('Última chance — confirma APAGAR TUDO?')) return;
+    db.reset();
+    lockStore.clear();
+    location.reload();
+  });
+};
+
 // --------------------------- Period state ----------------------------------
 const period = {
   type: 'month',
@@ -1054,6 +1171,24 @@ views.config = (root) => {
     </div>
 
     <div class="card">
+      <h2>Privacidade</h2>
+      ${lockSupported() ? `
+        <div class="checkbox-row">
+          <input id="f-lock" type="checkbox" ${lockEnabled() ? 'checked' : ''}/>
+          <label for="f-lock">Exigir biometria/PIN ao abrir o app</label>
+        </div>
+        <p style="color:var(--text-2);font-size:13px;margin:8px 2px 0;">
+          Usa o desbloqueio nativo do dispositivo (Face ID, Touch ID, digital ou PIN).
+          Nenhum dado sai daqui.
+        </p>
+      ` : `
+        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 0;">
+          Este navegador não suporta biometria via WebAuthn.
+        </p>
+      `}
+    </div>
+
+    <div class="card">
       <h2>Backup</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
         Os dados ficam apenas neste dispositivo. Faça backup regularmente
@@ -1124,6 +1259,25 @@ views.config = (root) => {
       render();
     });
   });
+
+  const lockToggle = root.querySelector('#f-lock');
+  if (lockToggle) {
+    lockToggle.addEventListener('change', async () => {
+      if (lockToggle.checked) {
+        try {
+          const credId = await lockRegister();
+          lockStore.set({ enabled: true, credentialId: credId });
+          toast('Bloqueio ativado');
+        } catch (err) {
+          lockToggle.checked = false;
+          alert('Não foi possível ativar o bloqueio: ' + (err.message || err));
+        }
+      } else {
+        lockStore.clear();
+        toast('Bloqueio desativado');
+      }
+    });
+  }
 
   root.querySelector('#export').addEventListener('click', () => {
     exportBackup();
@@ -1616,6 +1770,14 @@ document.getElementById('quick-add').addEventListener('click', () => {
 });
 
 // Init
-const initial = location.hash.replace('#/', '') || 'dashboard';
-if (!location.hash) location.hash = '#/dashboard';
-setTab(initial);
+const initApp = () => {
+  const initial = location.hash.replace('#/', '') || 'dashboard';
+  if (!location.hash) location.hash = '#/dashboard';
+  setTab(initial);
+};
+
+if (lockEnabled() && lockSupported()) {
+  showLockScreen(initApp);
+} else {
+  initApp();
+}

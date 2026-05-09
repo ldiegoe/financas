@@ -424,6 +424,46 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .tags-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tags-row .tag { margin-left: 0; }
 
+/* Tela de bloqueio (WebAuthn). Cobre tudo no boot ate o usuario passar pela
+   biometria nativa. z-index acima de tudo (sheets, fab, toast). */
+#lock-screen {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--safe-top) 24px var(--safe-bottom);
+}
+#lock-screen .lock-content {
+  text-align: center;
+  max-width: 320px;
+  width: 100%;
+}
+#lock-screen .lock-ico {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 14px;
+}
+#lock-screen h2 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -.4px;
+  color: var(--text);
+  text-transform: none;
+}
+#lock-screen .lock-msg {
+  color: var(--text-2);
+  margin: 0 0 24px;
+  font-size: 15px;
+}
+#lock-screen .primary { width: 100%; }
+#lock-screen .lock-error {
+  color: var(--red);
+  font-size: 14px;
+  margin: 16px 0 0;
+}
+#lock-screen #lock-wipe { margin-top: 28px; color: var(--text-2); }
+
 /* Lista chave-valor usada nos sheets de detalhes (despesa/receita). */
 .details-list { list-style: none; margin: 0; padding: 0; }
 .details-list li {
