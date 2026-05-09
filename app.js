@@ -696,32 +696,51 @@ views.dashboard = (root) => {
       <div class="chart-wrap"><canvas id="ch-bars"></canvas></div>
     </div>
 
-    <div class="card">
-      <h2>Despesas por categoria</h2>
-      ${catData.length === 0
-        ? `<div class="empty"><span class="ico">📭</span>Sem despesas no período.</div>`
-        : `<div class="chart-wrap donut"><canvas id="ch-donut"></canvas></div>
-           <ul class="list" style="margin-top:12px;">
-             ${catData.map(c => {
-                const pctTotal = totalDespesa > 0 ? Math.round((c.valor / totalDespesa) * 100) : 0;
-                const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
-                const cls = !c.meta ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
-                return `
-                  <li>
-                    <span class="swatch" style="background:${c.cor}"></span>
-                    <div class="grow">
-                      <div class="t">${escapeHTML(c.nome)}</div>
-                      ${c.meta ? `
-                        <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
-                        <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
-                      ` : `<div class="s">${fmtBRL(c.valor)}</div>`}
-                    </div>
-                    <div class="amount">${pctTotal}%</div>
-                  </li>`;
-             }).join('')}
-           </ul>`
+    ${(() => {
+      // Card "Despesas por categoria" eh montado conforme as preferencias do
+      // usuario: pode mostrar grafico, lista, ambos ou nenhum. Se ambos
+      // estiverem desligados, o card inteiro some.
+      const showDonut = state.config.dashDonutShow !== false;
+      const showList  = state.config.dashListShow  !== false;
+      const showListPct = state.config.dashListPct !== false;
+      if (!showDonut && !showList) return '';
+      if (catData.length === 0) {
+        return `
+          <div class="card">
+            <h2>Despesas por categoria</h2>
+            <div class="empty"><span class="ico">📭</span>Sem despesas no período.</div>
+          </div>`;
       }
-    </div>
+      const donutHTML = showDonut
+        ? `<div class="chart-wrap donut"><canvas id="ch-donut"></canvas></div>`
+        : '';
+      const listHTML = showList ? `
+        <ul class="list" style="margin-top:${showDonut?'12px':'0'};">
+          ${catData.map(c => {
+            const pctTotal = totalDespesa > 0 ? Math.round((c.valor / totalDespesa) * 100) : 0;
+            const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
+            const cls = !c.meta ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
+            return `
+              <li>
+                <span class="swatch" style="background:${c.cor}"></span>
+                <div class="grow">
+                  <div class="t">${escapeHTML(c.nome)}</div>
+                  ${c.meta ? `
+                    <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
+                    <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
+                  ` : `<div class="s">${fmtBRL(c.valor)}</div>`}
+                </div>
+                ${showListPct ? `<div class="amount">${pctTotal}%</div>` : ''}
+              </li>`;
+          }).join('')}
+        </ul>` : '';
+      return `
+        <div class="card">
+          <h2>Despesas por categoria</h2>
+          ${donutHTML}
+          ${listHTML}
+        </div>`;
+    })()}
   `;
 
   // Listeners de filtro
@@ -763,14 +782,12 @@ views.dashboard = (root) => {
       options: chartOpts(),
     });
 
-    if (catData.length > 0) {
-      // Sem legenda do Chart.js — com muitas categorias ela ocupava 3-4 linhas
-      // e esmagava o donut. A porcentagem por categoria agora vive na lista
-      // logo abaixo do grafico, junto com o valor.
+    if (catData.length > 0 && root.querySelector('#ch-donut')) {
+      const isPie = state.config.dashDonutType === 'pie';
       const donutOptions = {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '62%',
+        cutout: isPie ? 0 : '62%',
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -784,7 +801,30 @@ views.dashboard = (root) => {
           },
         },
       };
-      new Chart(root.querySelector('#ch-donut'), {
+      // Plugin opcional: desenha "23%" centralizado em cada fatia. Ativado pelo
+      // toggle em Ajustes — pula fatias < 6% pra nao poluir.
+      const inSlicePctPlugin = {
+        id: 'donutPct',
+        afterDatasetsDraw(chart) {
+          const { ctx } = chart;
+          const data = chart.data.datasets[0].data;
+          const total = data.reduce((a, b) => a + b, 0);
+          if (total === 0) return;
+          chart.getDatasetMeta(0).data.forEach((arc, i) => {
+            const pct = (data[i] / total) * 100;
+            if (pct < 6) return;
+            const { x, y } = arc.tooltipPosition();
+            ctx.save();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 12px -apple-system, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${pct.toFixed(0)}%`, x, y);
+            ctx.restore();
+          });
+        },
+      };
+      const chartConfig = {
         type: 'doughnut',
         data: {
           labels: catData.map(c => c.nome),
@@ -795,7 +835,9 @@ views.dashboard = (root) => {
           }],
         },
         options: donutOptions,
-      });
+      };
+      if (state.config.dashDonutInnerPct) chartConfig.plugins = [inSlicePctPlugin];
+      new Chart(root.querySelector('#ch-donut'), chartConfig);
     }
   }
 };
@@ -1245,6 +1287,42 @@ views.config = (root) => {
     </div>
 
     <div class="card">
+      <h2>Personalizar dashboard</h2>
+      <p style="color:var(--text-2);font-size:14px;margin:6px 0 14px;">
+        Configure como o gráfico e a lista de "Despesas por categoria" aparecem.
+      </p>
+
+      <div class="checkbox-row">
+        <input id="f-dash-donut-show" type="checkbox" ${state.config.dashDonutShow!==false?'checked':''}/>
+        <label for="f-dash-donut-show">Exibir gráfico</label>
+      </div>
+
+      <label class="field" style="margin:10px 0 0;">
+        <span>Tipo do gráfico</span>
+        <div class="segmented" id="dash-donut-type">
+          <button data-type="donut" class="${(state.config.dashDonutType||'donut')==='donut'?'active':''}">Donut</button>
+          <button data-type="pie"   class="${state.config.dashDonutType==='pie'?'active':''}">Pizza</button>
+        </div>
+      </label>
+
+      <div class="checkbox-row" style="margin-top:14px;">
+        <input id="f-dash-donut-inner" type="checkbox" ${state.config.dashDonutInnerPct?'checked':''}/>
+        <label for="f-dash-donut-inner">Mostrar % dentro das fatias</label>
+      </div>
+
+      <div style="border-top:1px solid var(--separator);margin-top:14px;padding-top:14px;">
+        <div class="checkbox-row">
+          <input id="f-dash-list-show" type="checkbox" ${state.config.dashListShow!==false?'checked':''}/>
+          <label for="f-dash-list-show">Exibir lista de categorias</label>
+        </div>
+        <div class="checkbox-row">
+          <input id="f-dash-list-pct" type="checkbox" ${state.config.dashListPct!==false?'checked':''}/>
+          <label for="f-dash-list-pct">Mostrar % na lista</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Backup</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
         Os dados ficam apenas neste dispositivo. Faça backup regularmente
@@ -1365,6 +1443,28 @@ views.config = (root) => {
   }
 
   root.querySelector('#force-refresh').addEventListener('click', forceRefresh);
+
+  // Toggles do card "Personalizar dashboard" — sao 4 checkboxes mais o
+  // segmented de tipo (donut/pizza). Chave em state.config; nao precisa
+  // re-render o dashboard agora porque o usuario esta nos Ajustes.
+  const persistConfig = (patch) => {
+    state.config = { ...state.config, ...patch };
+    persist();
+  };
+  const wireToggle = (id, key) => {
+    const el = root.querySelector(id);
+    if (el) el.addEventListener('change', () => persistConfig({ [key]: el.checked }));
+  };
+  wireToggle('#f-dash-donut-show',  'dashDonutShow');
+  wireToggle('#f-dash-donut-inner', 'dashDonutInnerPct');
+  wireToggle('#f-dash-list-show',   'dashListShow');
+  wireToggle('#f-dash-list-pct',    'dashListPct');
+  root.querySelectorAll('#dash-donut-type button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      persistConfig({ dashDonutType: btn.dataset.type });
+      render();
+    });
+  });
 
   const lockToggle = root.querySelector('#f-lock');
   if (lockToggle) {
