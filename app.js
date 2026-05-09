@@ -514,16 +514,6 @@ const views = {};
 
 // ----- Dashboard -----
 views.dashboard = (root) => {
-  const filterChips = `
-    <div class="filter-bar" id="filter-type">
-      <button class="chip ${period.type==='month'?'active':''}"   data-type="month">Mês</button>
-      <button class="chip ${period.type==='quarter'?'active':''}" data-type="quarter">Trimestre</button>
-      <button class="chip ${period.type==='semester'?'active':''}"data-type="semester">Semestre</button>
-      <button class="chip ${period.type==='year'?'active':''}"    data-type="year">Ano</button>
-    </div>
-    <div class="filter-bar" id="filter-value">${valueChips()}</div>
-  `;
-
   const rendasPeriod   = expandWithRecurring(state.rendas, period);
   const despesasPeriod = expandWithRecurring(state.despesas, period);
   const totalRenda    = sumAmount(rendasPeriod);
@@ -631,17 +621,7 @@ views.dashboard = (root) => {
 
   root.innerHTML = `
     ${backupBanner}
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <h2>Período</h2>
-        <div style="font-size:18px;font-weight:600;">${periodLabel()}</div>
-      </div>
-      <button class="link" id="prev-year">${period.year - 1}</button>
-      <span style="font-weight:600;">${period.year}</span>
-      <button class="link" id="next-year">${period.year + 1}</button>
-    </div>
-
-    ${filterChips}
+    ${periodHeader()}
 
     <div class="row-cards">
       <div class="card">
@@ -753,27 +733,7 @@ views.dashboard = (root) => {
     })()}
   `;
 
-  // Listeners de filtro
-  root.querySelectorAll('#filter-type .chip').forEach(b => {
-    b.addEventListener('click', () => {
-      period.type = b.dataset.type;
-      // ao mudar tipo, ajusta valor padrão
-      const today = new Date();
-      if (period.type === 'month')    period.value = today.getMonth() + 1;
-      if (period.type === 'quarter')  period.value = Math.floor(today.getMonth()/3) + 1;
-      if (period.type === 'semester') period.value = today.getMonth() <= 5 ? 1 : 2;
-      if (period.type === 'year')     period.value = null;
-      render();
-    });
-  });
-  root.querySelectorAll('#filter-value .chip').forEach(b => {
-    b.addEventListener('click', () => {
-      period.value = parseInt(b.dataset.value, 10);
-      render();
-    });
-  });
-  root.querySelector('#prev-year').addEventListener('click', () => { period.year--; render(); });
-  root.querySelector('#next-year').addEventListener('click', () => { period.year++; render(); });
+  bindPeriodHeader(root);
 
   const bannerBtn = root.querySelector('#banner-backup');
   if (bannerBtn) bannerBtn.addEventListener('click', () => { exportBackup(); render(); });
@@ -1460,7 +1420,7 @@ views.config = (root) => {
       <h2>Sobre</h2>
       <p style="margin:4px 0 4px;font-weight:600;font-size:16px;">Finanças PWA</p>
       <p style="color:var(--text-2);font-size:14px;margin:0 0 12px;">
-        Feito em vanilla JS, sem servidor — todos os dados ficam neste aparelho.
+        Sem servidor — todos os dados ficam neste aparelho.
       </p>
       <ul class="list" style="box-shadow:none;">
         <li><div class="grow">Versão</div><div class="amount">${APP_VERSION}</div></li>
@@ -1473,10 +1433,6 @@ views.config = (root) => {
           return `<li><div class="grow">Em uso há</div><div class="amount">${days === 0 ? 'hoje' : days === 1 ? '1 dia' : `${days} dias`}</div></li>`;
         })()}
       </ul>
-      <a href="https://github.com/ldiegoe/financas" target="_blank" rel="noopener"
-         style="display:inline-block;margin-top:12px;color:var(--tint);text-decoration:none;font-weight:500;">
-        Ver código no GitHub →
-      </a>
     </div>
   `;
 
@@ -1591,22 +1547,29 @@ views.config = (root) => {
 };
 
 // --------------------------- Period header (shared) -------------------------
+// Cabecalho usado em Dashboard, Carteira e Despesas. Layout:
+//   - Titulo do periodo grande e centralizado (foco visual)
+//   - Stepper de ano sutil logo abaixo (pula pro ano anterior/proximo)
+//   - Segmented com tipo (Mes/Tri/Sem/Ano)
+//   - Chips horizontais com o valor do periodo (Jan/Fev/... ou 1Tri/2Tri/...)
 const periodHeader = () => `
-  <div class="filter-bar" id="filter-type">
-    <button class="chip ${period.type==='month'?'active':''}"   data-type="month">Mês</button>
-    <button class="chip ${period.type==='quarter'?'active':''}" data-type="quarter">Trimestre</button>
-    <button class="chip ${period.type==='semester'?'active':''}"data-type="semester">Semestre</button>
-    <button class="chip ${period.type==='year'?'active':''}"    data-type="year">Ano</button>
+  <div class="period-head">
+    <div class="period-title">${periodLabel()}</div>
+    <div class="period-year-stepper">
+      <button class="link" id="prev-year">‹ ${period.year - 1}</button>
+      <button class="link" id="next-year">${period.year + 1} ›</button>
+    </div>
+  </div>
+  <div class="segmented period-type" id="filter-type">
+    <button data-type="month"    class="${period.type==='month'?'active':''}">Mês</button>
+    <button data-type="quarter"  class="${period.type==='quarter'?'active':''}">Trimestre</button>
+    <button data-type="semester" class="${period.type==='semester'?'active':''}">Semestre</button>
+    <button data-type="year"     class="${period.type==='year'?'active':''}">Ano</button>
   </div>
   <div class="filter-bar" id="filter-value">${valueChips()}</div>
-  <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px;">
-    <button class="link" id="prev-year">‹ ${period.year - 1}</button>
-    <strong>${periodLabel()}</strong>
-    <button class="link" id="next-year">${period.year + 1} ›</button>
-  </div>
 `;
 const bindPeriodHeader = (root) => {
-  root.querySelectorAll('#filter-type .chip').forEach(b => {
+  root.querySelectorAll('#filter-type button').forEach(b => {
     b.addEventListener('click', () => {
       period.type = b.dataset.type;
       const today = new Date();
