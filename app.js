@@ -1091,20 +1091,20 @@ views.dashboard = (root) => {
     ${backupBanner}
     ${periodHeader()}
 
-    <div class="row-cards">
-      <div class="card">
-        <h2>Receitas</h2>
-        <div class="big positive">${fmtBRL(totalRenda)}</div>
+    <div class="card summary-card">
+      <div class="summary-row">
+        <span class="summary-label">Receitas</span>
+        <span class="summary-value positive">${fmtBRL(totalRenda)}</span>
       </div>
-      <div class="card">
-        <h2>Despesas</h2>
-        <div class="big negative">${fmtBRL(totalDespesa)}</div>
+      <div class="summary-row">
+        <span class="summary-label">Despesas</span>
+        <span class="summary-value negative">${fmtBRL(totalDespesa)}</span>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>Saldo</h2>
-      <div class="big ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</div>
+      <div class="summary-divider"></div>
+      <div class="summary-row summary-row-main">
+        <span class="summary-label">Saldo</span>
+        <span class="summary-value ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</span>
+      </div>
     </div>
 
     ${state.config.dashCompareShow !== false ? `

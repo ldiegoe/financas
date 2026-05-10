@@ -232,14 +232,25 @@ main#view {
 .card .big.negative { color: var(--red); }
 .card .big.positive { color: var(--green); }
 
-/* No celular, cada card de valor ocupa uma linha — números grandes
-   tipo "R$ 12.345,67" cabem sem truncar. Em telas largas (tablet/
-   desktop), receitas e despesas voltam a ficar lado a lado. */
-.row-cards { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 16px; }
-.row-cards .card { margin-bottom: 0; }
-@media (min-width: 600px) {
-  .row-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+/* Card unico no topo do dashboard com Receitas, Despesas e Saldo. Linha
+   por metrica + divisoria e linha "Saldo" levemente maior pra hierarquia. */
+.summary-card { padding: 14px 16px; }
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  font-variant-numeric: tabular-nums;
 }
+.summary-label { color: var(--text-2); font-size: 14px; font-weight: 500; }
+.summary-value { font-size: 18px; font-weight: 600; word-break: break-all; text-align: right; }
+.summary-value.positive { color: var(--green); }
+.summary-value.negative { color: var(--red); }
+.summary-divider { height: 1px; background: var(--separator); margin: 4px 0; }
+.summary-row-main { padding-top: 8px; }
+.summary-row-main .summary-label { color: var(--text); font-weight: 600; font-size: 15px; }
+.summary-row-main .summary-value { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
 
 .list { list-style: none; margin: 0; padding: 0; background: var(--bg-elev); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
 .list > li { display: flex; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--separator); gap: 12px; }
