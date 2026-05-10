@@ -2793,13 +2793,16 @@ const setTab = (name) => {
 
 const render = (opts = {}) => {
   const root = document.getElementById('view');
-  if (!opts.preserveScroll) root.scrollTop = 0;
-  // Em re-renders leves (toggle de collapse) pula a animacao de fade-in dos
-  // cards pra nao gerar pisca-pisca em interacoes rapidas. Pra carga normal
-  // (navegacao de aba), os cards entram com fade suave.
+  // Renders leves (preserveScroll, ex: toggle de collapse) marcam o container
+  // com .no-anim ANTES do innerHTML pra os cards novos nao animarem. A flag
+  // fica ativa ate o proximo render "fresh" (navegacao de aba) — alternar
+  // entre none e cardFadeIn no mesmo frame causa pisca-pisca, entao soh
+  // removemos a flag quando intencionalmente queremos animar de novo.
   if (opts.preserveScroll) {
     root.classList.add('no-anim');
-    requestAnimationFrame(() => root.classList.remove('no-anim'));
+  } else {
+    root.scrollTop = 0;
+    root.classList.remove('no-anim');
   }
   views[currentTab](root);
   applyAlertBadge();
