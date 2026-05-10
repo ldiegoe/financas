@@ -401,6 +401,123 @@ const applyTheme = (tema) => {
   }
 };
 
+// --------------------------- Alertas / Notificacoes ------------------------
+// Computa alertas ativos sobre o estado atual:
+//   - Meta de categoria perto (>=80%) ou estourada (>=100%)
+//   - Saldo do mes baixo (<10% da renda) ou negativo
+//   - Lancamentos previstos pros proximos 7 dias
+// Cada alerta tem um id estavel — quando o usuario dispensa, o id vai pro
+// state.dismissedAlerts e nao reaparece. Se a condicao mudar de severidade
+// (ex: warn → over), o id muda e um novo alerta surge.
+const isoToDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+const computeAlerts = () => {
+  const alerts = [];
+  const now = new Date();
+  const cur = { type: 'month', year: now.getFullYear(), value: now.getMonth() + 1 };
+  const periodKey = `${cur.year}-${String(cur.value).padStart(2,'0')}`;
+
+  const monthDespesas = expandWithRecurring(state.despesas, cur);
+  const monthRendas   = expandWithRecurring(state.rendas, cur);
+  const totalDesp  = sumAmount(monthDespesas);
+  const totalRenda = sumAmount(monthRendas);
+
+  // Meta de categoria
+  const gastoPorCat = new Map();
+  for (const d of monthDespesas) {
+    if (!d.categoriaId) continue;
+    gastoPorCat.set(d.categoriaId, (gastoPorCat.get(d.categoriaId) || 0) + (d.valor || 0));
+  }
+  for (const c of state.categorias) {
+    if (!c.meta) continue;
+    const gasto = gastoPorCat.get(c.id) || 0;
+    const pct = (gasto / c.meta) * 100;
+    if (pct >= 100) {
+      alerts.push({
+        id: `meta:${c.id}:${periodKey}:over`, severity: 'red',
+        title: `${c.nome} estourou a meta`,
+        message: `${fmtBRL(gasto)} de ${fmtBRL(c.meta)} (${Math.round(pct)}%)`,
+        tab: 'despesas',
+      });
+    } else if (pct >= 80) {
+      alerts.push({
+        id: `meta:${c.id}:${periodKey}:warn`, severity: 'orange',
+        title: `${c.nome} perto da meta`,
+        message: `${fmtBRL(gasto)} de ${fmtBRL(c.meta)} (${Math.round(pct)}%)`,
+        tab: 'despesas',
+      });
+    }
+  }
+
+  // Saldo do mes
+  const saldo = totalRenda - totalDesp;
+  if (saldo < 0) {
+    alerts.push({
+      id: `saldo:${periodKey}:negative`, severity: 'red',
+      title: 'Saldo do mês ficou negativo',
+      message: `Saldo atual: ${fmtBRL(saldo)}`,
+      tab: 'dashboard',
+    });
+  } else if (totalRenda > 0 && saldo < totalRenda * 0.1) {
+    alerts.push({
+      id: `saldo:${periodKey}:low`, severity: 'orange',
+      title: 'Saldo do mês está baixo',
+      message: `Saldo atual: ${fmtBRL(saldo)}`,
+      tab: 'dashboard',
+    });
+  }
+
+  // Lancamentos vencendo nos proximos 7 dias — escaneia mes corrente + proximo
+  // (cobre virada) e filtra ocorrencias na janela.
+  const today = new Date(now); today.setHours(0,0,0,0);
+  const limit = new Date(today); limit.setDate(today.getDate() + 7);
+  const nextMonthDate = new Date(today); nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+  const nextPeriod = { type: 'month', year: nextMonthDate.getFullYear(), value: nextMonthDate.getMonth() + 1 };
+  const allUpcoming = [...monthDespesas, ...expandWithRecurring(state.despesas, nextPeriod)];
+  let upcomingCount = 0, upcomingTotal = 0;
+  for (const d of allUpcoming) {
+    const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
+    if (dt >= today && dt <= limit) {
+      upcomingCount++;
+      upcomingTotal += d.valor || 0;
+    }
+  }
+  if (upcomingCount > 0) {
+    alerts.push({
+      id: `upcoming:${todayISO()}`, severity: 'blue',
+      title: `${upcomingCount} lançamento${upcomingCount > 1 ? 's' : ''} nos próximos 7 dias`,
+      message: `Total previsto: ${fmtBRL(upcomingTotal)}`,
+      tab: 'despesas',
+    });
+  }
+
+  const order = { red: 0, orange: 1, blue: 2 };
+  alerts.sort((a, b) => order[a.severity] - order[b.severity]);
+  return alerts;
+};
+
+const activeAlerts = () => {
+  const dismissed = state.dismissedAlerts || {};
+  return computeAlerts().filter(a => !dismissed[a.id]);
+};
+
+const dismissAlert = (id) => {
+  state.dismissedAlerts = { ...(state.dismissedAlerts || {}), [id]: true };
+  persist();
+};
+
+const applyAlertBadge = () => {
+  const btn = document.getElementById('alerts-btn');
+  if (!btn) return;
+  const badge = btn.querySelector('.badge');
+  const count = activeAlerts().length;
+  if (badge) badge.hidden = count === 0;
+  btn.setAttribute('aria-label', count > 0 ? `${count} notificações` : 'Notificações');
+};
+
 // 'small' | 'normal' (padrão) | 'large'. Aplica via classe no html — CSS usa
 // `zoom` pra escalar tudo de forma uniforme.
 const applyTextSize = (size) => {
@@ -2033,6 +2150,58 @@ const sheetCategoria = (cat) => {
   });
 };
 
+// --------------------------- Sheets (notificacoes) --------------------------
+const sheetAlerts = () => {
+  const renderBody = (body) => {
+    const alerts = activeAlerts();
+    if (alerts.length === 0) {
+      body.innerHTML = `
+        <div class="empty"><span class="ico">🎉</span>Sem notificações.</div>
+        <div class="actions" style="margin-top:14px;">
+          <button class="secondary" id="close-sheet" style="flex:1;">Fechar</button>
+        </div>`;
+      body.querySelector('#close-sheet').addEventListener('click', closeSheet);
+      return;
+    }
+    body.innerHTML = `
+      <ul class="alert-list">
+        ${alerts.map(a => `
+          <li class="alert-item alert-${a.severity}" data-id="${escapeAttr(a.id)}">
+            <div class="grow">
+              <div class="t">${escapeHTML(a.title)}</div>
+              <div class="s">${escapeHTML(a.message)}</div>
+            </div>
+            <div class="alert-actions">
+              ${a.tab ? `<button class="link" data-action="goto" data-tab="${a.tab}">Ver</button>` : ''}
+              <button class="alert-close" data-action="dismiss" aria-label="Dispensar">✕</button>
+            </div>
+          </li>`).join('')}
+      </ul>
+      <div class="actions" style="margin-top:14px;">
+        <button class="secondary" id="close-sheet" style="flex:1;">Fechar</button>
+      </div>`;
+    body.querySelector('#close-sheet').addEventListener('click', closeSheet);
+    body.querySelectorAll('[data-action="goto"]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        const tab = e.target.dataset.tab;
+        closeSheet();
+        location.hash = '#/' + tab;
+      });
+    });
+    body.querySelectorAll('[data-action="dismiss"]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        const li = e.target.closest('[data-id]');
+        dismissAlert(li.dataset.id);
+        applyAlertBadge();
+        // Re-renderiza o conteudo no lugar pra o usuario ver lista atualizada
+        // sem fechar e abrir de novo.
+        renderBody(body);
+      });
+    });
+  };
+  openSheet('Notificações', () => '', renderBody);
+};
+
 // --------------------------- Sheets (perfis) --------------------------------
 const sheetProfiles = () => {
   const meta = profileStore.meta();
@@ -2287,6 +2456,7 @@ const render = () => {
   const root = document.getElementById('view');
   root.scrollTop = 0;
   views[currentTab](root);
+  applyAlertBadge();
 };
 
 window.addEventListener('hashchange', () => {
@@ -2307,6 +2477,9 @@ document.getElementById('quick-add').addEventListener('click', () => {
   else sheetDespesa(); // default no dashboard / config
 });
 
+// Sino na topbar: abre a sheet de notificacoes.
+document.getElementById('alerts-btn').addEventListener('click', sheetAlerts);
+
 // Chip do perfil na topbar: abre a sheet de troca/criacao.
 document.getElementById('profile-chip').addEventListener('click', sheetProfiles);
 
@@ -2323,6 +2496,7 @@ const initApp = () => {
   applyTextSize(state.config.textSize);
   applyValuesVisibility();
   applyProfileChip();
+  applyAlertBadge();
   const initial = location.hash.replace('#/', '') || 'dashboard';
   if (!location.hash) location.hash = '#/dashboard';
   setTab(initial);

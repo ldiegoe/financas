@@ -92,6 +92,50 @@ body {
   transform-origin: center;
   border-radius: 2px;
 }
+/* Bolinha vermelha indicando notificacoes nao lidas no botao do sino. */
+.icon-btn-ghost .badge {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2px solid var(--bg);
+  pointer-events: none;
+  box-sizing: content-box;
+}
+
+/* Lista de notificacoes na sheet — borda colorida a esquerda indica
+   severidade (vermelho urgent, laranja atencao, azul informativo). */
+.alert-list { list-style: none; margin: 0; padding: 0; }
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--separator);
+  border-left: 3px solid transparent;
+  background: var(--bg-elev);
+}
+.alert-item:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.alert-item:last-child { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+.alert-item.alert-red    { border-left-color: var(--red); }
+.alert-item.alert-orange { border-left-color: var(--orange); }
+.alert-item.alert-blue   { border-left-color: var(--tint); }
+.alert-item .grow { flex: 1; min-width: 0; }
+.alert-item .t { font-weight: 600; }
+.alert-item .s { color: var(--text-2); font-size: 13px; margin-top: 2px; }
+.alert-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.alert-close {
+  appearance: none; border: 0;
+  background: transparent;
+  color: var(--text-2);
+  width: 28px; height: 28px;
+  border-radius: 14px;
+  font-size: 16px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.alert-close:active { background: var(--separator); }
 
 /* Tamanho do texto: zoom uniforme aplicado no <html>. Tres niveis (pequeno,
    padrao, grande). normal nao tem classe — fica no zoom default 1. */
