@@ -77,10 +77,24 @@ let activeProfileId = _profilesMeta.current;
 // perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
-  'dashCompareShow','dashBarsShow','dashDonutShow','dashDonutType',
-  'dashDonutInnerPct','dashListShow','dashListPct','dashTagShow',
-  'dashCollapsed',
+  'dashCompareShow','dashBarsShow','dashTagShow','dashCollapsed',
+  // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
+  'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
+  // Por grafico (categoria)
+  'dashCatDonutShow','dashCatDonutType','dashCatDonutInnerPct','dashCatListShow','dashCatListPct',
+  // Por grafico (tag) — inclui o modo de contagem multi-tag
+  'dashTagDonutShow','dashTagDonutType','dashTagDonutInnerPct','dashTagListShow','dashTagListPct',
+  'dashTagSplit',
 ];
+
+// Le config namespaced (dashCatDonutShow, dashTagDonutType, ...) com fallback
+// pra chave legacy (dashDonutShow, dashDonutType, ...). Mantem compatibilidade
+// com configs ja salvas antes do split categoria/tag.
+const cfg = (suffix, prefix) => {
+  const ns = state.config[`dash${prefix}${suffix}`];
+  if (ns !== undefined) return ns;
+  return state.config[`dash${suffix}`];
+};
 const deviceConfigGet = () => {
   try { return JSON.parse(localStorage.getItem(DEVICE_CONFIG_KEY)) || {}; }
   catch { return {}; }
@@ -778,10 +792,10 @@ const views = {};
 // entre "Despesas por categoria" e "Despesas por tag". As preferencias de
 // visualizacao (tipo do grafico, % interna, lista, % na lista) sao
 // compartilhadas entre os dois — usuario configura uma vez.
-const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey) => {
-  const showDonut = state.config.dashDonutShow !== false;
-  const showList  = state.config.dashListShow  !== false;
-  const showListPct = state.config.dashListPct !== false;
+const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => {
+  const showDonut = cfg('DonutShow', prefix) !== false;
+  const showList  = cfg('ListShow',  prefix) !== false;
+  const showListPct = cfg('ListPct', prefix) !== false;
   if (!showDonut && !showList) return '';
   const headerHTML = collapseHeader(collapseKey, titulo);
   if (isCollapsed(collapseKey)) return `<div class="card">${headerHTML}</div>`;
@@ -793,7 +807,7 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey) => {
       </div>`;
   }
   const total = data.reduce((sum, d) => sum + d.valor, 0);
-  const dashType = state.config.dashDonutType || 'donut';
+  const dashType = cfg('DonutType', prefix) || 'donut';
   const donutWrapStyle = dashType === 'bars'
     ? `style="height:${Math.max(180, data.length * 36 + 40)}px;"`
     : '';
@@ -829,10 +843,10 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey) => {
 };
 
 // Instancia Chart.js no canvas correspondente. Tipo (donut/pizza/barras) e
-// opcoes vem das preferencias compartilhadas em state.config.
-const mountDistribuicaoChart = (canvas, data) => {
+// opcoes vem das preferencias por grafico (cat/tag) em state.config.
+const mountDistribuicaoChart = (canvas, data, prefix) => {
   if (!canvas || data.length === 0) return;
-  const dashType = state.config.dashDonutType || 'donut';
+  const dashType = cfg('DonutType', prefix) || 'donut';
   const chartData = {
     labels: data.map(c => c.nome),
     datasets: [{
@@ -919,7 +933,7 @@ const mountDistribuicaoChart = (canvas, data) => {
       },
     };
     chartConfig = { type: 'doughnut', data: chartData, options: donutOptions };
-    if (state.config.dashDonutInnerPct) chartConfig.plugins = [inSlicePctPlugin];
+    if (cfg('DonutInnerPct', prefix)) chartConfig.plugins = [inSlicePctPlugin];
   }
   new Chart(canvas, chartConfig);
 };
@@ -998,9 +1012,14 @@ views.dashboard = (root) => {
     };
   }).sort((a, b) => b.valor - a.valor);
 
-  // Despesas por tag — bucket "Sem tag" para despesas sem nenhuma tag, e
-  // despesas com varias tags contam em cada uma (entao a soma pode passar
-  // do total real do periodo).
+  // Despesas por tag — bucket "Sem tag" para despesas sem nenhuma tag.
+  // Modo de contagem multi-tag controlado por state.config.dashTagSplit:
+  //   - true (default): valor eh dividido igualitariamente entre as tags
+  //     (R$100 com [a,b] = R$50 em cada). Soma bate com total real, donut e
+  //     lista somam 100%.
+  //   - false: cada tag recebe o valor inteiro (R$100 em cada). Bom pra
+  //     quem usa tags como "dimensoes" — soma pode passar do total real.
+  const tagSplit = state.config.dashTagSplit !== false;
   const porTag = new Map();
   for (const d of despesasPeriod) {
     const tags = d.tags || [];
@@ -1008,6 +1027,16 @@ views.dashboard = (root) => {
       const cur = porTag.get('_sem') || { name: 'Sem tag', valor: 0 };
       cur.valor += d.valor || 0;
       porTag.set('_sem', cur);
+    } else if (tagSplit) {
+      // Math.floor + restante na primeira pra soma ficar exata em centavos
+      const baseShare = Math.floor((d.valor || 0) / tags.length);
+      const rem = (d.valor || 0) - baseShare * tags.length;
+      tags.forEach((t, i) => {
+        const k = t.toLowerCase();
+        const cur = porTag.get(k) || { name: t, valor: 0 };
+        cur.valor += baseShare + (i === 0 ? rem : 0);
+        porTag.set(k, cur);
+      });
     } else {
       for (const t of tags) {
         const k = t.toLowerCase();
@@ -1121,8 +1150,8 @@ views.dashboard = (root) => {
       </div>
     ` : ''}
 
-    ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat')}
-    ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag') : ''}
+    ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat', 'Cat')}
+    ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag', 'Tag') : ''}
   `;
 
   bindPeriodHeader(root);
@@ -1158,8 +1187,8 @@ views.dashboard = (root) => {
       });
     }
 
-    mountDistribuicaoChart(root.querySelector('#ch-cat'), catData);
-    mountDistribuicaoChart(root.querySelector('#ch-tag'), tagData);
+    mountDistribuicaoChart(root.querySelector('#ch-cat'), catData, 'Cat');
+    mountDistribuicaoChart(root.querySelector('#ch-tag'), tagData, 'Tag');
   }
 };
 
@@ -1607,67 +1636,93 @@ views.config = (root) => {
       </p>
     </div>
 
-    <div class="card">
-      <h2>Personalizar dashboard</h2>
-      <p style="color:var(--text-2);font-size:14px;margin:6px 0 14px;">
-        Mostre ou oculte os cards do dashboard.
-      </p>
+    ${(() => {
+      // Renderiza um sub-bloco "Despesas por X" com 5 controles + segmented de
+      // tipo. prefix='Cat' ou 'Tag'; idSuf vai como "cat" ou "tag" nos ids
+      // pra facilitar wire-up. Reaproveita cfg() pra ler com fallback legacy.
+      const renderDashSection = (titulo, prefix, idSuf, extraTail) => {
+        const tipo = cfg('DonutType', prefix) || 'donut';
+        return `
+          <div style="border-top:1px solid var(--separator);margin-top:14px;padding-top:14px;">
+            <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
+              ${titulo}
+            </p>
 
-      <div class="checkbox-row">
-        <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
-        <label for="f-dash-compare-show">Exibir comparação com mês anterior</label>
-      </div>
+            <div class="checkbox-row">
+              <input id="f-dash-${idSuf}-donut-show" type="checkbox" ${cfg('DonutShow', prefix)!==false?'checked':''}/>
+              <label for="f-dash-${idSuf}-donut-show">Exibir gráfico</label>
+            </div>
 
-      <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
-        <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
-        <label for="f-dash-bars-show">Exibir gráfico de Receitas vs Despesas</label>
-      </div>
+            <label class="field" style="margin:10px 0 0;">
+              <span>Tipo do gráfico</span>
+              <div class="segmented" id="dash-${idSuf}-donut-type">
+                <button data-type="donut" class="${tipo==='donut'?'active':''}">Donut</button>
+                <button data-type="pie"   class="${tipo==='pie'  ?'active':''}">Pizza</button>
+                <button data-type="bars"  class="${tipo==='bars' ?'active':''}">Barras</button>
+              </div>
+            </label>
 
-      <div style="border-top:1px solid var(--separator);margin-top:14px;padding-top:14px;">
-        <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
-          Despesas por categoria
-        </p>
+            ${tipo !== 'bars' ? `
+              <div class="checkbox-row" style="margin-top:14px;">
+                <input id="f-dash-${idSuf}-donut-inner" type="checkbox" ${cfg('DonutInnerPct', prefix)?'checked':''}/>
+                <label for="f-dash-${idSuf}-donut-inner">Mostrar % dentro das fatias</label>
+              </div>
+            ` : ''}
 
-        <div class="checkbox-row">
-          <input id="f-dash-donut-show" type="checkbox" ${state.config.dashDonutShow!==false?'checked':''}/>
-          <label for="f-dash-donut-show">Exibir gráfico</label>
-        </div>
+            <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+              <input id="f-dash-${idSuf}-list-show" type="checkbox" ${cfg('ListShow', prefix)!==false?'checked':''}/>
+              <label for="f-dash-${idSuf}-list-show">Exibir lista</label>
+            </div>
+            <div class="checkbox-row">
+              <input id="f-dash-${idSuf}-list-pct" type="checkbox" ${cfg('ListPct', prefix)!==false?'checked':''}/>
+              <label for="f-dash-${idSuf}-list-pct">Mostrar % na lista</label>
+            </div>
+            ${extraTail || ''}
+          </div>`;
+      };
 
-        <label class="field" style="margin:10px 0 0;">
-          <span>Tipo do gráfico</span>
-          <div class="segmented" id="dash-donut-type">
-            <button data-type="donut" class="${(state.config.dashDonutType||'donut')==='donut'?'active':''}">Donut</button>
-            <button data-type="pie"   class="${state.config.dashDonutType==='pie'?'active':''}">Pizza</button>
-            <button data-type="bars"  class="${state.config.dashDonutType==='bars'?'active':''}">Barras</button>
+      const tagSplitMode = state.config.dashTagSplit !== false ? 'split' : 'each';
+      const tagExtra = `
+        <div style="border-top:1px solid var(--separator);padding-top:14px;margin-top:14px;">
+          <div class="checkbox-row" style="padding-top:0;">
+            <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
+            <label for="f-dash-tag-show">Exibir card de despesas por tag</label>
           </div>
-        </label>
+          <label class="field" style="margin:10px 0 0;">
+            <span>Como contar despesas com várias tags</span>
+            <div class="segmented" id="dash-tag-split">
+              <button data-mode="split" class="${tagSplitMode==='split'?'active':''}">Dividir entre tags</button>
+              <button data-mode="each"  class="${tagSplitMode==='each' ?'active':''}">Contar em cada tag</button>
+            </div>
+          </label>
+          <p style="color:var(--text-2);font-size:13px;margin:8px 2px 0;">
+            "Dividir": despesa de R$100 com 2 tags vira R$50 em cada (soma bate com total real).
+            "Contar em cada": cada tag recebe o valor inteiro (a soma pode passar do total).
+          </p>
+        </div>`;
 
-        ${state.config.dashDonutType !== 'bars' ? `
-          <div class="checkbox-row" style="margin-top:14px;">
-            <input id="f-dash-donut-inner" type="checkbox" ${state.config.dashDonutInnerPct?'checked':''}/>
-            <label for="f-dash-donut-inner">Mostrar % dentro das fatias</label>
+      return `
+        <div class="card">
+          <h2>Personalizar dashboard</h2>
+          <p style="color:var(--text-2);font-size:14px;margin:6px 0 14px;">
+            Mostre ou oculte os cards do dashboard.
+          </p>
+
+          <div class="checkbox-row">
+            <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
+            <label for="f-dash-compare-show">Exibir comparação com mês anterior</label>
           </div>
-        ` : ''}
 
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
-          <input id="f-dash-list-show" type="checkbox" ${state.config.dashListShow!==false?'checked':''}/>
-          <label for="f-dash-list-show">Exibir lista</label>
-        </div>
-        <div class="checkbox-row">
-          <input id="f-dash-list-pct" type="checkbox" ${state.config.dashListPct!==false?'checked':''}/>
-          <label for="f-dash-list-pct">Mostrar % na lista</label>
-        </div>
+          <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+            <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
+            <label for="f-dash-bars-show">Exibir gráfico de Receitas vs Despesas</label>
+          </div>
 
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
-          <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
-          <label for="f-dash-tag-show">Exibir também despesas por tag</label>
+          ${renderDashSection('Despesas por categoria', 'Cat', 'cat')}
+          ${renderDashSection('Despesas por tag',       'Tag', 'tag', tagExtra)}
         </div>
-        <p style="color:var(--text-2);font-size:13px;margin:6px 2px 0;">
-          Adiciona um segundo card com a mesma visualização, mas agrupado por tag.
-          Despesas sem tag entram no bucket "Sem tag"; com várias tags, contam em cada uma.
-        </p>
-      </div>
-    </div>
+      `;
+    })()}
 
     <div class="card">
       <h2>Backup</h2>
@@ -1838,17 +1893,35 @@ views.config = (root) => {
     const el = root.querySelector(id);
     if (el) el.addEventListener('change', () => updateConfig({ [key]: el.checked }));
   };
-  wireToggle('#f-dash-compare-show', 'dashCompareShow');
-  wireToggle('#f-dash-bars-show',    'dashBarsShow');
-  wireToggle('#f-dash-donut-show',   'dashDonutShow');
-  wireToggle('#f-dash-donut-inner',  'dashDonutInnerPct');
-  wireToggle('#f-dash-list-show',    'dashListShow');
-  wireToggle('#f-dash-list-pct',     'dashListPct');
-  wireToggle('#f-dash-tag-show',     'dashTagShow');
-  root.querySelectorAll('#dash-donut-type button').forEach(btn => {
+  wireToggle('#f-dash-compare-show',    'dashCompareShow');
+  wireToggle('#f-dash-bars-show',       'dashBarsShow');
+  wireToggle('#f-dash-tag-show',        'dashTagShow');
+  // Categoria
+  wireToggle('#f-dash-cat-donut-show',  'dashCatDonutShow');
+  wireToggle('#f-dash-cat-donut-inner', 'dashCatDonutInnerPct');
+  wireToggle('#f-dash-cat-list-show',   'dashCatListShow');
+  wireToggle('#f-dash-cat-list-pct',    'dashCatListPct');
+  root.querySelectorAll('#dash-cat-donut-type button').forEach(btn => {
     btn.addEventListener('click', () => {
-      updateConfig({ dashDonutType: btn.dataset.type });
-      render();
+      updateConfig({ dashCatDonutType: btn.dataset.type });
+      render({ preserveScroll: true });
+    });
+  });
+  // Tag
+  wireToggle('#f-dash-tag-donut-show',  'dashTagDonutShow');
+  wireToggle('#f-dash-tag-donut-inner', 'dashTagDonutInnerPct');
+  wireToggle('#f-dash-tag-list-show',   'dashTagListShow');
+  wireToggle('#f-dash-tag-list-pct',    'dashTagListPct');
+  root.querySelectorAll('#dash-tag-donut-type button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateConfig({ dashTagDonutType: btn.dataset.type });
+      render({ preserveScroll: true });
+    });
+  });
+  root.querySelectorAll('#dash-tag-split button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateConfig({ dashTagSplit: btn.dataset.mode === 'split' });
+      render({ preserveScroll: true });
     });
   });
 
