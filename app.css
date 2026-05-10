@@ -201,6 +201,25 @@ main#view {
   min-width: 0;
 }
 .card h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-2); font-weight: 600; }
+/* Cabecalho minimizavel: clique alterna o estado do card. Chevron rotaciona
+   pra "->" quando o card esta colapsado (so o titulo aparece). */
+.card h2.collapsible-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  margin-bottom: 0;
+}
+.card h2.collapsible-h + * { margin-top: 8px; }
+.card h2.collapsible-h:active { opacity: .6; }
+.chevron {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  transition: transform .15s ease;
+}
+.chevron.collapsed { transform: rotate(-90deg); }
 .card .big {
   font-size: clamp(26px, 8.5vw, 36px);
   font-weight: 700;

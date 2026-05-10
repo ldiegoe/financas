@@ -79,6 +79,7 @@ const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
   'dashCompareShow','dashBarsShow','dashDonutShow','dashDonutType',
   'dashDonutInnerPct','dashListShow','dashListPct','dashTagShow',
+  'dashCollapsed',
 ];
 const deviceConfigGet = () => {
   try { return JSON.parse(localStorage.getItem(DEVICE_CONFIG_KEY)) || {}; }
@@ -382,6 +383,17 @@ const allTags = () => {
   }
   return [...set.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 };
+
+// Cabecalho colapsavel pros cards do dashboard. Retorna o <h2> com chevron;
+// o body do card eh renderizado condicionalmente pelo caller via isCollapsed.
+const isCollapsed = (key) => !!(state.config.dashCollapsed || {})[key];
+const collapseHeader = (key, title) => `
+  <h2 class="collapsible-h" data-collapse="${key}">
+    <span>${escapeHTML(title)}</span>
+    <svg class="chevron ${isCollapsed(key)?'collapsed':''}" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
+      <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </h2>`;
 
 // Cor estavel por tag — hash determinístico sobre a chave lowercase apontando
 // pra um indice da paleta. "viagem" sempre vai dar a mesma cor entre renders.
@@ -766,15 +778,17 @@ const views = {};
 // entre "Despesas por categoria" e "Despesas por tag". As preferencias de
 // visualizacao (tipo do grafico, % interna, lista, % na lista) sao
 // compartilhadas entre os dois — usuario configura uma vez.
-const renderDistribuicaoCard = (titulo, data, canvasId) => {
+const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey) => {
   const showDonut = state.config.dashDonutShow !== false;
   const showList  = state.config.dashListShow  !== false;
   const showListPct = state.config.dashListPct !== false;
   if (!showDonut && !showList) return '';
+  const headerHTML = collapseHeader(collapseKey, titulo);
+  if (isCollapsed(collapseKey)) return `<div class="card">${headerHTML}</div>`;
   if (data.length === 0) {
     return `
       <div class="card">
-        <h2>${titulo}</h2>
+        ${headerHTML}
         <div class="empty"><span class="ico">📭</span>Sem dados no período.</div>
       </div>`;
   }
@@ -808,7 +822,7 @@ const renderDistribuicaoCard = (titulo, data, canvasId) => {
     </ul>` : '';
   return `
     <div class="card">
-      <h2>${titulo}</h2>
+      ${headerHTML}
       ${donutHTML}
       ${listHTML}
     </div>`;
@@ -1066,50 +1080,63 @@ views.dashboard = (root) => {
 
     ${state.config.dashCompareShow !== false ? `
       <div class="card">
-        <h2>Comparação com ${escapeHTML(labelOfPeriod(prev))}</h2>
-        <div class="compare-row">
-          <span class="label">Despesas</span>
-          <span class="amount">${fmtBRL(totalDespesa)}</span>
-          <span class="delta ${deltaDesp.cls}">${deltaDesp.sign} ${deltaDesp.label}</span>
-        </div>
-        <div class="compare-row">
-          <span class="label">Receitas</span>
-          <span class="amount">${fmtBRL(totalRenda)}</span>
-          <span class="delta ${deltaRenda.cls}">${deltaRenda.sign} ${deltaRenda.label}</span>
-        </div>
-        <div class="compare-row">
-          <span class="label">Saldo</span>
-          <span class="amount">${fmtBRL(saldo)}</span>
-          <span class="delta ${deltaSaldo.cls}">${deltaSaldo.sign} ${deltaSaldo.label}</span>
-        </div>
-        <div class="compare-sub">vs ${fmtBRL(prevDespesa)} / ${fmtBRL(prevRenda)} / ${fmtBRL(prevSaldo)}</div>
+        ${collapseHeader('compare', `Comparação com ${labelOfPeriod(prev)}`)}
+        ${isCollapsed('compare') ? '' : `
+          <div class="compare-row">
+            <span class="label">Despesas</span>
+            <span class="amount">${fmtBRL(totalDespesa)}</span>
+            <span class="delta ${deltaDesp.cls}">${deltaDesp.sign} ${deltaDesp.label}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Receitas</span>
+            <span class="amount">${fmtBRL(totalRenda)}</span>
+            <span class="delta ${deltaRenda.cls}">${deltaRenda.sign} ${deltaRenda.label}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Saldo</span>
+            <span class="amount">${fmtBRL(saldo)}</span>
+            <span class="delta ${deltaSaldo.cls}">${deltaSaldo.sign} ${deltaSaldo.label}</span>
+          </div>
+          <div class="compare-sub">vs ${fmtBRL(prevDespesa)} / ${fmtBRL(prevRenda)} / ${fmtBRL(prevSaldo)}</div>
 
-        ${topChanges.length > 0 ? `
-          <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
-          <ul class="compare-changes">
-            ${topChanges.map(c => `
-              <li>
-                <span class="swatch" style="background:${c.cor}"></span>
-                <span class="name">${escapeHTML(c.nome)}</span>
-                <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
-              </li>`).join('')}
-          </ul>
-        ` : ''}
+          ${topChanges.length > 0 ? `
+            <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
+            <ul class="compare-changes">
+              ${topChanges.map(c => `
+                <li>
+                  <span class="swatch" style="background:${c.cor}"></span>
+                  <span class="name">${escapeHTML(c.nome)}</span>
+                  <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
+                </li>`).join('')}
+            </ul>
+          ` : ''}
+        `}
       </div>
     ` : ''}
 
     ${state.config.dashBarsShow !== false ? `
       <div class="card">
-        <h2>Receitas vs Despesas</h2>
-        <div class="chart-wrap"><canvas id="ch-bars"></canvas></div>
+        ${collapseHeader('bars', 'Receitas vs Despesas')}
+        ${isCollapsed('bars') ? '' : `<div class="chart-wrap"><canvas id="ch-bars"></canvas></div>`}
       </div>
     ` : ''}
 
-    ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat')}
-    ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag') : ''}
+    ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat')}
+    ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag') : ''}
   `;
 
   bindPeriodHeader(root);
+
+  // Toggle de minimizar/expandir cards do dashboard. Preserva o scroll para
+  // o usuario nao perder o lugar quando minimiza um card abaixo da dobra.
+  root.querySelectorAll('[data-collapse]').forEach(h => {
+    h.addEventListener('click', () => {
+      const key = h.dataset.collapse;
+      const cur = state.config.dashCollapsed || {};
+      updateConfig({ dashCollapsed: { ...cur, [key]: !cur[key] } });
+      render({ preserveScroll: true });
+    });
+  });
 
   const bannerBtn = root.querySelector('#banner-backup');
   if (bannerBtn) bannerBtn.addEventListener('click', () => { exportBackup(); render(); });
@@ -2452,9 +2479,9 @@ const setTab = (name) => {
   render();
 };
 
-const render = () => {
+const render = (opts = {}) => {
   const root = document.getElementById('view');
-  root.scrollTop = 0;
+  if (!opts.preserveScroll) root.scrollTop = 0;
   views[currentTab](root);
   applyAlertBadge();
 };
