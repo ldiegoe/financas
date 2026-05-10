@@ -78,7 +78,7 @@ let activeProfileId = _profilesMeta.current;
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
   'dashCompareShow','dashBarsShow','dashDonutShow','dashDonutType',
-  'dashDonutInnerPct','dashListShow','dashListPct',
+  'dashDonutInnerPct','dashListShow','dashListPct','dashTagShow',
 ];
 const deviceConfigGet = () => {
   try { return JSON.parse(localStorage.getItem(DEVICE_CONFIG_KEY)) || {}; }
@@ -383,6 +383,14 @@ const allTags = () => {
   return [...set.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 };
 
+// Cor estavel por tag — hash determinístico sobre a chave lowercase apontando
+// pra um indice da paleta. "viagem" sempre vai dar a mesma cor entre renders.
+const tagColor = (key) => {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return palette[Math.abs(h) % palette.length];
+};
+
 // 'system' (padrão) | 'light' | 'dark'. Atributo data-theme no <html> é
 // quem comanda o CSS; ausência do atributo = seguir sistema operacional.
 const applyTheme = (tema) => {
@@ -637,6 +645,154 @@ const closeSheet = () => { document.getElementById('modal-root').innerHTML = '';
 // --------------------------- Views -----------------------------------------
 const views = {};
 
+// Renderiza um card de "distribuicao" (donut/pizza/barras + lista) — comum
+// entre "Despesas por categoria" e "Despesas por tag". As preferencias de
+// visualizacao (tipo do grafico, % interna, lista, % na lista) sao
+// compartilhadas entre os dois — usuario configura uma vez.
+const renderDistribuicaoCard = (titulo, data, canvasId) => {
+  const showDonut = state.config.dashDonutShow !== false;
+  const showList  = state.config.dashListShow  !== false;
+  const showListPct = state.config.dashListPct !== false;
+  if (!showDonut && !showList) return '';
+  if (data.length === 0) {
+    return `
+      <div class="card">
+        <h2>${titulo}</h2>
+        <div class="empty"><span class="ico">📭</span>Sem dados no período.</div>
+      </div>`;
+  }
+  const total = data.reduce((sum, d) => sum + d.valor, 0);
+  const dashType = state.config.dashDonutType || 'donut';
+  const donutWrapStyle = dashType === 'bars'
+    ? `style="height:${Math.max(180, data.length * 36 + 40)}px;"`
+    : '';
+  const donutHTML = showDonut
+    ? `<div class="chart-wrap donut" ${donutWrapStyle}><canvas id="${canvasId}"></canvas></div>`
+    : '';
+  const listHTML = showList ? `
+    <ul class="list" style="margin-top:${showDonut?'12px':'0'};">
+      ${data.map(c => {
+        const pctTotal = total > 0 ? Math.round((c.valor / total) * 100) : 0;
+        const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
+        const cls = !c.meta ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
+        return `
+          <li>
+            <span class="swatch" style="background:${c.cor}"></span>
+            <div class="grow">
+              <div class="t">${escapeHTML(c.nome)}</div>
+              ${c.meta ? `
+                <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
+                <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
+              ` : `<div class="s">${fmtBRL(c.valor)}</div>`}
+            </div>
+            ${showListPct ? `<div class="amount">${pctTotal}%</div>` : ''}
+          </li>`;
+      }).join('')}
+    </ul>` : '';
+  return `
+    <div class="card">
+      <h2>${titulo}</h2>
+      ${donutHTML}
+      ${listHTML}
+    </div>`;
+};
+
+// Instancia Chart.js no canvas correspondente. Tipo (donut/pizza/barras) e
+// opcoes vem das preferencias compartilhadas em state.config.
+const mountDistribuicaoChart = (canvas, data) => {
+  if (!canvas || data.length === 0) return;
+  const dashType = state.config.dashDonutType || 'donut';
+  const chartData = {
+    labels: data.map(c => c.nome),
+    datasets: [{
+      data: data.map(c => c.valor / 100),
+      backgroundColor: data.map(c => c.cor),
+      borderWidth: 0,
+    }],
+  };
+  let chartConfig;
+  if (dashType === 'bars') {
+    chartConfig = {
+      type: 'bar',
+      data: chartData,
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                const pct = total > 0 ? ((ctx.parsed.x / total) * 100).toFixed(1) : '0';
+                return `${fmtBRL(ctx.parsed.x * 100)} (${pct}%)`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: getCSS('--text-2'),
+              callback: v => state.config.valuesHidden ? '' : `R$${v}`,
+            },
+            grid: { color: getCSS('--separator') },
+          },
+          y: {
+            ticks: { color: getCSS('--text'), font: { size: 12 } },
+            grid: { display: false },
+          },
+        },
+      },
+    };
+  } else {
+    const donutOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: dashType === 'pie' ? 0 : '62%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : '0';
+              return `${ctx.label}: ${fmtBRL(ctx.parsed * 100)} (${pct}%)`;
+            },
+          },
+        },
+      },
+    };
+    // Plugin opcional: desenha "23%" centralizado em cada fatia. Ativado pelo
+    // toggle em Ajustes — pula fatias < 6% pra nao poluir.
+    const inSlicePctPlugin = {
+      id: 'donutPct',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const arcData = chart.data.datasets[0].data;
+        const total = arcData.reduce((a, b) => a + b, 0);
+        if (total === 0) return;
+        chart.getDatasetMeta(0).data.forEach((arc, i) => {
+          const pct = (arcData[i] / total) * 100;
+          if (pct < 6) return;
+          const { x, y } = arc.tooltipPosition();
+          ctx.save();
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 12px -apple-system, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${pct.toFixed(0)}%`, x, y);
+          ctx.restore();
+        });
+      },
+    };
+    chartConfig = { type: 'doughnut', data: chartData, options: donutOptions };
+    if (state.config.dashDonutInnerPct) chartConfig.plugins = [inSlicePctPlugin];
+  }
+  new Chart(canvas, chartConfig);
+};
+
 // ----- Dashboard -----
 views.dashboard = (root) => {
   const rendasPeriod   = expandWithRecurring(state.rendas, period);
@@ -710,6 +866,33 @@ views.dashboard = (root) => {
       valor,
     };
   }).sort((a, b) => b.valor - a.valor);
+
+  // Despesas por tag — bucket "Sem tag" para despesas sem nenhuma tag, e
+  // despesas com varias tags contam em cada uma (entao a soma pode passar
+  // do total real do periodo).
+  const porTag = new Map();
+  for (const d of despesasPeriod) {
+    const tags = d.tags || [];
+    if (tags.length === 0) {
+      const cur = porTag.get('_sem') || { name: 'Sem tag', valor: 0 };
+      cur.valor += d.valor || 0;
+      porTag.set('_sem', cur);
+    } else {
+      for (const t of tags) {
+        const k = t.toLowerCase();
+        const cur = porTag.get(k) || { name: t, valor: 0 };
+        cur.valor += d.valor || 0;
+        porTag.set(k, cur);
+      }
+    }
+  }
+  const tagData = [...porTag.entries()].map(([k, v]) => ({
+    id: k,
+    nome: v.name,
+    cor: k === '_sem' ? '#999' : tagColor(k),
+    meta: null,
+    valor: v.valor,
+  })).sort((a, b) => b.valor - a.valor);
 
   // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
   const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
@@ -805,57 +988,8 @@ views.dashboard = (root) => {
       </div>
     ` : ''}
 
-    ${(() => {
-      // Card "Despesas por categoria" eh montado conforme as preferencias do
-      // usuario: pode mostrar grafico, lista, ambos ou nenhum. Se ambos
-      // estiverem desligados, o card inteiro some.
-      const showDonut = state.config.dashDonutShow !== false;
-      const showList  = state.config.dashListShow  !== false;
-      const showListPct = state.config.dashListPct !== false;
-      if (!showDonut && !showList) return '';
-      if (catData.length === 0) {
-        return `
-          <div class="card">
-            <h2>Despesas por categoria</h2>
-            <div class="empty"><span class="ico">📭</span>Sem despesas no período.</div>
-          </div>`;
-      }
-      // Quando o tipo eh "barras", a altura do wrap escala com o numero de
-      // categorias (uma faixa por linha). Donut/pizza ficam com altura fixa.
-      const dashType = state.config.dashDonutType || 'donut';
-      const donutWrapStyle = dashType === 'bars'
-        ? `style="height:${Math.max(180, catData.length * 36 + 40)}px;"`
-        : '';
-      const donutHTML = showDonut
-        ? `<div class="chart-wrap donut" ${donutWrapStyle}><canvas id="ch-donut"></canvas></div>`
-        : '';
-      const listHTML = showList ? `
-        <ul class="list" style="margin-top:${showDonut?'12px':'0'};">
-          ${catData.map(c => {
-            const pctTotal = totalDespesa > 0 ? Math.round((c.valor / totalDespesa) * 100) : 0;
-            const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
-            const cls = !c.meta ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
-            return `
-              <li>
-                <span class="swatch" style="background:${c.cor}"></span>
-                <div class="grow">
-                  <div class="t">${escapeHTML(c.nome)}</div>
-                  ${c.meta ? `
-                    <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
-                    <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
-                  ` : `<div class="s">${fmtBRL(c.valor)}</div>`}
-                </div>
-                ${showListPct ? `<div class="amount">${pctTotal}%</div>` : ''}
-              </li>`;
-          }).join('')}
-        </ul>` : '';
-      return `
-        <div class="card">
-          <h2>Despesas por categoria</h2>
-          ${donutHTML}
-          ${listHTML}
-        </div>`;
-    })()}
+    ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat')}
+    ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag') : ''}
   `;
 
   bindPeriodHeader(root);
@@ -880,101 +1014,8 @@ views.dashboard = (root) => {
       });
     }
 
-    if (catData.length > 0 && root.querySelector('#ch-donut')) {
-      const dashType = state.config.dashDonutType || 'donut';
-      const data = {
-        labels: catData.map(c => c.nome),
-        datasets: [{
-          data: catData.map(c => c.valor / 100),
-          backgroundColor: catData.map(c => c.cor),
-          borderWidth: 0,
-        }],
-      };
-      let chartConfig;
-      if (dashType === 'bars') {
-        // Barras horizontais: ranking de categorias (maior valor no topo). Eixo
-        // X mostra valor em R$, Y mostra nome da categoria.
-        chartConfig = {
-          type: 'bar',
-          data,
-          options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  label: (ctx) => {
-                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                    const pct = total > 0 ? ((ctx.parsed.x / total) * 100).toFixed(1) : '0';
-                    return `${fmtBRL(ctx.parsed.x * 100)} (${pct}%)`;
-                  },
-                },
-              },
-            },
-            scales: {
-              x: {
-                ticks: {
-                  color: getCSS('--text-2'),
-                  callback: v => state.config.valuesHidden ? '' : `R$${v}`,
-                },
-                grid: { color: getCSS('--separator') },
-              },
-              y: {
-                ticks: { color: getCSS('--text'), font: { size: 12 } },
-                grid: { display: false },
-              },
-            },
-          },
-        };
-      } else {
-        // Donut ou Pizza — diferenca eh o cutout (centro vazio do donut).
-        const donutOptions = {
-          responsive: true,
-          maintainAspectRatio: false,
-          cutout: dashType === 'pie' ? 0 : '62%',
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => {
-                  const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                  const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : '0';
-                  return `${ctx.label}: ${fmtBRL(ctx.parsed * 100)} (${pct}%)`;
-                },
-              },
-            },
-          },
-        };
-        // Plugin opcional: desenha "23%" centralizado em cada fatia. Ativado
-        // pelo toggle em Ajustes — pula fatias < 6% pra nao poluir.
-        const inSlicePctPlugin = {
-          id: 'donutPct',
-          afterDatasetsDraw(chart) {
-            const { ctx } = chart;
-            const arcData = chart.data.datasets[0].data;
-            const total = arcData.reduce((a, b) => a + b, 0);
-            if (total === 0) return;
-            chart.getDatasetMeta(0).data.forEach((arc, i) => {
-              const pct = (arcData[i] / total) * 100;
-              if (pct < 6) return;
-              const { x, y } = arc.tooltipPosition();
-              ctx.save();
-              ctx.fillStyle = '#fff';
-              ctx.font = 'bold 12px -apple-system, system-ui, sans-serif';
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText(`${pct.toFixed(0)}%`, x, y);
-              ctx.restore();
-            });
-          },
-        };
-        chartConfig = { type: 'doughnut', data, options: donutOptions };
-        if (state.config.dashDonutInnerPct) chartConfig.plugins = [inSlicePctPlugin];
-      }
-      new Chart(root.querySelector('#ch-donut'), chartConfig);
-    }
+    mountDistribuicaoChart(root.querySelector('#ch-cat'), catData);
+    mountDistribuicaoChart(root.querySelector('#ch-tag'), tagData);
   }
 };
 
@@ -1466,12 +1507,21 @@ views.config = (root) => {
 
         <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
           <input id="f-dash-list-show" type="checkbox" ${state.config.dashListShow!==false?'checked':''}/>
-          <label for="f-dash-list-show">Exibir lista de categorias</label>
+          <label for="f-dash-list-show">Exibir lista</label>
         </div>
         <div class="checkbox-row">
           <input id="f-dash-list-pct" type="checkbox" ${state.config.dashListPct!==false?'checked':''}/>
           <label for="f-dash-list-pct">Mostrar % na lista</label>
         </div>
+
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
+          <label for="f-dash-tag-show">Exibir também despesas por tag</label>
+        </div>
+        <p style="color:var(--text-2);font-size:13px;margin:6px 2px 0;">
+          Adiciona um segundo card com a mesma visualização, mas agrupado por tag.
+          Despesas sem tag entram no bucket "Sem tag"; com várias tags, contam em cada uma.
+        </p>
       </div>
     </div>
 
@@ -1650,6 +1700,7 @@ views.config = (root) => {
   wireToggle('#f-dash-donut-inner',  'dashDonutInnerPct');
   wireToggle('#f-dash-list-show',    'dashListShow');
   wireToggle('#f-dash-list-pct',     'dashListPct');
+  wireToggle('#f-dash-tag-show',     'dashTagShow');
   root.querySelectorAll('#dash-donut-type button').forEach(btn => {
     btn.addEventListener('click', () => {
       updateConfig({ dashDonutType: btn.dataset.type });
