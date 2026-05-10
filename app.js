@@ -466,6 +466,24 @@ const tagColor = (key) => {
   return palette[Math.abs(h) % palette.length];
 };
 
+// Biblioteca de icones SVG estilo Lucide (linha fina, currentColor). Centraliza
+// pra manter consistencia visual em vez de mistura de emojis com SVG inline.
+const ICONS = {
+  // Tabbar
+  dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  wallet:    '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
+  card:      '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+  tag:       '<path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
+  settings:  '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  // Empty states e diversos
+  inbox:     '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  sparkles:  '<path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/>',
+  lock:      '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+};
+
+const icon = (name, size = 22) =>
+  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
 // 'system' (padrão) | 'light' | 'dark'. Atributo data-theme no <html> é
 // quem comanda o CSS; ausência do atributo = seguir sistema operacional.
 const applyTheme = (tema) => {
@@ -770,7 +788,7 @@ const showLockScreen = (onUnlock) => {
   wrap.id = 'lock-screen';
   wrap.innerHTML = `
     <div class="lock-content">
-      <span class="lock-ico">🔒</span>
+      <span class="lock-ico">${icon('lock', 56)}</span>
       <h2>Finanças</h2>
       <p class="lock-msg">Toque para desbloquear</p>
       <p class="lock-error" id="lock-error" hidden></p>
@@ -869,7 +887,7 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => 
     return `
       <div class="card">
         ${headerHTML}
-        <div class="empty"><span class="ico">📭</span>Sem dados no período.</div>
+        <div class="empty"><span class="ico">${icon('inbox', 48)}</span>Sem dados no período.</div>
       </div>`;
   }
   const total = data.reduce((sum, d) => sum + d.valor, 0);
@@ -1163,7 +1181,7 @@ views.dashboard = (root) => {
     ${backupBanner}
     ${periodHeader()}
 
-    <div class="card summary-card">
+    <div class="card summary-card ${saldo >= 0 ? 'positive' : 'negative'}">
       <div class="summary-row">
         <span class="summary-label">Receitas</span>
         <span class="summary-value positive">${fmtBRL(totalRenda)}</span>
@@ -1394,7 +1412,7 @@ views.carteira = (root) => {
 
     <div class="section-title">Lançamentos</div>
     ${rendasPeriod.length === 0 ? `
-      <div class="empty"><span class="ico">💰</span>Nenhuma receita no período.<br/><br/>
+      <div class="empty"><span class="ico">${icon('wallet', 48)}</span>Nenhuma receita no período.<br/><br/>
         <button class="primary" id="add-renda">Adicionar receita</button></div>
     ` : `
       <ul class="list">
@@ -1543,7 +1561,7 @@ views.despesas = (root) => {
 
     <div class="section-title">Lançamentos</div>
     ${despesasPeriod.length === 0 ? `
-      <div class="empty"><span class="ico">💸</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
+      <div class="empty"><span class="ico">${icon('card', 48)}</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
         <button class="primary" id="add-desp">Adicionar despesa</button></div>
     ` : `
       <ul class="list">
@@ -1663,7 +1681,7 @@ views.categorias = (root) => {
       Toque e segure o ≡ para arrastar e reordenar. Arraste a linha para a esquerda para editar ou excluir.
     </p>
     ${state.categorias.length === 0 ? `
-      <div class="empty"><span class="ico">🏷️</span>Nenhuma categoria.</div>
+      <div class="empty"><span class="ico">${icon('tag', 48)}</span>Nenhuma categoria.</div>
     ` : `
       <ul class="list" id="cat-list">
         ${state.categorias.map(c => {
@@ -2465,7 +2483,7 @@ const sheetAlerts = () => {
     const alerts = activeAlerts();
     if (alerts.length === 0) {
       body.innerHTML = `
-        <div class="empty"><span class="ico">🎉</span>Sem notificações.</div>
+        <div class="empty"><span class="ico">${icon('sparkles', 48)}</span>Sem notificações.</div>
         <div class="actions" style="margin-top:14px;">
           <button class="secondary" id="close-sheet" style="flex:1;">Fechar</button>
         </div>`;
@@ -2776,6 +2794,13 @@ const setTab = (name) => {
 const render = (opts = {}) => {
   const root = document.getElementById('view');
   if (!opts.preserveScroll) root.scrollTop = 0;
+  // Em re-renders leves (toggle de collapse) pula a animacao de fade-in dos
+  // cards pra nao gerar pisca-pisca em interacoes rapidas. Pra carga normal
+  // (navegacao de aba), os cards entram com fade suave.
+  if (opts.preserveScroll) {
+    root.classList.add('no-anim');
+    requestAnimationFrame(() => root.classList.remove('no-anim'));
+  }
   views[currentTab](root);
   applyAlertBadge();
 };
