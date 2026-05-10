@@ -77,7 +77,7 @@ let activeProfileId = _profilesMeta.current;
 // perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
-  'dashCompareShow','dashBarsShow','dashTagShow','dashCollapsed',
+  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashCollapsed',
   // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
   'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
   // Por grafico (categoria)
@@ -113,7 +113,54 @@ const applyDeviceOverlay = (s) => {
   return s;
 };
 
-let state = applyDeviceOverlay(profileStore.loadState(activeProfileId));
+const isoToDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+const yyyyMmFromDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+
+// Migracao do pago/pendente: rodada na carga do state. Despesas existentes
+// nao tem o campo `pago` (nao-recorrentes) nem `pagasEm` (recorrentes/parc).
+// Comportamento atual eh "tudo conta como gasto", entao migracao trata tudo
+// como pago: nao-recorrentes ganham pago=true; recorrentes/parc ganham
+// pagasEm preenchido com todos os meses de data inicial ate o mes corrente
+// (limitado pelo numero de parcelas pra parceladas). Apenas roda quando os
+// campos ainda nao existem.
+const migratePago = (s) => {
+  let migrated = false;
+  for (const d of s.despesas) {
+    const isRecurring = !!d.recorrente;
+    const isInstallment = (d.parcelas || 0) > 1;
+    if (!isRecurring && !isInstallment) {
+      if (d.pago === undefined) { d.pago = true; migrated = true; }
+    } else {
+      if (d.pagasEm === undefined) {
+        const start = isoToDate(d.data);
+        const now = new Date();
+        const startMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+        const limitMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const months = [];
+        let cur = new Date(startMonth);
+        let count = 0;
+        while (cur <= limitMonth) {
+          if (isInstallment && count >= d.parcelas) break;
+          months.push(yyyyMmFromDate(cur));
+          cur.setMonth(cur.getMonth() + 1);
+          count++;
+        }
+        d.pagasEm = months;
+        migrated = true;
+      }
+    }
+  }
+  return migrated;
+};
+
+let state = (function load() {
+  const s = profileStore.loadState(activeProfileId);
+  if (migratePago(s)) profileStore.saveState(activeProfileId, s);
+  return applyDeviceOverlay(s);
+})();
 
 const persist = () => {
   profileStore.saveState(activeProfileId, state);
@@ -322,13 +369,14 @@ const expandWithRecurring = (items, period) => {
     const isInstallment = parcelas > 1;
 
     if (!isRecurring && !isInstallment) {
-      if (periodMatches(it.data, period)) out.push({ ...it, _virtual: false });
+      if (periodMatches(it.data, period)) out.push({ ...it, _virtual: false, _pago: it.pago === true });
       continue;
     }
 
     const start = partsOf(it.data);
     const day = parseInt(it.data.split('-')[2], 10);
     const months = monthsInPeriod(period);
+    const pagasEm = it.pagasEm || [];
 
     for (const { y, m } of months) {
       const monthsFromStart = (y - start.y) * 12 + (m - start.m);
@@ -336,9 +384,10 @@ const expandWithRecurring = (items, period) => {
       if (isInstallment && monthsFromStart >= parcelas) continue;
 
       const projectedDay = clampDay(y, m, day);
-      const iso = `${y}-${String(m).padStart(2,'0')}-${String(projectedDay).padStart(2,'0')}`;
+      const yyyyMm = `${y}-${String(m).padStart(2,'0')}`;
+      const iso = `${yyyyMm}-${String(projectedDay).padStart(2,'0')}`;
       const isOriginal = (y === start.y && m === start.m);
-      const occ = { ...it, data: iso, _virtual: !isOriginal };
+      const occ = { ...it, data: iso, _virtual: !isOriginal, _pago: pagasEm.includes(yyyyMm) };
       if (isInstallment) {
         occ._parcelaNum = monthsFromStart + 1;
         occ._parcelaTotal = parcelas;
@@ -435,11 +484,6 @@ const applyTheme = (tema) => {
 // Cada alerta tem um id estavel — quando o usuario dispensa, o id vai pro
 // state.dismissedAlerts e nao reaparece. Se a condicao mudar de severidade
 // (ex: warn → over), o id muda e um novo alerta surge.
-const isoToDate = (iso) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
-
 const computeAlerts = () => {
   const alerts = [];
   const now = new Date();
@@ -496,8 +540,8 @@ const computeAlerts = () => {
     });
   }
 
-  // Lancamentos vencendo nos proximos 7 dias — escaneia mes corrente + proximo
-  // (cobre virada) e filtra ocorrencias na janela.
+  // Lancamentos pendentes vencendo nos proximos 7 dias — escaneia mes corrente
+  // + proximo (cobre virada), filtra na janela e considera so pendentes.
   const today = new Date(now); today.setHours(0,0,0,0);
   const limit = new Date(today); limit.setDate(today.getDate() + 7);
   const nextMonthDate = new Date(today); nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
@@ -505,6 +549,7 @@ const computeAlerts = () => {
   const allUpcoming = [...monthDespesas, ...expandWithRecurring(state.despesas, nextPeriod)];
   let upcomingCount = 0, upcomingTotal = 0;
   for (const d of allUpcoming) {
+    if (d._pago) continue;
     const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
     if (dt >= today && dt <= limit) {
       upcomingCount++;
@@ -514,8 +559,8 @@ const computeAlerts = () => {
   if (upcomingCount > 0) {
     alerts.push({
       id: `upcoming:${todayISO()}`, severity: 'blue',
-      title: `${upcomingCount} lançamento${upcomingCount > 1 ? 's' : ''} nos próximos 7 dias`,
-      message: `Total previsto: ${fmtBRL(upcomingTotal)}`,
+      title: `${upcomingCount} pendente${upcomingCount > 1 ? 's' : ''} nos próximos 7 dias`,
+      message: `Total a pagar: ${fmtBRL(upcomingTotal)}`,
       tab: 'despesas',
     });
   }
@@ -602,6 +647,27 @@ const daysSince = (iso) => {
   const then = new Date(y, m - 1, d).setHours(0,0,0,0);
   const now  = new Date().setHours(0,0,0,0);
   return Math.floor((now - then) / 86400000);
+};
+
+// Alterna o estado pago/pendente de uma ocorrencia de despesa. Para nao-
+// recorrentes muda direto o campo `pago`. Para recorrentes/parceladas, adiciona
+// ou remove o YYYY-MM correspondente ao mes da ocorrencia em `pagasEm` —
+// permitindo status independente por mes.
+const toggleDespesaPago = (item) => {
+  const base = state.despesas.find(x => x.id === item.id);
+  if (!base) return;
+  const isRecurring = !!base.recorrente;
+  const isInstallment = (base.parcelas || 0) > 1;
+  if (!isRecurring && !isInstallment) {
+    db.updateDespesa(item.id, { pago: !base.pago });
+  } else {
+    const yyyyMm = item.data.slice(0, 7);
+    const pagasEm = [...(base.pagasEm || [])];
+    const idx = pagasEm.indexOf(yyyyMm);
+    if (idx >= 0) pagasEm.splice(idx, 1);
+    else pagasEm.push(yyyyMm);
+    db.updateDespesa(item.id, { pagasEm });
+  }
 };
 
 // Dispara o download do JSON e marca a data do ultimo backup. Compartilhado
@@ -945,6 +1011,12 @@ views.dashboard = (root) => {
   const totalRenda    = sumAmount(rendasPeriod);
   const totalDespesa  = sumAmount(despesasPeriod);
   const saldo         = totalRenda - totalDespesa;
+  // Pago/Pendente — usado no card resumo pra mostrar quanto ja saiu da conta
+  // vs quanto ainda esta por pagar este periodo. Saldo "atual" considera so
+  // o que ja foi pago (cash on hand efetivo).
+  const totalPago      = despesasPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
+  const totalPendente  = totalDespesa - totalPago;
+  const saldoAtual     = totalRenda - totalPago;
 
   // Período anterior: total + despesas por categoria, para comparação.
   const prev = previousPeriod(period);
@@ -1100,12 +1172,66 @@ views.dashboard = (root) => {
         <span class="summary-label">Despesas</span>
         <span class="summary-value negative">${fmtBRL(totalDespesa)}</span>
       </div>
+      <div class="summary-sub">
+        <span>Já pago <strong>${fmtBRL(totalPago)}</strong></span>
+        <span>A pagar <strong>${fmtBRL(totalPendente)}</strong></span>
+      </div>
       <div class="summary-divider"></div>
       <div class="summary-row summary-row-main">
         <span class="summary-label">Saldo</span>
         <span class="summary-value ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</span>
       </div>
+      <div class="summary-sub" style="justify-content:flex-end;">
+        <span>Atual <strong>${fmtBRL(saldoAtual)}</strong></span>
+      </div>
     </div>
+
+    ${(() => {
+      // Proximos vencimentos: pendentes nos proximos 14 dias, ordenados por
+      // data. Considera mes corrente + proximo (cobre virada). Toggle no
+      // card "Personalizar dashboard" controla exibicao.
+      if (state.config.dashUpcomingShow === false) return '';
+      const today = new Date(); today.setHours(0,0,0,0);
+      const horizon = new Date(today); horizon.setDate(today.getDate() + 14);
+      const cur = { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 };
+      const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
+      const next = { type: 'month', year: nx.getFullYear(), value: nx.getMonth() + 1 };
+      const upcoming = [
+        ...expandWithRecurring(state.despesas, cur),
+        ...expandWithRecurring(state.despesas, next),
+      ].filter(d => !d._pago)
+       .filter(d => {
+         const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
+         return dt >= today && dt <= horizon;
+       })
+       .sort((a, b) => a.data.localeCompare(b.data))
+       .slice(0, 10);
+      if (upcoming.length === 0) return '';
+      const total = upcoming.reduce((s, d) => s + (d.valor || 0), 0);
+      return `
+        <div class="card">
+          ${collapseHeader('upcoming', 'Próximos vencimentos')}
+          ${isCollapsed('upcoming') ? '' : `
+            <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;">
+              ${upcoming.length} pendente${upcoming.length > 1 ? 's' : ''} nos próximos 14 dias · ${fmtBRL(total)}
+            </p>
+            <ul class="list" style="box-shadow:none;margin:0;">
+              ${upcoming.map(d => {
+                const c = state.categorias.find(x => x.id === d.categoriaId);
+                return `
+                  <li>
+                    <span class="swatch" style="background:${c ? c.cor : '#999'}"></span>
+                    <div class="grow">
+                      <div class="t">${escapeHTML(d.descricao || (c ? c.nome : 'Despesa'))}</div>
+                      <div class="s">${fmtDate(d.data)}${c ? ' · '+escapeHTML(c.nome) : ''}</div>
+                    </div>
+                    <div class="amount neg">${fmtBRL(d.valor)}</div>
+                  </li>`;
+              }).join('')}
+            </ul>
+          `}
+        </div>`;
+    })()}
 
     ${state.config.dashCompareShow !== false ? `
       <div class="card">
@@ -1330,9 +1456,10 @@ views.carteira = (root) => {
 let tagFilter = new Set();      // chaves lowercase de tags ativas
 let searchQuery = '';           // texto digitado na busca
 let categoryFilter = new Set(); // ids de categorias ativas
+let statusFilter = null;        // null | 'pago' | 'pendente'
 
-// Aplica busca textual + filtro de categoria + filtro de tag em sequência.
-// Multi-select: dentro de cada filtro o match eh "OU" (qualquer das
+// Aplica busca textual + filtro de categoria + filtro de tag + filtro de
+// status. Multi-select: dentro de cada filtro o match eh "OU" (qualquer das
 // categorias/tags selecionadas), entre filtros eh "E".
 const filterDespesas = (despesas) => {
   let result = despesas;
@@ -1342,6 +1469,8 @@ const filterDespesas = (despesas) => {
   if (tagFilter.size > 0) {
     result = result.filter(d => (d.tags || []).some(t => tagFilter.has(t.toLowerCase())));
   }
+  if (statusFilter === 'pago') result = result.filter(d => d._pago);
+  if (statusFilter === 'pendente') result = result.filter(d => !d._pago);
   const q = searchQuery.trim().toLowerCase();
   if (q) {
     result = result.filter(d =>
@@ -1374,7 +1503,7 @@ views.despesas = (root) => {
   const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
-  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0;
+  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null;
 
   root.innerHTML = `
     ${periodHeader()}
@@ -1406,6 +1535,12 @@ views.despesas = (root) => {
       </div>
     ` : ''}
 
+    <div class="filter-bar" id="status-filter">
+      <button class="chip ${statusFilter===null?'active':''}" data-status="">Todas</button>
+      <button class="chip ${statusFilter==='pago'?'active':''}" data-status="pago">Pagas</button>
+      <button class="chip ${statusFilter==='pendente'?'active':''}" data-status="pendente">Pendentes</button>
+    </div>
+
     <div class="section-title">Lançamentos</div>
     ${despesasPeriod.length === 0 ? `
       <div class="empty"><span class="ico">💸</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
@@ -1422,6 +1557,7 @@ views.despesas = (root) => {
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
                 ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
                 ${d._parcelaTotal ? `<span class="tag installment">${d._parcelaNum}/${d._parcelaTotal}</span>` : ''}
+                ${d._pago ? '' : '<span class="tag pendente">Pendente</span>'}
               </div>
               <div class="s">${fmtDate(d.data)} · ${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</div>
               ${dTags.length > 0 ? `
@@ -1479,6 +1615,10 @@ views.despesas = (root) => {
     else categoryFilter.has(c) ? categoryFilter.delete(c) : categoryFilter.add(c);
     render();
   }));
+  root.querySelectorAll('#status-filter .chip').forEach(b => b.addEventListener('click', () => {
+    statusFilter = b.dataset.status || null;
+    render();
+  }));
   const searchEl = root.querySelector('#search');
   if (searchEl) {
     searchEl.addEventListener('input', () => {
@@ -1496,7 +1636,7 @@ views.despesas = (root) => {
   }
   const clearBtn = root.querySelector('#clear-filters');
   if (clearBtn) clearBtn.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter.clear(); tagFilter.clear();
+    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null;
     render();
   });
   const addBtn = root.querySelector('#add-desp');
@@ -1726,6 +1866,11 @@ views.config = (root) => {
             <label for="f-dash-bars-show">Exibir gráfico de Receitas vs Despesas</label>
           </div>
 
+          <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+            <input id="f-dash-upcoming-show" type="checkbox" ${state.config.dashUpcomingShow!==false?'checked':''}/>
+            <label for="f-dash-upcoming-show">Exibir próximos vencimentos (pendentes)</label>
+          </div>
+
           ${renderDashSection('Despesas por categoria', 'Cat', 'cat')}
           ${renderDashSection('Despesas por tag',       'Tag', 'tag', tagExtra)}
         </div>
@@ -1903,6 +2048,7 @@ views.config = (root) => {
   };
   wireToggle('#f-dash-compare-show',    'dashCompareShow');
   wireToggle('#f-dash-bars-show',       'dashBarsShow');
+  wireToggle('#f-dash-upcoming-show',   'dashUpcomingShow');
   wireToggle('#f-dash-tag-show',        'dashTagShow');
   // Categoria
   wireToggle('#f-dash-cat-donut-show',  'dashCatDonutShow');
@@ -2120,6 +2266,13 @@ const sheetDespesa = (desp) => {
         </div>
       ` : ''}
     </label>
+    ${!isEdit ? `
+      <div class="checkbox-row">
+        <input id="f-pago" type="checkbox" ${d.data <= todayISO() ? 'checked' : ''}/>
+        <label for="f-pago">Já paga</label>
+      </div>
+      <small id="pago-hint" style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 12px;"></small>
+    ` : ''}
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
@@ -2148,6 +2301,22 @@ const sheetDespesa = (desp) => {
     parcEl.addEventListener('input', updateInfo);
     valorEl.addEventListener('input', updateInfo);
     updateInfo();
+
+    // Hint dinamico do "Ja paga" — semantica muda com o tipo. Soh existe no
+    // form de criacao (no edit a status eh gerenciada via sheet de detalhes).
+    const pagoHint = body.querySelector('#pago-hint');
+    if (pagoHint) {
+      const updatePagoHint = () => {
+        const t = tipoEl.value;
+        pagoHint.textContent = t === 'mensal'
+          ? 'Marca todos os meses de início até o atual como pagos.'
+          : t === 'parcelada'
+            ? 'Marca todas as parcelas anteriores e a atual como pagas.'
+            : '';
+      };
+      tipoEl.addEventListener('change', updatePagoHint);
+      updatePagoHint();
+    }
 
     // Toque numa tag sugerida → anexa ao input
     body.querySelectorAll('#tag-quick [data-tag]').forEach(btn => {
@@ -2181,6 +2350,38 @@ const sheetDespesa = (desp) => {
       if (!data.descricao) { alert('Informe uma descrição.'); return; }
       if (data.valor <= 0) { alert('Informe um valor válido.'); return; }
       if (tipo === 'parcelada' && data.parcelas < 2) { alert('Mínimo de 2 parcelas.'); return; }
+
+      // Pago/Pendente — soh aplica em criacao (no edit, o status eh gerenciado
+      // pela sheet de detalhes da ocorrencia).
+      if (!isEdit) {
+        const pagoChecked = !!body.querySelector('#f-pago')?.checked;
+        if (tipo === 'unica') {
+          data.pago = pagoChecked;
+        } else {
+          // Mensal/parcelada: se "ja paga" marcado, semeia pagasEm com todos
+          // os meses entre data inicial e o mes corrente. Se nao marcado,
+          // pagasEm fica vazio (todas ocorrencias pendentes).
+          if (pagoChecked) {
+            const start = isoToDate(data.data);
+            const now = new Date();
+            const startMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+            const limitMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            const months = [];
+            let cur = new Date(startMonth);
+            let count = 0;
+            while (cur <= limitMonth) {
+              if (tipo === 'parcelada' && count >= parcelas) break;
+              months.push(yyyyMmFromDate(cur));
+              cur.setMonth(cur.getMonth() + 1);
+              count++;
+            }
+            data.pagasEm = months;
+          } else {
+            data.pagasEm = [];
+          }
+        }
+      }
+
       if (isEdit) db.updateDespesa(d.id, data); else db.addDespesa(data);
       closeSheet();
       toast(isEdit ? 'Despesa atualizada' : 'Despesa adicionada');
@@ -2420,6 +2621,7 @@ const sheetDespesaDetalhes = (d) => {
     <div class="big negative" style="margin-bottom:14px;">${fmtBRL(d.valor)}</div>
 
     <ul class="details-list">
+      <li><span>Status</span><span style="color:${d._pago?'var(--green)':'var(--orange)'};font-weight:600;">${d._pago ? 'Paga' : 'Pendente'}</span></li>
       <li><span>Data</span><span>${fmtDate(d.data)}</span></li>
       <li><span>Tipo</span><span>${tipo}</span></li>
       ${d._parcelaTotal ? `
@@ -2432,9 +2634,13 @@ const sheetDespesaDetalhes = (d) => {
 
     ${d._virtual ? `
       <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
-        Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original.
+        Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original; "Marcar como paga/pendente" afeta apenas esta ocorrência.
       </p>
     ` : ''}
+
+    <button id="toggle-pago" class="primary" style="width:100%;margin-top:14px;">
+      ${d._pago ? 'Marcar como pendente' : 'Marcar como paga'}
+    </button>
 
     <div class="actions">
       <button class="secondary" id="close">Fechar</button>
@@ -2443,6 +2649,13 @@ const sheetDespesaDetalhes = (d) => {
     </div>
   `, (body) => {
     body.querySelector('#close').addEventListener('click', closeSheet);
+    body.querySelector('#toggle-pago').addEventListener('click', () => {
+      const wasPago = d._pago;
+      toggleDespesaPago(d);
+      closeSheet();
+      toast(wasPago ? 'Marcada como pendente' : 'Marcada como paga');
+      render();
+    });
     body.querySelector('#edit').addEventListener('click', () => {
       closeSheet();
       sheetDespesa(state.despesas.find(x => x.id === d.id));
