@@ -1325,18 +1325,22 @@ views.carteira = (root) => {
 };
 
 // ----- Despesas -----
-let tagFilter = null;       // tag ativa no filtro (lowercase) ou null
-let searchQuery = '';       // texto digitado na busca
-let categoryFilter = null;  // id da categoria filtrada ou null
+// Filtros de despesas: multi-selecao via Set. "vazio" = sem filtro (mostra
+// tudo). Tap num chip toggles a inclusao; "Todas X" limpa o set.
+let tagFilter = new Set();      // chaves lowercase de tags ativas
+let searchQuery = '';           // texto digitado na busca
+let categoryFilter = new Set(); // ids de categorias ativas
 
 // Aplica busca textual + filtro de categoria + filtro de tag em sequência.
+// Multi-select: dentro de cada filtro o match eh "OU" (qualquer das
+// categorias/tags selecionadas), entre filtros eh "E".
 const filterDespesas = (despesas) => {
   let result = despesas;
-  if (categoryFilter) {
-    result = result.filter(d => d.categoriaId === categoryFilter);
+  if (categoryFilter.size > 0) {
+    result = result.filter(d => categoryFilter.has(d.categoriaId));
   }
-  if (tagFilter) {
-    result = result.filter(d => (d.tags || []).some(t => t.toLowerCase() === tagFilter));
+  if (tagFilter.size > 0) {
+    result = result.filter(d => (d.tags || []).some(t => tagFilter.has(t.toLowerCase())));
   }
   const q = searchQuery.trim().toLowerCase();
   if (q) {
@@ -1370,7 +1374,7 @@ views.despesas = (root) => {
   const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
-  const hasFilter = !!searchQuery || !!categoryFilter || !!tagFilter;
+  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0;
 
   root.innerHTML = `
     ${periodHeader()}
@@ -1387,9 +1391,9 @@ views.despesas = (root) => {
 
     ${state.categorias.length > 0 ? `
       <div class="filter-bar" id="cat-filter">
-        <button class="chip ${!categoryFilter?'active':''}" data-cat="">Todas categorias</button>
+        <button class="chip ${categoryFilter.size===0?'active':''}" data-cat="">Todas categorias</button>
         ${state.categorias.map(c => `
-          <button class="chip ${categoryFilter===c.id?'active':''}" data-cat="${c.id}">
+          <button class="chip ${categoryFilter.has(c.id)?'active':''}" data-cat="${c.id}">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.cor};margin-right:6px;vertical-align:middle;"></span>${escapeHTML(c.nome)}
           </button>`).join('')}
       </div>
@@ -1397,8 +1401,8 @@ views.despesas = (root) => {
 
     ${tags.length > 0 ? `
       <div class="filter-bar" id="tag-filter">
-        <button class="chip ${!tagFilter?'active':''}" data-tag="">Todas tags</button>
-        ${tags.map(t => `<button class="chip ${tagFilter===t.toLowerCase()?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
+        <button class="chip ${tagFilter.size===0?'active':''}" data-tag="">Todas tags</button>
+        ${tags.map(t => `<button class="chip ${tagFilter.has(t.toLowerCase())?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
       </div>
     ` : ''}
 
@@ -1464,11 +1468,15 @@ views.despesas = (root) => {
     if (confirm('Excluir esta despesa?')) { db.removeDespesa(id); toast('Despesa excluída'); render(); }
   }));
   root.querySelectorAll('#tag-filter .chip').forEach(b => b.addEventListener('click', () => {
-    tagFilter = b.dataset.tag || null;
+    const t = b.dataset.tag;
+    if (!t) tagFilter.clear();
+    else tagFilter.has(t) ? tagFilter.delete(t) : tagFilter.add(t);
     render();
   }));
   root.querySelectorAll('#cat-filter .chip').forEach(b => b.addEventListener('click', () => {
-    categoryFilter = b.dataset.cat || null;
+    const c = b.dataset.cat;
+    if (!c) categoryFilter.clear();
+    else categoryFilter.has(c) ? categoryFilter.delete(c) : categoryFilter.add(c);
     render();
   }));
   const searchEl = root.querySelector('#search');
@@ -1488,7 +1496,7 @@ views.despesas = (root) => {
   }
   const clearBtn = root.querySelector('#clear-filters');
   if (clearBtn) clearBtn.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter = null; tagFilter = null;
+    searchQuery = ''; categoryFilter.clear(); tagFilter.clear();
     render();
   });
   const addBtn = root.querySelector('#add-desp');
