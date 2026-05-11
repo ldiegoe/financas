@@ -906,12 +906,15 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => 
       ${data.map(c => {
         const pctTotal = total > 0 ? Math.round((c.valor / total) * 100) : 0;
         const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
-        const cls = !c.meta ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
+        // Poupanca: guardar mais nao eh "estourar" — barra sempre sem warn/over.
+        const cls = (!c.meta || c.poupanca) ? '' : (c.valor > c.meta ? 'over' : (c.valor > c.meta*0.8 ? 'warn' : ''));
         return `
           <li>
-            <span class="swatch" style="background:${c.cor}"></span>
+            ${c.icone
+              ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
+              : `<span class="swatch" style="background:${c.cor}"></span>`}
             <div class="grow">
-              <div class="t">${escapeHTML(c.nome)}</div>
+              <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Poupança</span>' : ''}</div>
               ${c.meta ? `
                 <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
                 <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
@@ -1032,17 +1035,21 @@ views.dashboard = (root) => {
   const totalRenda    = sumAmount(rendasPeriod);
   const totalDespesa  = sumAmount(despesasPeriod);
   const saldo         = totalRenda - totalDespesa;
-  // Pago/Pendente — usado no card resumo pra mostrar quanto ja saiu da conta
-  // vs quanto ainda esta por pagar este periodo. Saldo "atual" considera so
-  // o que ja foi pago (cash on hand efetivo).
-  const totalPago      = despesasPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
-  const totalPendente  = totalDespesa - totalPago;
-  const saldoAtual     = totalRenda - totalPago;
   // Gasto vs Guardado — separa consumo de poupanca/investimento. Soh exibido
   // no resumo quando ha pelo menos uma categoria de poupanca com lancamento.
   const poupancaIds    = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
   const totalGuardado  = despesasPeriod.filter(d => poupancaIds.has(d.categoriaId)).reduce((s, d) => s + (d.valor || 0), 0);
   const totalGastos    = totalDespesa - totalGuardado;
+  // Pago/Pendente — escopado aos GASTOS (consumo), nao ao total: "investimento
+  // pendente" nao tem o mesmo sentido. Sem categorias de poupanca, gastos ==
+  // despesa total, entao a leitura volta a ser do total (compat).
+  const gastosPeriod   = despesasPeriod.filter(d => !poupancaIds.has(d.categoriaId));
+  const totalPago      = gastosPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
+  const totalPendente  = totalGastos - totalPago;
+  // Saldo "atual" = receita - tudo que ja saiu da conta (gastos pagos +
+  // poupanca paga). Considera que o que esta "guardado" ja foi transferido.
+  const totalDespesaPaga = despesasPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
+  const saldoAtual       = totalRenda - totalDespesaPaga;
 
   // Período anterior: total + despesas por categoria, para comparação.
   const prev = previousPeriod(period);
@@ -1106,6 +1113,8 @@ views.dashboard = (root) => {
       nome: c ? c.nome : 'Sem categoria',
       cor:  c ? c.cor  : '#999',
       meta: c ? c.meta : null,
+      icone: c ? (c.icone || '') : '',
+      poupanca: c ? !!c.poupanca : false,
       valor,
     };
   }).sort((a, b) => b.valor - a.valor);
