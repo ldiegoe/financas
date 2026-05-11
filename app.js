@@ -1208,42 +1208,65 @@ views.dashboard = (root) => {
     </div>
 
     ${(() => {
-      // Proximos vencimentos: pendentes nos proximos 14 dias, ordenados por
-      // data. Considera mes corrente + proximo (cobre virada). Toggle no
-      // card "Personalizar dashboard" controla exibicao.
+      // Vencimentos: pendentes nos proximos 14 dias + atrasados ate 30 dias
+      // pra tras (pra capturar boletos esquecidos sem puxar coisa antiga).
+      // Escaneia mes anterior + corrente + proximo (cobre todas as janelas).
+      // Toggle no card "Personalizar dashboard" controla exibicao.
       if (state.config.dashUpcomingShow === false) return '';
       const today = new Date(); today.setHours(0,0,0,0);
       const horizon = new Date(today); horizon.setDate(today.getDate() + 14);
-      const cur = { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 };
+      const overdueLimit = new Date(today); overdueLimit.setDate(today.getDate() - 30);
+      const pv = new Date(today); pv.setMonth(pv.getMonth() - 1);
       const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
-      const next = { type: 'month', year: nx.getFullYear(), value: nx.getMonth() + 1 };
-      const upcoming = [
-        ...expandWithRecurring(state.despesas, cur),
-        ...expandWithRecurring(state.despesas, next),
-      ].filter(d => !d._pago)
-       .filter(d => {
-         const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
-         return dt >= today && dt <= horizon;
-       })
-       .sort((a, b) => a.data.localeCompare(b.data))
-       .slice(0, 10);
-      if (upcoming.length === 0) return '';
-      const total = upcoming.reduce((s, d) => s + (d.valor || 0), 0);
+      const periods = [
+        { type: 'month', year: pv.getFullYear(),    value: pv.getMonth() + 1 },
+        { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 },
+        { type: 'month', year: nx.getFullYear(),    value: nx.getMonth() + 1 },
+      ];
+      const items = periods.flatMap(p => expandWithRecurring(state.despesas, p))
+        .filter(d => !d._pago)
+        .filter(d => {
+          const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
+          return dt >= overdueLimit && dt <= horizon;
+        })
+        .map(d => {
+          const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
+          return { ...d, _overdue: dt < today };
+        })
+        // Atrasadas primeiro (mais urgente), ordenadas mais recente -> mais antiga.
+        // Proximas depois, ordenadas mais cedo -> mais tarde.
+        .sort((a, b) => {
+          if (a._overdue !== b._overdue) return a._overdue ? -1 : 1;
+          return a._overdue
+            ? b.data.localeCompare(a.data)  // atrasada: recente primeiro
+            : a.data.localeCompare(b.data); // proxima: mais cedo primeiro
+        })
+        .slice(0, 12);
+      if (items.length === 0) return '';
+      const overdueCount = items.filter(d => d._overdue).length;
+      const upcomingCount = items.length - overdueCount;
+      const total = items.reduce((s, d) => s + (d.valor || 0), 0);
+      const summary = [
+        overdueCount > 0 ? `${overdueCount} atrasada${overdueCount > 1 ? 's' : ''}` : null,
+        upcomingCount > 0 ? `${upcomingCount} nos próximos 14 dias` : null,
+      ].filter(Boolean).join(' + ');
       return `
         <div class="card">
-          ${collapseHeader('upcoming', 'Próximos vencimentos')}
+          ${collapseHeader('upcoming', 'Vencimentos')}
           ${isCollapsed('upcoming') ? '' : `
             <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;">
-              ${upcoming.length} pendente${upcoming.length > 1 ? 's' : ''} nos próximos 14 dias · ${fmtBRL(total)}
+              ${summary} · ${fmtBRL(total)}
             </p>
-            <ul class="list" style="box-shadow:none;margin:0;">
-              ${upcoming.map(d => {
+            <ul class="list upcoming-list" style="box-shadow:none;margin:0;">
+              ${items.map(d => {
                 const c = state.categorias.find(x => x.id === d.categoriaId);
                 return `
-                  <li>
+                  <li class="upcoming-row" data-id="${d.id}" data-data="${d.data}">
                     <span class="swatch" style="background:${c ? c.cor : '#999'}"></span>
                     <div class="grow">
-                      <div class="t">${escapeHTML(d.descricao || (c ? c.nome : 'Despesa'))}</div>
+                      <div class="t">${escapeHTML(d.descricao || (c ? c.nome : 'Despesa'))}
+                        ${d._overdue ? '<span class="tag atrasado">Atrasado</span>' : ''}
+                      </div>
                       <div class="s">${fmtDate(d.data)}${c ? ' · '+escapeHTML(c.nome) : ''}</div>
                     </div>
                     <div class="amount neg">${fmtBRL(d.valor)}</div>
@@ -1316,6 +1339,26 @@ views.dashboard = (root) => {
 
   const bannerBtn = root.querySelector('#banner-backup');
   if (bannerBtn) bannerBtn.addEventListener('click', () => { exportBackup(); render(); });
+
+  // Tap numa linha do card Vencimentos abre os detalhes da despesa — la o
+  // usuario pode marcar como paga direto sem precisar ir ate a aba Despesas.
+  root.querySelectorAll('.upcoming-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.id;
+      const data = row.dataset.data;
+      // Re-expande os mesmos periodos pra achar a ocorrencia exata por id+data.
+      const today = new Date();
+      const pv = new Date(today); pv.setMonth(pv.getMonth() - 1);
+      const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
+      const occ = [
+        { type: 'month', year: pv.getFullYear(),    value: pv.getMonth() + 1 },
+        { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 },
+        { type: 'month', year: nx.getFullYear(),    value: nx.getMonth() + 1 },
+      ].flatMap(p => expandWithRecurring(state.despesas, p))
+        .find(x => x.id === id && x.data === data);
+      if (occ) sheetDespesaDetalhes(occ);
+    });
+  });
 
   // Gráficos
   if (window.Chart) {

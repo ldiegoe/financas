@@ -625,6 +625,12 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .tag.installment { background: rgba(255,159,10,.15);  color: var(--orange); }
 .tag.usertag     { background: rgba(94, 92, 230,.15); color: #5e5ce6; margin-left: 4px; }
 .tag.pendente    { background: rgba(255,159,10,.15);  color: var(--orange); }
+.tag.atrasado    { background: rgba(255,69,58,.15);   color: var(--red); }
+
+/* Linhas do card Vencimentos sao clicaveis (abrem detalhes pra marcar como
+   paga sem ir ate a aba Despesas). */
+.upcoming-list .upcoming-row { cursor: pointer; }
+.upcoming-list .upcoming-row:active { background: var(--separator); }
 
 .tags-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tags-row .tag { margin-left: 0; }
