@@ -1657,7 +1657,6 @@ views.despesas = (root) => {
     `}
 
     ${selectionMode ? `
-      <div style="height:72px;"></div>
       <div class="select-bar">
         <span class="count">${selectedIds.size} selecionada${selectedIds.size === 1 ? '' : 's'}</span>
         <button class="link" id="cancel-select">Cancelar</button>

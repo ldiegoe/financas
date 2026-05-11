@@ -167,7 +167,10 @@ html.text-large { zoom: 1.1; }
 
 main#view {
   flex: 1;
-  padding: 8px 16px 16px;
+  /* padding-bottom generoso pra a ultima linha das listas conseguir rolar pra
+     cima do FAB (botao + flutuante) — assim ele nunca sobrepoe conteudo
+     interativo (swipe de editar/excluir, setas de reordenar, etc). */
+  padding: 8px 16px 92px;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
