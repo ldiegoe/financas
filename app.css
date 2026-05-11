@@ -231,6 +231,23 @@ main#view {
   transition: transform .15s ease;
 }
 .chevron.collapsed { transform: rotate(-90deg); }
+
+/* Sub-secoes colapsaveis dentro de um card (usado em "Personalizar dashboard"). */
+.subsection { border-top: 1px solid var(--separator); margin-top: 14px; padding-top: 14px; }
+.subsection-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--text-2);
+}
+.subsection-h:active { opacity: .6; }
+.subsection-body { margin-top: 12px; }
 .card .big {
   font-size: clamp(26px, 8.5vw, 36px);
   font-weight: 700;

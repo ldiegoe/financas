@@ -459,6 +459,22 @@ const collapseHeader = (key, title) => `
     </svg>
   </h2>`;
 
+// Sub-secao colapsavel dentro de um card (usada pra organizar "Personalizar
+// dashboard"). Reaproveita o mesmo mecanismo de collapse (dashCollapsed).
+const subSection = (key, title, contentHtml) => {
+  const col = isCollapsed(key);
+  return `
+    <div class="subsection">
+      <div class="subsection-h" data-collapse="${key}">
+        <span>${escapeHTML(title)}</span>
+        <svg class="chevron ${col?'collapsed':''}" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
+          <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      ${col ? '' : `<div class="subsection-body">${contentHtml}</div>`}
+    </div>`;
+};
+
 // Cor estavel por tag — hash determinístico sobre a chave lowercase apontando
 // pra um indice da paleta. "viagem" sempre vai dar a mesma cor entre renders.
 const tagColor = (key) => {
@@ -1998,48 +2014,39 @@ views.config = (root) => {
     </div>
 
     ${(() => {
-      // Renderiza um sub-bloco "Despesas por X" com 5 controles + segmented de
-      // tipo. prefix='Cat' ou 'Tag'; idSuf vai como "cat" ou "tag" nos ids
-      // pra facilitar wire-up. Reaproveita cfg() pra ler com fallback legacy.
-      const renderDashSection = (titulo, prefix, idSuf, extraTail) => {
+      // Controles de um grafico (categoria/tag) — 5 toggles + segmented de tipo.
+      // prefix='Cat'/'Tag', idSuf='cat'/'tag' nos ids; cfg() le com fallback legacy.
+      const dashControls = (prefix, idSuf, extraTail) => {
         const tipo = cfg('DonutType', prefix) || 'donut';
         return `
-          <div style="border-top:1px solid var(--separator);margin-top:14px;padding-top:14px;">
-            <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
-              ${titulo}
-            </p>
-
-            <div class="checkbox-row">
-              <input id="f-dash-${idSuf}-donut-show" type="checkbox" ${cfg('DonutShow', prefix)!==false?'checked':''}/>
-              <label for="f-dash-${idSuf}-donut-show">Exibir gráfico</label>
+          <div class="checkbox-row" style="padding-top:0;">
+            <input id="f-dash-${idSuf}-donut-show" type="checkbox" ${cfg('DonutShow', prefix)!==false?'checked':''}/>
+            <label for="f-dash-${idSuf}-donut-show">Exibir gráfico</label>
+          </div>
+          <label class="field" style="margin:10px 0 0;">
+            <span>Tipo do gráfico</span>
+            <div class="segmented" id="dash-${idSuf}-donut-type">
+              <button data-type="donut" class="${tipo==='donut'?'active':''}">Donut</button>
+              <button data-type="pie"   class="${tipo==='pie'  ?'active':''}">Pizza</button>
+              <button data-type="bars"  class="${tipo==='bars' ?'active':''}">Barras</button>
             </div>
-
-            <label class="field" style="margin:10px 0 0;">
-              <span>Tipo do gráfico</span>
-              <div class="segmented" id="dash-${idSuf}-donut-type">
-                <button data-type="donut" class="${tipo==='donut'?'active':''}">Donut</button>
-                <button data-type="pie"   class="${tipo==='pie'  ?'active':''}">Pizza</button>
-                <button data-type="bars"  class="${tipo==='bars' ?'active':''}">Barras</button>
-              </div>
-            </label>
-
-            ${tipo !== 'bars' ? `
-              <div class="checkbox-row" style="margin-top:14px;">
-                <input id="f-dash-${idSuf}-donut-inner" type="checkbox" ${cfg('DonutInnerPct', prefix)?'checked':''}/>
-                <label for="f-dash-${idSuf}-donut-inner">Mostrar % dentro das fatias</label>
-              </div>
-            ` : ''}
-
-            <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
-              <input id="f-dash-${idSuf}-list-show" type="checkbox" ${cfg('ListShow', prefix)!==false?'checked':''}/>
-              <label for="f-dash-${idSuf}-list-show">Exibir lista</label>
+          </label>
+          ${tipo !== 'bars' ? `
+            <div class="checkbox-row" style="margin-top:14px;">
+              <input id="f-dash-${idSuf}-donut-inner" type="checkbox" ${cfg('DonutInnerPct', prefix)?'checked':''}/>
+              <label for="f-dash-${idSuf}-donut-inner">Mostrar % dentro das fatias</label>
             </div>
-            <div class="checkbox-row">
-              <input id="f-dash-${idSuf}-list-pct" type="checkbox" ${cfg('ListPct', prefix)!==false?'checked':''}/>
-              <label for="f-dash-${idSuf}-list-pct">Mostrar % na lista</label>
-            </div>
-            ${extraTail || ''}
-          </div>`;
+          ` : ''}
+          <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+            <input id="f-dash-${idSuf}-list-show" type="checkbox" ${cfg('ListShow', prefix)!==false?'checked':''}/>
+            <label for="f-dash-${idSuf}-list-show">Exibir lista</label>
+          </div>
+          <div class="checkbox-row">
+            <input id="f-dash-${idSuf}-list-pct" type="checkbox" ${cfg('ListPct', prefix)!==false?'checked':''}/>
+            <label for="f-dash-${idSuf}-list-pct">Mostrar % na lista</label>
+          </div>
+          ${extraTail || ''}
+        `;
       };
 
       const tagSplitMode = state.config.dashTagSplit !== false ? 'split' : 'each';
@@ -2062,30 +2069,30 @@ views.config = (root) => {
           </p>
         </div>`;
 
+      const cardsControls = `
+        <div class="checkbox-row" style="padding-top:0;">
+          <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
+          <label for="f-dash-compare-show">Comparação com mês anterior</label>
+        </div>
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
+          <label for="f-dash-bars-show">Gráfico de Receitas vs Despesas</label>
+        </div>
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <input id="f-dash-upcoming-show" type="checkbox" ${state.config.dashUpcomingShow!==false?'checked':''}/>
+          <label for="f-dash-upcoming-show">Vencimentos (pendentes e atrasados)</label>
+        </div>
+      `;
+
       return `
         <div class="card">
           <h2>Personalizar dashboard</h2>
-          <p style="color:var(--text-2);font-size:14px;margin:6px 0 14px;">
-            Mostre ou oculte os cards do dashboard.
+          <p style="color:var(--text-2);font-size:14px;margin:6px 0 0;">
+            Toque numa seção pra expandir os controles.
           </p>
-
-          <div class="checkbox-row">
-            <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
-            <label for="f-dash-compare-show">Exibir comparação com mês anterior</label>
-          </div>
-
-          <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
-            <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
-            <label for="f-dash-bars-show">Exibir gráfico de Receitas vs Despesas</label>
-          </div>
-
-          <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
-            <input id="f-dash-upcoming-show" type="checkbox" ${state.config.dashUpcomingShow!==false?'checked':''}/>
-            <label for="f-dash-upcoming-show">Exibir próximos vencimentos (pendentes)</label>
-          </div>
-
-          ${renderDashSection('Despesas por categoria', 'Cat', 'cat')}
-          ${renderDashSection('Despesas por tag',       'Tag', 'tag', tagExtra)}
+          ${subSection('ajGrpCards', 'Cards do dashboard', cardsControls)}
+          ${subSection('ajGrpCat',   'Gráfico de despesas por categoria', dashControls('Cat', 'cat'))}
+          ${subSection('ajGrpTag',   'Despesas por tag', dashControls('Tag', 'tag', tagExtra))}
         </div>
       `;
     })()}
@@ -2292,6 +2299,16 @@ views.config = (root) => {
   root.querySelectorAll('#dash-tag-split button').forEach(btn => {
     btn.addEventListener('click', () => {
       updateConfig({ dashTagSplit: btn.dataset.mode === 'split' });
+      render({ preserveScroll: true });
+    });
+  });
+  // Sub-secoes colapsaveis de "Personalizar dashboard" (mesmo mecanismo dos
+  // cards do dashboard, chaves ajGrp*).
+  root.querySelectorAll('[data-collapse]').forEach(h => {
+    h.addEventListener('click', () => {
+      const key = h.dataset.collapse;
+      const cur = state.config.dashCollapsed || {};
+      updateConfig({ dashCollapsed: { ...cur, [key]: !cur[key] } });
       render({ preserveScroll: true });
     });
   });
