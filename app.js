@@ -78,6 +78,7 @@ let activeProfileId = _profilesMeta.current;
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
   'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashCollapsed',
+  'onboardingDone',
   // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
   'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
   // Por grafico (categoria)
@@ -479,6 +480,8 @@ const ICONS = {
   inbox:     '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   sparkles:  '<path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/>',
   lock:      '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  shield:    '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
+  download:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
 };
 
 const icon = (name, size = 22) =>
@@ -2052,6 +2055,7 @@ views.config = (root) => {
           return `<li><div class="grow">Em uso há</div><div class="amount">${days === 0 ? 'hoje' : days === 1 ? '1 dia' : `${days} dias`}</div></li>`;
         })()}
       </ul>
+      <button class="link" id="replay-onboarding" style="padding:8px 0 0;">Ver tutorial novamente</button>
     </div>
   `;
 
@@ -2083,6 +2087,9 @@ views.config = (root) => {
   }
 
   root.querySelector('#force-refresh').addEventListener('click', forceRefresh);
+
+  const replayBtn = root.querySelector('#replay-onboarding');
+  if (replayBtn) replayBtn.addEventListener('click', showOnboarding);
 
   // Card "Perfis" — renomear/excluir/criar.
   root.querySelectorAll('[data-action="rename-profile"]').forEach(b => {
@@ -2891,6 +2898,74 @@ document.getElementById('toggle-values').addEventListener('click', () => {
   render();
 });
 
+// --------------------------- Onboarding -------------------------------------
+// Tutorial em carousel no primeiro acesso (controlado pelo flag onboardingDone
+// no device config). Pode ser reaberto via "Ver tutorial" em Ajustes → Sobre.
+const ONBOARDING_SLIDES = [
+  { icon: 'shield',    title: 'Bem-vindo ao Finanças',
+    body: 'Controle pessoal sem servidor — todos os dados ficam neste aparelho. Sem cadastro, sem conta.' },
+  { icon: 'dashboard', title: 'Dashboard',
+    body: 'Veja receitas, despesas, saldo e gráficos do período. Personalize quais cards aparecem em Ajustes.' },
+  { icon: 'wallet',    title: 'Cadastre suas receitas',
+    body: 'Na aba Carteira, registre salário, freela ou dividendos. Receitas mensais contam automaticamente todo mês.' },
+  { icon: 'card',      title: 'Cadastre suas despesas',
+    body: 'Únicas, mensais fixas ou parceladas. Marque como paga ou pendente, organize com categorias e tags.' },
+  { icon: 'tag',       title: 'Organize com categorias',
+    body: 'Cada categoria tem cor e meta mensal opcional. Reordene arrastando o ≡ pra esquerda.' },
+  { icon: 'download',  title: 'Backup dos dados',
+    body: 'Em Ajustes você exporta e importa um arquivo a qualquer momento. Ative o lembrete pra não esquecer.' },
+  { icon: 'sparkles',  title: 'Tudo pronto!',
+    body: 'Comece adicionando sua primeira receita ou despesa.',
+    cta: 'Adicionar primeira receita' },
+];
+
+const closeOnboarding = (markDone = true) => {
+  document.getElementById('onboarding')?.remove();
+  if (markDone) updateConfig({ onboardingDone: true });
+};
+
+const showOnboarding = () => {
+  document.getElementById('onboarding')?.remove();
+  let idx = 0;
+  const wrap = document.createElement('div');
+  wrap.id = 'onboarding';
+  document.body.appendChild(wrap);
+
+  const renderSlide = () => {
+    const slide = ONBOARDING_SLIDES[idx];
+    const isFirst = idx === 0;
+    const isLast  = idx === ONBOARDING_SLIDES.length - 1;
+    wrap.innerHTML = `
+      <div class="onb-header">
+        <div class="onb-dots">
+          ${ONBOARDING_SLIDES.map((_, i) => `<span class="onb-dot ${i===idx?'active':''}"></span>`).join('')}
+        </div>
+        <button class="onb-skip" id="onb-skip">Pular</button>
+      </div>
+      <div class="onb-content">
+        <div class="onb-icon-wrap">${icon(slide.icon, 48)}</div>
+        <h2 class="onb-title">${escapeHTML(slide.title)}</h2>
+        <p class="onb-body">${escapeHTML(slide.body)}</p>
+      </div>
+      <div class="onb-nav">
+        ${isFirst ? '<div style="flex:1;"></div>' : '<button class="secondary" id="onb-prev" style="flex:1;">Anterior</button>'}
+        ${isLast
+          ? `<button class="primary" id="onb-start" style="flex:1;">${escapeHTML(slide.cta || 'Começar')}</button>`
+          : `<button class="primary" id="onb-next" style="flex:1;">Próximo</button>`}
+      </div>
+    `;
+    wrap.querySelector('#onb-skip').addEventListener('click', () => closeOnboarding());
+    if (!isFirst) wrap.querySelector('#onb-prev').addEventListener('click', () => { idx--; renderSlide(); });
+    if (!isLast)  wrap.querySelector('#onb-next').addEventListener('click', () => { idx++; renderSlide(); });
+    if (isLast) wrap.querySelector('#onb-start').addEventListener('click', () => {
+      const hasCta = !!slide.cta;
+      closeOnboarding();
+      if (hasCta) sheetRenda();
+    });
+  };
+  renderSlide();
+};
+
 // Init
 const initApp = () => {
   applyTextSize(state.config.textSize);
@@ -2900,6 +2975,7 @@ const initApp = () => {
   const initial = location.hash.replace('#/', '') || 'dashboard';
   if (!location.hash) location.hash = '#/dashboard';
   setTab(initial);
+  if (!state.config.onboardingDone) showOnboarding();
 };
 
 if (lockEnabled() && lockSupported()) {

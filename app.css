@@ -629,6 +629,59 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .tags-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tags-row .tag { margin-left: 0; }
 
+/* Tutorial em carousel no primeiro acesso. Overlay tela cheia com cabecalho
+   (dots + Pular), conteudo centralizado (icone + titulo + texto) e nav. */
+#onboarding {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  padding: var(--safe-top) 20px var(--safe-bottom);
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+.onb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 4px;
+}
+.onb-dots { display: flex; gap: 6px; }
+.onb-dot {
+  width: 6px; height: 6px; border-radius: 3px;
+  background: var(--separator);
+  transition: width .2s, background .2s;
+}
+.onb-dot.active { background: var(--tint); width: 18px; }
+.onb-skip {
+  appearance: none; border: 0;
+  background: transparent; color: var(--text-2);
+  font-size: 14px; font-family: inherit;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.onb-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 18px;
+  padding: 20px;
+}
+.onb-icon-wrap {
+  width: 92px; height: 92px;
+  border-radius: 22px;
+  background: rgba(10,132,255,.12);
+  color: var(--tint);
+  display: flex; align-items: center; justify-content: center;
+}
+.onb-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.3px; }
+.onb-body { margin: 0; color: var(--text-2); font-size: 16px; line-height: 1.5; max-width: 320px; }
+.onb-nav { display: flex; gap: 10px; padding: 14px 0; }
+
 /* Tela de bloqueio (WebAuthn). Cobre tudo no boot ate o usuario passar pela
    biometria nativa. z-index acima de tudo (sheets, fab, toast). */
 #lock-screen {
