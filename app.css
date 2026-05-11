@@ -593,6 +593,34 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   font-weight: 600;
 }
 
+/* Modo seleção da tela de Despesas */
+.list.selecting .swipe-row { cursor: pointer; }
+.select-row { user-select: none; -webkit-user-select: none; }
+.select-circle {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--separator);
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: transparent;
+  margin-right: 2px;
+}
+.select-circle.checked { background: var(--tint); border-color: var(--tint); color: #fff; }
+.select-circle.disabled { opacity: .3; }
+.select-bar {
+  position: fixed;
+  left: 12px; right: 12px;
+  bottom: calc(60px + var(--safe-bottom));
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-elev);
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.25);
+  padding: 10px 14px;
+  z-index: 8;
+}
+.select-bar .count { flex: 1; font-weight: 600; }
+.select-bar .danger[disabled] { opacity: .4; cursor: default; }
+
 .tag.recurring   { background: rgba(10,132,255,.15);  color: var(--tint); }
 .tag.installment { background: rgba(255,159,10,.15);  color: var(--orange); }
 .tag.usertag     { background: rgba(94, 92, 230,.15); color: #5e5ce6; margin-left: 4px; }

@@ -1476,6 +1476,10 @@ let searchQuery = '';           // texto digitado na busca
 let categoryFilter = new Set(); // ids de categorias ativas
 let statusFilter = null;        // null | 'pago' | 'pendente'
 
+// Modo seleção da tela de Despesas — permite marcar várias e apagar de uma vez.
+let selectionMode = false;
+let selectedIds = new Set();    // ids de despesas (reais, nao virtuais) marcadas
+
 // Aplica busca textual + filtro de categoria + filtro de tag + filtro de
 // status. Multi-select: dentro de cada filtro o match eh "OU" (qualquer das
 // categorias/tags selecionadas), entre filtros eh "E".
@@ -1559,17 +1563,27 @@ views.despesas = (root) => {
       <button class="chip ${statusFilter==='pendente'?'active':''}" data-status="pendente">Pendentes</button>
     </div>
 
-    <div class="section-title">Lançamentos</div>
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Lançamentos</span>
+      ${despesasPeriod.length > 0 && !selectionMode
+        ? `<button class="link" id="enter-select" style="padding:4px 0;">Selecionar</button>`
+        : ''}
+    </div>
     ${despesasPeriod.length === 0 ? `
       <div class="empty"><span class="ico">${icon('card', 48)}</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
         <button class="primary" id="add-desp">Adicionar despesa</button></div>
     ` : `
-      <ul class="list">
+      <ul class="list ${selectionMode ? 'selecting' : ''}">
         ${despesasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(d => {
           const cat = state.categorias.find(c => c.id === d.categoriaId);
           const dTags = d.tags || [];
+          const isReal = !d._virtual;
+          const sel = selectedIds.has(d.id);
           return `
-          <li class="swipe-row" data-id="${d.id}" data-data="${d.data}" data-real="${!d._virtual}">
+          <li class="swipe-row ${selectionMode ? 'select-row' : ''}" data-id="${d.id}" data-data="${d.data}" data-real="${isReal}">
+            ${selectionMode ? `
+              <span class="select-circle ${sel ? 'checked' : ''} ${isReal ? '' : 'disabled'}" ${isReal ? '' : 'title="Ocorrência projetada — não pode ser selecionada"'}>${sel ? '✓' : ''}</span>
+            ` : ''}
             <span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>
             <div class="grow">
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
@@ -1585,7 +1599,7 @@ views.despesas = (root) => {
               ` : ''}
             </div>
             <div class="amount neg">${fmtBRL(d.valor)}</div>
-            ${!d._virtual ? `
+            ${!d._virtual && !selectionMode ? `
               <div class="swipe-actions">
                 <button class="edit" data-action="edit-desp">Editar</button>
                 <button class="del"  data-action="del-desp">Excluir</button>
@@ -1596,31 +1610,65 @@ views.despesas = (root) => {
       </ul>
     `}
 
-    <button class="fab" id="fab-desp" aria-label="Adicionar despesa">+</button>
+    ${selectionMode ? `
+      <div style="height:72px;"></div>
+      <div class="select-bar">
+        <span class="count">${selectedIds.size} selecionada${selectedIds.size === 1 ? '' : 's'}</span>
+        <button class="link" id="cancel-select">Cancelar</button>
+        <button class="danger" id="delete-select" style="padding:8px 14px;" ${selectedIds.size === 0 ? 'disabled' : ''}>Apagar</button>
+      </div>
+    ` : `<button class="fab" id="fab-desp" aria-label="Adicionar despesa">+</button>`}
   `;
 
-  bindSwipe(root);
-
-  // Tap na linha abre os detalhes (descricao completa, valor, tipo, etc).
-  // Ignora clicks nas swipe-actions (editar/excluir) e tambem se a linha
-  // estiver com swipe aberto — ai o tap so fecha o swipe.
-  root.querySelectorAll('.swipe-row').forEach(row => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('.swipe-actions')) return;
-      if (row.classList.contains('open')) { row.classList.remove('open'); return; }
-      const occ = expanded.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
-      if (occ) sheetDespesaDetalhes(occ);
+  if (selectionMode) {
+    // Tap numa linha real alterna a selecao. Linhas virtuais (ocorrencias
+    // projetadas) sao ignoradas — nao existem como registro proprio.
+    root.querySelectorAll('.select-row[data-real="true"]').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = row.dataset.id;
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        render({ preserveScroll: true });
+      });
     });
-  });
+    root.querySelector('#cancel-select').addEventListener('click', () => {
+      selectionMode = false; selectedIds.clear(); render({ preserveScroll: true });
+    });
+    root.querySelector('#delete-select').addEventListener('click', () => {
+      const n = selectedIds.size;
+      if (n === 0) return;
+      if (!confirm(`Apagar ${n} despesa${n === 1 ? '' : 's'}? Recorrentes/parceladas marcadas serão removidas por completo.`)) return;
+      for (const id of selectedIds) db.removeDespesa(id);
+      selectionMode = false; selectedIds.clear();
+      toast(`${n} despesa${n === 1 ? '' : 's'} excluída${n === 1 ? '' : 's'}`);
+      render();
+    });
+  } else {
+    bindSwipe(root);
 
-  root.querySelectorAll('[data-action="edit-desp"]').forEach(b => b.addEventListener('click', (e) => {
-    const id = e.target.closest('[data-id]').dataset.id;
-    sheetDespesa(state.despesas.find(x => x.id === id));
-  }));
-  root.querySelectorAll('[data-action="del-desp"]').forEach(b => b.addEventListener('click', (e) => {
-    const id = e.target.closest('[data-id]').dataset.id;
-    if (confirm('Excluir esta despesa?')) { db.removeDespesa(id); toast('Despesa excluída'); render(); }
-  }));
+    // Tap na linha abre os detalhes (descricao completa, valor, tipo, etc).
+    // Ignora clicks nas swipe-actions (editar/excluir) e tambem se a linha
+    // estiver com swipe aberto — ai o tap so fecha o swipe.
+    root.querySelectorAll('.swipe-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.swipe-actions')) return;
+        if (row.classList.contains('open')) { row.classList.remove('open'); return; }
+        const occ = expanded.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
+        if (occ) sheetDespesaDetalhes(occ);
+      });
+    });
+
+    root.querySelectorAll('[data-action="edit-desp"]').forEach(b => b.addEventListener('click', (e) => {
+      const id = e.target.closest('[data-id]').dataset.id;
+      sheetDespesa(state.despesas.find(x => x.id === id));
+    }));
+    root.querySelectorAll('[data-action="del-desp"]').forEach(b => b.addEventListener('click', (e) => {
+      const id = e.target.closest('[data-id]').dataset.id;
+      if (confirm('Excluir esta despesa?')) { db.removeDespesa(id); toast('Despesa excluída'); render(); }
+    }));
+    const enterSelBtn = root.querySelector('#enter-select');
+    if (enterSelBtn) enterSelBtn.addEventListener('click', () => { selectionMode = true; selectedIds.clear(); render({ preserveScroll: true }); });
+  }
   root.querySelectorAll('#tag-filter .chip').forEach(b => b.addEventListener('click', () => {
     const t = b.dataset.tag;
     if (!t) tagFilter.clear();
@@ -1659,7 +1707,8 @@ views.despesas = (root) => {
   });
   const addBtn = root.querySelector('#add-desp');
   if (addBtn) addBtn.addEventListener('click', () => sheetDespesa());
-  root.querySelector('#fab-desp').addEventListener('click', () => sheetDespesa());
+  const fab = root.querySelector('#fab-desp');
+  if (fab) fab.addEventListener('click', () => sheetDespesa());
   bindPeriodHeader(root);
 };
 
@@ -2783,6 +2832,8 @@ let currentTab = 'dashboard';
 
 const setTab = (name) => {
   if (!tabs.includes(name)) name = 'dashboard';
+  // Sair da tela de Despesas cancela o modo seleção (evita estado pendurado).
+  if (name !== 'despesas') { selectionMode = false; selectedIds.clear(); }
   currentTab = name;
   document.querySelectorAll('.tabbar a').forEach(a => {
     a.classList.toggle('active', a.dataset.tab === name);
