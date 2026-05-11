@@ -1,5 +1,5 @@
 // Service Worker — cache offline + auto-update no celular
-const CACHE = 'financas-v44';
+const CACHE = 'financas-v45';
 const ASSETS = [
   './',
   './index.html',

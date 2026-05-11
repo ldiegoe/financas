@@ -523,7 +523,7 @@ const computeAlerts = () => {
     gastoPorCat.set(d.categoriaId, (gastoPorCat.get(d.categoriaId) || 0) + (d.valor || 0));
   }
   for (const c of state.categorias) {
-    if (!c.meta) continue;
+    if (!c.meta || c.poupanca) continue; // poupanca: estourar a meta de guardar eh bom, nao alerta
     const gasto = gastoPorCat.get(c.id) || 0;
     const pct = (gasto / c.meta) * 100;
     if (pct >= 100) {
@@ -1038,6 +1038,11 @@ views.dashboard = (root) => {
   const totalPago      = despesasPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
   const totalPendente  = totalDespesa - totalPago;
   const saldoAtual     = totalRenda - totalPago;
+  // Gasto vs Guardado — separa consumo de poupanca/investimento. Soh exibido
+  // no resumo quando ha pelo menos uma categoria de poupanca com lancamento.
+  const poupancaIds    = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
+  const totalGuardado  = despesasPeriod.filter(d => poupancaIds.has(d.categoriaId)).reduce((s, d) => s + (d.valor || 0), 0);
+  const totalGastos    = totalDespesa - totalGuardado;
 
   // Período anterior: total + despesas por categoria, para comparação.
   const prev = previousPeriod(period);
@@ -1193,6 +1198,12 @@ views.dashboard = (root) => {
         <span class="summary-label">Despesas</span>
         <span class="summary-value negative">${fmtBRL(totalDespesa)}</span>
       </div>
+      ${totalGuardado > 0 ? `
+        <div class="summary-sub">
+          <span>Gastos <strong>${fmtBRL(totalGastos)}</strong></span>
+          <span>Guardado <strong>${fmtBRL(totalGuardado)}</strong></span>
+        </div>
+      ` : ''}
       <div class="summary-sub">
         <span>Já pago <strong>${fmtBRL(totalPago)}</strong></span>
         <span>A pagar <strong>${fmtBRL(totalPendente)}</strong></span>
@@ -1630,7 +1641,9 @@ views.despesas = (root) => {
             ${selectionMode ? `
               <span class="select-circle ${sel ? 'checked' : ''} ${isReal ? '' : 'disabled'}" ${isReal ? '' : 'title="Ocorrência projetada — não pode ser selecionada"'}>${sel ? '✓' : ''}</span>
             ` : ''}
-            <span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>
+            ${cat && cat.icone
+              ? `<span class="cat-emoji" style="background:${cat.cor}22;">${cat.icone}</span>`
+              : `<span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>`}
             <div class="grow">
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
                 ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
@@ -1772,7 +1785,7 @@ views.categorias = (root) => {
 
   root.innerHTML = `
     <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
-      Toque e segure o ≡ para arrastar e reordenar. Arraste a linha para a esquerda para editar ou excluir.
+      Toque numa categoria pra ver o histórico. Segure o ≡ para arrastar e reordenar; arraste a linha pra esquerda para editar/excluir.
     </p>
     ${state.categorias.length === 0 ? `
       <div class="empty"><span class="ico">${icon('tag', 48)}</span>Nenhuma categoria.</div>
@@ -1781,16 +1794,20 @@ views.categorias = (root) => {
         ${state.categorias.map(c => {
           const gasto = gastoPorCat.get(c.id) || 0;
           const pct = c.meta ? Math.min(100, Math.round((gasto / c.meta) * 100)) : null;
-          const cls = !c.meta ? '' : (gasto > c.meta ? 'over' : (gasto > c.meta*0.8 ? 'warn' : ''));
+          // Pra poupanca, guardar mais eh bom — barra sempre "good" (sem warn/over).
+          const cls = (!c.meta || c.poupanca) ? '' : (gasto > c.meta ? 'over' : (gasto > c.meta*0.8 ? 'warn' : ''));
+          const metaLabel = c.poupanca ? 'guardado / meta' : '';
           return `
-            <li class="swipe-row" data-id="${c.id}">
-              <span class="swatch" style="background:${c.cor}"></span>
+            <li class="swipe-row cat-row" data-id="${c.id}">
+              ${c.icone
+                ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
+                : `<span class="swatch" style="background:${c.cor}"></span>`}
               <div class="grow">
-                <div class="t">${escapeHTML(c.nome)}</div>
+                <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Poupança</span>' : ''}</div>
                 ${c.meta ? `
-                  <div class="s">${fmtBRL(gasto)} / ${fmtBRL(c.meta)} este mês · ${pct}%</div>
+                  <div class="s">${fmtBRL(gasto)} / ${fmtBRL(c.meta)}${metaLabel ? ' '+metaLabel : ' este mês'} · ${pct}%</div>
                   <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
-                ` : `<div class="s">Sem meta · ${fmtBRL(gasto)} este mês</div>`}
+                ` : `<div class="s">${c.poupanca ? 'Sem meta' : 'Sem meta'} · ${fmtBRL(gasto)} ${c.poupanca ? 'guardado' : ''} este mês</div>`}
               </div>
               <span class="drag-handle" aria-label="Arrastar para reordenar">≡</span>
               <div class="swipe-actions">
@@ -1840,7 +1857,82 @@ views.categorias = (root) => {
       : `Excluir "${c.nome}"?`;
     if (confirm(msg)) { db.removeCategoria(id); toast('Categoria excluída'); render(); }
   }));
+  // Tap na linha (fora das swipe-actions / drag-handle) abre o historico.
+  root.querySelectorAll('.cat-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.swipe-actions') || e.target.closest('.drag-handle')) return;
+      if (row.classList.contains('open')) { row.classList.remove('open'); return; }
+      const c = state.categorias.find(x => x.id === row.dataset.id);
+      if (c) sheetCategoriaHistorico(c);
+    });
+  });
   root.querySelector('#fab-cat').addEventListener('click', () => sheetCategoria());
+};
+
+// Sheet de historico de uma categoria — mini grafico dos ultimos 6 meses de
+// gasto nela + media mensal, maior mes e acumulado. Tap numa categoria abre.
+const sheetCategoriaHistorico = (c) => {
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ y: d.getFullYear(), m: d.getMonth() + 1 });
+  }
+  const valores = months.map(({ y, m }) =>
+    sumAmount(expandWithRecurring(state.despesas, { type: 'month', year: y, value: m })
+      .filter(d => d.categoriaId === c.id)));
+  const totalAcum = valores.reduce((a, b) => a + b, 0);
+  const mediaMes = Math.round(totalAcum / months.length);
+  const maxIdx = valores.reduce((mi, v, i, arr) => v > arr[mi] ? i : mi, 0);
+  const maxVal = valores[maxIdx];
+  const verbo = c.poupanca ? 'Guardado' : 'Gasto';
+
+  openSheet(`${c.icone ? c.icone + ' ' : ''}${c.nome}`, () => `
+    <div class="chart-wrap" style="height:200px;"><canvas id="ch-cat-hist"></canvas></div>
+    <ul class="details-list" style="margin-top:8px;">
+      <li><span>Média mensal</span><span>${fmtBRL(mediaMes)}</span></li>
+      <li><span>Maior mês</span><span>${fmtBRL(maxVal)} (${monthName(months[maxIdx].m, true)}/${String(months[maxIdx].y).slice(2)})</span></li>
+      <li><span>Acumulado (6 meses)</span><span>${fmtBRL(totalAcum)}</span></li>
+      ${c.meta ? `<li><span>${c.poupanca ? 'Meta de poupança' : 'Limite mensal'}</span><span>${fmtBRL(c.meta)}</span></li>` : ''}
+    </ul>
+    <div class="actions">
+      <button class="secondary" id="close">Fechar</button>
+      <button class="primary"   id="edit-cat-hist">Editar categoria</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#close').addEventListener('click', closeSheet);
+    body.querySelector('#edit-cat-hist').addEventListener('click', () => {
+      closeSheet();
+      sheetCategoria(state.categorias.find(x => x.id === c.id));
+    });
+    const canvas = body.querySelector('#ch-cat-hist');
+    if (canvas && window.Chart) {
+      new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: months.map(({ m }) => monthName(m, true)),
+          datasets: [{
+            label: verbo,
+            data: valores.map(v => v / 100),
+            backgroundColor: c.cor,
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (ctx) => `${verbo}: ${fmtBRL(ctx.parsed.y * 100)}` } },
+          },
+          scales: {
+            x: { ticks: { color: getCSS('--text-2'), font: { size: 11 } }, grid: { display: false } },
+            y: { ticks: { color: getCSS('--text-2'), callback: v => state.config.valuesHidden ? '' : `R$${v}` }, grid: { color: getCSS('--separator') } },
+          },
+        },
+      });
+    }
+  });
 };
 
 // ----- Configurações -----
@@ -2353,7 +2445,7 @@ const sheetDespesa = (desp) => {
     <label class="field"><span>Categoria</span>
       <select id="f-cat">
         <option value="">— Sem categoria —</option>
-        ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${escapeHTML(c.nome)}</option>`).join('')}
+        ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${c.icone ? c.icone + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
       </select>
     </label>
     <label class="field"><span>Tipo</span>
@@ -2512,6 +2604,14 @@ const palette = [
   '#5AC8FA','#FF2D92','#FF6B35','#7B68EE','#9ACD32','#D4A574','#FF85B3',
 ];
 
+// Emojis sugeridos no picker de categoria (cobrem os usos mais comuns).
+// O usuario pode tambem digitar qualquer emoji no campo de texto ao lado.
+const EMOJI_CHOICES = [
+  '🍔','🛒','🍕','☕','🍺','🚗','⛽','🚌','✈️','🏠','💡','💧','🔥','📱','💻',
+  '🎮','🎬','🎵','📚','💊','🏥','💪','👕','✂️','🎁','💰','📈','🐷','🐾','🎓',
+  '⚽','🧾','🏦','🔧','✏️','🌐',
+];
+
 const sheetCategoria = (cat) => {
   const isEdit = !!cat;
   // Cores em uso por outras categorias (na edicao, ignora a propria).
@@ -2522,10 +2622,20 @@ const sheetCategoria = (cat) => {
   );
   const defaultCor = palette.find(p => !usedColors.has(p))
     || palette[Math.floor(Math.random()*palette.length)];
-  const c = cat || { nome: '', cor: defaultCor, meta: null };
+  const c = cat || { nome: '', cor: defaultCor, meta: null, icone: '', poupanca: false };
   openSheet(isEdit ? 'Editar categoria' : 'Nova categoria', () => `
     <label class="field"><span>Nome</span>
       <input id="f-nome" type="text" value="${escapeAttr(c.nome || '')}" required />
+    </label>
+    <label class="field"><span>Ícone (opcional)</span>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <input id="f-icone" type="text" maxlength="4" style="width:64px;text-align:center;font-size:20px;" placeholder="—" value="${escapeAttr(c.icone || '')}" />
+        <span style="color:var(--text-2);font-size:12px;">digite um emoji ou escolha abaixo</span>
+      </div>
+      <div class="emoji-picker" id="f-emojis">
+        <button type="button" class="emoji-pick ${!c.icone?'active':''}" data-emoji="">—</button>
+        ${EMOJI_CHOICES.map(e => `<button type="button" class="emoji-pick ${c.icone===e?'active':''}" data-emoji="${e}">${e}</button>`).join('')}
+      </div>
     </label>
     <label class="field"><span>Cor</span>
       <div class="color-picker" id="f-cores">
@@ -2544,7 +2654,15 @@ const sheetCategoria = (cat) => {
     <label class="field"><span>Meta mensal (R$, opcional)</span>
       <input id="f-meta" type="text" inputmode="numeric" placeholder="Deixe vazio para sem meta"
              value="${formatCentsDisplay(c.meta)}" />
+      <small id="meta-hint" style="display:block;color:var(--text-2);margin-top:6px;font-size:12px;"></small>
     </label>
+    <div class="checkbox-row">
+      <input id="f-poupanca" type="checkbox" ${c.poupanca?'checked':''}/>
+      <label for="f-poupanca">É poupança / investimento</label>
+    </div>
+    <small style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 0;">
+      Despesas nessa categoria contam como "guardado", não como gasto, no resumo do dashboard.
+    </small>
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
@@ -2559,11 +2677,37 @@ const sheetCategoria = (cat) => {
         chosen = el.dataset.cor;
       });
     });
+    const iconeInput = body.querySelector('#f-icone');
+    body.querySelectorAll('#f-emojis .emoji-pick').forEach(el => {
+      el.addEventListener('click', () => {
+        iconeInput.value = el.dataset.emoji;
+        body.querySelectorAll('#f-emojis .emoji-pick').forEach(x => x.classList.remove('active'));
+        el.classList.add('active');
+      });
+    });
+    // Digitar manualmente desmarca os botoes (pode ser um emoji fora da lista).
+    iconeInput.addEventListener('input', () => {
+      body.querySelectorAll('#f-emojis .emoji-pick').forEach(x => {
+        x.classList.toggle('active', x.dataset.emoji === iconeInput.value.trim());
+      });
+    });
+    // Hint da meta muda conforme "poupanca" — limite de gasto vs meta de guardar.
+    const poupEl = body.querySelector('#f-poupanca');
+    const metaHint = body.querySelector('#meta-hint');
+    const updateMetaHint = () => {
+      metaHint.textContent = poupEl.checked
+        ? 'Meta de quanto guardar por mês — atingir é bom.'
+        : 'Limite de gasto por mês — você é avisado ao chegar perto.';
+    };
+    poupEl.addEventListener('change', updateMetaHint);
+    updateMetaHint();
     body.querySelector('#cancel').addEventListener('click', closeSheet);
     body.querySelector('#save').addEventListener('click', () => {
       const data = {
         nome: body.querySelector('#f-nome').value.trim(),
         cor: chosen,
+        icone: iconeInput.value.trim(),
+        poupanca: poupEl.checked,
         meta: body.querySelector('#f-meta').value.trim() ? parseAmount(body.querySelector('#f-meta').value) : null,
       };
       if (!data.nome) { alert('Informe um nome.'); return; }
