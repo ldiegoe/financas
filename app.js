@@ -475,12 +475,24 @@ const subSection = (key, title, contentHtml) => {
     </div>`;
 };
 
-// Cor estavel por tag — hash determinístico sobre a chave lowercase apontando
-// pra um indice da paleta. "viagem" sempre vai dar a mesma cor entre renders.
-const tagColor = (key) => {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
-  return palette[Math.abs(h) % palette.length];
+// Cores das tags sao geradas dinamicamente em HSL (nao da paleta fixa) — tags
+// crescem sem limite, entao precisam de cores ilimitadas. Cada tag pega o
+// matiz do hash do nome (estavel entre renders); se cair perto demais (<24deg)
+// de um matiz ja usado nesta render, pula pelo angulo dourado (137.5deg) ate
+// achar um espaco distante. "_sem" (sem tag) sempre cinza.
+const assignTagColors = (sortedTags) => {
+  const usedHues = [];
+  const tooClose = (h) => usedHues.some(u => { const d = Math.abs(h - u); return Math.min(d, 360 - d) < 24; });
+  return sortedTags.map(t => {
+    if (t.id === '_sem') return { ...t, cor: '#999' };
+    let n = 0;
+    for (let i = 0; i < t.id.length; i++) n = (n * 31 + t.id.charCodeAt(i)) | 0;
+    let hue = Math.abs(n) % 360;
+    let tries = 0;
+    while (tooClose(hue) && tries < 30) { hue = (hue + 137.508) % 360; tries++; }
+    usedHues.push(hue);
+    return { ...t, cor: `hsl(${Math.round(hue)}, 65%, 58%)` };
+  });
 };
 
 // Biblioteca de icones SVG estilo Lucide (linha fina, currentColor). Centraliza
@@ -1177,13 +1189,11 @@ views.dashboard = (root) => {
       }
     }
   }
-  const tagData = [...porTag.entries()].map(([k, v]) => ({
-    id: k,
-    nome: v.name,
-    cor: k === '_sem' ? '#999' : tagColor(k),
-    meta: null,
-    valor: v.valor,
-  })).sort((a, b) => b.valor - a.valor);
+  const tagData = assignTagColors(
+    [...porTag.entries()]
+      .map(([k, v]) => ({ id: k, nome: v.name, meta: null, valor: v.valor }))
+      .sort((a, b) => b.valor - a.valor)
+  );
 
   // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
   const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
