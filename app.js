@@ -78,7 +78,7 @@ let activeProfileId = _profilesMeta.current;
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
   'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashCollapsed',
-  'onboardingDone',
+  'onboardingDone','showCategoryIcons',
   // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
   'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
   // Por grafico (categoria)
@@ -502,6 +502,13 @@ const ICONS = {
 
 const icon = (name, size = 22) =>
   `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
+// Se os emojis das categorias devem ser exibidos (toggle em Ajustes > Aparencia).
+// Default true. Quando false, mostra so a cor (swatch) em todo lugar.
+const iconsEnabled = () => state.config.showCategoryIcons !== false;
+// Retorna o emoji da categoria SE habilitado, senao string vazia — usado pra
+// decidir entre emoji vs swatch nos diversos lugares de exibicao.
+const catEmoji = (c) => (iconsEnabled() && c && c.icone) ? c.icone : '';
 
 // 'system' (padrão) | 'light' | 'dark'. Atributo data-theme no <html> é
 // quem comanda o CSS; ausência do atributo = seguir sistema operacional.
@@ -1110,7 +1117,7 @@ views.dashboard = (root) => {
       id,
       nome: c ? c.nome : 'Sem categoria',
       cor:  c ? c.cor  : '#999',
-      icone: c ? (c.icone || '') : '',
+      icone: catEmoji(c),
       diff: (currCatMap.get(id) || 0) - (prevCatMap.get(id) || 0),
     };
   }).filter(x => x.diff !== 0)
@@ -1130,7 +1137,7 @@ views.dashboard = (root) => {
       nome: c ? c.nome : 'Sem categoria',
       cor:  c ? c.cor  : '#999',
       meta: c ? c.meta : null,
-      icone: c ? (c.icone || '') : '',
+      icone: catEmoji(c),
       poupanca: c ? !!c.poupanca : false,
       valor,
     };
@@ -1299,8 +1306,8 @@ views.dashboard = (root) => {
                 const c = state.categorias.find(x => x.id === d.categoriaId);
                 return `
                   <li class="upcoming-row" data-id="${d.id}" data-data="${d.data}">
-                    ${c && c.icone
-                      ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
+                    ${catEmoji(c)
+                      ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>`
                       : `<span class="swatch" style="background:${c ? c.cor : '#999'}"></span>`}
                     <div class="grow">
                       <div class="t">${escapeHTML(d.descricao || (c ? c.nome : 'Despesa'))}
@@ -1671,8 +1678,8 @@ views.despesas = (root) => {
             ${selectionMode ? `
               <span class="select-circle ${sel ? 'checked' : ''} ${isReal ? '' : 'disabled'}" ${isReal ? '' : 'title="Ocorrência projetada — não pode ser selecionada"'}>${sel ? '✓' : ''}</span>
             ` : ''}
-            ${cat && cat.icone
-              ? `<span class="cat-emoji" style="background:${cat.cor}22;">${cat.icone}</span>`
+            ${catEmoji(cat)
+              ? `<span class="cat-emoji" style="background:${cat.cor}22;">${catEmoji(cat)}</span>`
               : `<span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>`}
             <div class="grow">
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
@@ -1829,8 +1836,8 @@ views.categorias = (root) => {
           const metaLabel = c.poupanca ? 'guardado / meta' : '';
           return `
             <li class="swipe-row cat-row" data-id="${c.id}">
-              ${c.icone
-                ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
+              ${catEmoji(c)
+                ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>`
                 : `<span class="swatch" style="background:${c.cor}"></span>`}
               <div class="grow">
                 <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Poupança</span>' : ''}</div>
@@ -1917,7 +1924,7 @@ const sheetCategoriaHistorico = (c) => {
   const maxVal = valores[maxIdx];
   const verbo = c.poupanca ? 'Guardado' : 'Gasto';
 
-  openSheet(`${c.icone ? c.icone + ' ' : ''}${c.nome}`, () => `
+  openSheet(`${catEmoji(c) ? catEmoji(c) + ' ' : ''}${c.nome}`, () => `
     <div class="chart-wrap" style="height:200px;"><canvas id="ch-cat-hist"></canvas></div>
     <ul class="details-list" style="margin-top:8px;">
       <li><span>Média mensal</span><span>${fmtBRL(mediaMes)}</span></li>
@@ -1981,7 +1988,7 @@ views.config = (root) => {
         "Sistema" segue o tema do dispositivo automaticamente.
       </p>
 
-      <label class="field" style="margin-bottom:0;">
+      <label class="field" style="margin-bottom:14px;">
         <span>Tamanho do texto</span>
         <div class="segmented" id="text-size">
           <button data-size="small"  class="${textSize==='small' ?'active':''}">Pequeno</button>
@@ -1989,6 +1996,14 @@ views.config = (root) => {
           <button data-size="large"  class="${textSize==='large' ?'active':''}">Grande</button>
         </div>
       </label>
+
+      <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <input id="f-cat-icons" type="checkbox" ${iconsEnabled()?'checked':''}/>
+        <label for="f-cat-icons">Mostrar ícones das categorias</label>
+      </div>
+      <p style="color:var(--text-2);font-size:13px;margin:6px 2px 0;">
+        Quando desligado, mostra só a cor da categoria (sem o emoji).
+      </p>
     </div>
 
     <div class="card">
@@ -2241,6 +2256,14 @@ views.config = (root) => {
     });
   }
 
+  const catIconsToggle = root.querySelector('#f-cat-icons');
+  if (catIconsToggle) {
+    catIconsToggle.addEventListener('change', () => {
+      updateConfig({ showCategoryIcons: catIconsToggle.checked });
+      render();
+    });
+  }
+
   root.querySelector('#force-refresh').addEventListener('click', forceRefresh);
 
   const replayBtn = root.querySelector('#replay-onboarding');
@@ -2476,7 +2499,7 @@ const sheetDespesa = (desp) => {
     <label class="field"><span>Categoria</span>
       <select id="f-cat">
         <option value="">— Sem categoria —</option>
-        ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${c.icone ? c.icone + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+        ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
       </select>
     </label>
     <label class="field"><span>Tipo</span>
