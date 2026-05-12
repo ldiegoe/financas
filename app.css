@@ -452,6 +452,17 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .checkbox-row input { width: auto; }
 .checkbox-row label { font-size: 15px; }
 
+/* Painel de saude financeira — indicadores com cor (verde bom, vermelho ruim) */
+.health-list { list-style: none; margin: 0; padding: 0; }
+.health-list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--separator); }
+.health-list li:last-child { border-bottom: 0; }
+.health-list .grow { flex: 1; min-width: 0; }
+.hl-label { font-weight: 600; font-size: 15px; }
+.hl-hint { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+.hl-val { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; flex: 0 0 auto; }
+.hl-val.good { color: var(--green); }
+.hl-val.bad  { color: var(--red); }
+
 /* Lista de checkboxes (ex: categorias que contam pra um objetivo) */
 .check-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; border: 1px solid var(--separator); border-radius: 10px; }
 .check-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; font-size: 15px; cursor: pointer; border-bottom: 1px solid var(--separator); }

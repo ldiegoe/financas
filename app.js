@@ -78,7 +78,7 @@ let activeProfileId = _profilesMeta.current;
 // perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
-  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashCollapsed',
+  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashHealthShow','dashCollapsed',
   'onboardingDone','showCategoryIcons',
   // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
   'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
@@ -434,12 +434,11 @@ const clampDay = (y, m, d) => {
 const sumAmount = (arr) => arr.reduce((acc, x) => acc + (x.valor || 0), 0);
 
 // --------------------------- Objetivos (calculos) --------------------------
-// Quanto ja foi acumulado nas categorias linkadas a um objetivo: soma de todas
-// as despesas (expandindo recorrentes/parceladas) nessas categorias, com data
-// <= hoje e >= o.desde se definido. Itera ano a ano da despesa mais antiga
-// relevante ate o ano corrente.
-const objetivoAtual = (o) => {
-  const idSet = new Set(o.categoriaIds || []);
+// Soma de despesas (expandindo recorrentes/parceladas) nas categorias do
+// idSet, com data <= hoje e >= `desde` se definido. Itera ano a ano da
+// despesa mais antiga relevante ate o ano corrente. Base do progresso de
+// objetivos e do "reserva acumulada" no painel de saude.
+const sumCategoriasAteHoje = (idSet, desde) => {
   if (idSet.size === 0) return 0;
   const relevantes = state.despesas.filter(d => idSet.has(d.categoriaId));
   if (relevantes.length === 0) return 0;
@@ -451,12 +450,15 @@ const objetivoAtual = (o) => {
     for (const d of expandWithRecurring(state.despesas, { type: 'year', year: y })) {
       if (!idSet.has(d.categoriaId)) continue;
       if (d.data > today) continue;
-      if (o.desde && d.data < o.desde) continue;
+      if (desde && d.data < desde) continue;
       total += d.valor || 0;
     }
   }
   return total;
 };
+
+// Quanto ja foi acumulado nas categorias linkadas a um objetivo.
+const objetivoAtual = (o) => sumCategoriasAteHoje(new Set(o.categoriaIds || []), o.desde);
 
 // Media mensal de aporte nas categorias do objetivo nos 3 meses completos
 // anteriores (exclui o mes corrente parcial). 0 se nada nesse periodo.
@@ -1348,6 +1350,56 @@ views.dashboard = (root) => {
                     </div>
                   </li>`;
               }).join('')}
+            </ul>
+          `}
+        </div>`;
+    })()}
+
+    ${(() => {
+      // Painel de saude financeira: indicadores derivados do periodo + reserva
+      // acumulada. So aparece com renda no periodo (senao as razoes nao fazem
+      // sentido) e com o toggle ligado.
+      if (state.config.dashHealthShow === false || totalRenda <= 0) return '';
+      const taxaPoup  = totalGuardado / totalRenda * 100;
+      const despRenda = totalGastos   / totalRenda * 100;
+      const custoFixo = despesasPeriod.filter(d => d.recorrente && !poupancaIds.has(d.categoriaId)).reduce((s, d) => s + (d.valor || 0), 0);
+      const fixoRenda = custoFixo / totalRenda * 100;
+      // Reserva acumulada (todas as categorias de poupanca) / gasto mensal medio
+      // dos 3 meses completos anteriores.
+      const reservaAcum = sumCategoriasAteHoje(poupancaIds, null);
+      let gastoMensal = 0;
+      const nowH = new Date();
+      for (let i = 1; i <= 3; i++) {
+        const dm = new Date(nowH.getFullYear(), nowH.getMonth() - i, 1);
+        for (const occ of expandWithRecurring(state.despesas, { type: 'month', year: dm.getFullYear(), value: dm.getMonth() + 1 })) {
+          if (poupancaIds.has(occ.categoriaId)) continue;
+          gastoMensal += occ.valor || 0;
+        }
+      }
+      gastoMensal = Math.round(gastoMensal / 3);
+      const mesesReserva = gastoMensal > 0 ? reservaAcum / gastoMensal : null;
+      // c: classe de cor. higher=true → maior eh melhor.
+      const c = (v, good, warn, higher) => higher
+        ? (v >= good ? 'good' : (v >= warn ? '' : 'bad'))
+        : (v <= good ? 'good' : (v <= warn ? '' : 'bad'));
+      const rows = [
+        { label: 'Taxa de poupança',  val: `${taxaPoup.toFixed(0)}%`,  cl: c(taxaPoup, 20, 10, true),  hint: 'da renda guardada' },
+        { label: 'Gastos / renda',     val: `${despRenda.toFixed(0)}%`, cl: c(despRenda, 70, 90, false), hint: 'da renda consumida' },
+        { label: 'Custo fixo / renda', val: `${fixoRenda.toFixed(0)}%`, cl: c(fixoRenda, 50, 65, false), hint: 'recorrentes (não-poupança)' },
+      ];
+      if (mesesReserva !== null && poupancaIds.size > 0) {
+        rows.push({ label: 'Reserva acumulada', val: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, cl: c(mesesReserva, 6, 3, true), hint: `de ~${fmtBRL(gastoMensal)}/mês` });
+      }
+      return `
+        <div class="card">
+          ${collapseHeader('health', 'Saúde financeira')}
+          ${isCollapsed('health') ? '' : `
+            <ul class="health-list">
+              ${rows.map(r => `
+                <li>
+                  <div class="grow"><div class="hl-label">${r.label}</div><div class="hl-hint">${r.hint}</div></div>
+                  <span class="hl-val ${r.cl}">${r.val}</span>
+                </li>`).join('')}
             </ul>
           `}
         </div>`;
@@ -2342,6 +2394,10 @@ views.config = (root) => {
           <input id="f-dash-goals-show" type="checkbox" ${state.config.dashGoalsShow!==false?'checked':''}/>
           <label for="f-dash-goals-show">Objetivos (progresso das metas)</label>
         </div>
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <input id="f-dash-health-show" type="checkbox" ${state.config.dashHealthShow!==false?'checked':''}/>
+          <label for="f-dash-health-show">Saúde financeira (indicadores)</label>
+        </div>
       `;
 
       return `
@@ -2542,6 +2598,7 @@ views.config = (root) => {
   wireToggle('#f-dash-bars-show',       'dashBarsShow');
   wireToggle('#f-dash-upcoming-show',   'dashUpcomingShow');
   wireToggle('#f-dash-goals-show',      'dashGoalsShow');
+  wireToggle('#f-dash-health-show',     'dashHealthShow');
   wireToggle('#f-dash-tag-show',        'dashTagShow');
   // Categoria
   wireToggle('#f-dash-cat-donut-show',  'dashCatDonutShow');
