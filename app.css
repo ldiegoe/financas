@@ -450,13 +450,22 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .checkbox-row input { width: auto; }
 .checkbox-row label { font-size: 15px; }
 
-.color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Faixa horizontal rolavel (mesmo padrao dos chips de filtro) — modal de
+   categoria fica bem mais compacto que com flex-wrap em varias linhas. */
+.color-picker {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 6px;
+  -webkit-overflow-scrolling: touch;
+}
+.color-picker::-webkit-scrollbar { display: none; }
 .color-picker .swatch-pick {
+  flex: 0 0 auto;
   width: 30px; height: 30px; border-radius: 50%;
   cursor: pointer; border: 2px solid transparent;
   position: relative;
 }
-.color-picker .swatch-pick.active { border-color: var(--text); transform: scale(1.1); }
+.color-picker .swatch-pick.active { border-color: var(--text); }
 /* Marca visual de "cor ja em uso por outra categoria" — nao bloqueia o clique */
 .color-picker .swatch-pick.used::after {
   content: '';
@@ -649,9 +658,17 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .tag.atrasado    { background: rgba(255,69,58,.15);   color: var(--red); }
 .tag.poupanca    { background: rgba(48,209,88,.15);   color: var(--green); }
 
-/* Picker de emoji no form de categoria */
-.emoji-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Picker de emoji no form de categoria — faixa horizontal rolavel pra nao
+   ocupar varias linhas (eram ~5 com flex-wrap). */
+.emoji-picker {
+  display: flex; gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.emoji-picker::-webkit-scrollbar { display: none; }
 .emoji-pick {
+  flex: 0 0 auto;
   appearance: none; border: 1px solid var(--separator);
   background: var(--bg);
   width: 38px; height: 38px;

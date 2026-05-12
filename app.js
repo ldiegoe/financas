@@ -2723,6 +2723,12 @@ const sheetCategoria = (cat) => {
     </div>
   `, (body) => {
     bindCurrencyInput(body.querySelector('#f-meta'));
+    // Picker em faixa rolavel: traz o item ativo pra perto do inicio visivel
+    // (importante ao editar uma categoria cuja cor/emoji esta no fim da lista).
+    requestAnimationFrame(() => {
+      body.querySelector('#f-cores .swatch-pick.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+      body.querySelector('#f-emojis .emoji-pick.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    });
     let chosen = c.cor;
     body.querySelectorAll('#f-cores .swatch-pick').forEach(el => {
       el.addEventListener('click', () => {
