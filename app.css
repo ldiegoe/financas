@@ -567,6 +567,7 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   padding: 6px 0;
 }
 .compare-changes .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.compare-emoji { flex: 0 0 auto; font-size: 15px; line-height: 1; width: 16px; text-align: center; }
 .compare-changes .name { flex: 1; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compare-changes .diff { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
 .compare-changes .diff.bad  { color: var(--red); }

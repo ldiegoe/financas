@@ -1110,6 +1110,7 @@ views.dashboard = (root) => {
       id,
       nome: c ? c.nome : 'Sem categoria',
       cor:  c ? c.cor  : '#999',
+      icone: c ? (c.icone || '') : '',
       diff: (currCatMap.get(id) || 0) - (prevCatMap.get(id) || 0),
     };
   }).filter(x => x.diff !== 0)
@@ -1298,7 +1299,9 @@ views.dashboard = (root) => {
                 const c = state.categorias.find(x => x.id === d.categoriaId);
                 return `
                   <li class="upcoming-row" data-id="${d.id}" data-data="${d.data}">
-                    <span class="swatch" style="background:${c ? c.cor : '#999'}"></span>
+                    ${c && c.icone
+                      ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
+                      : `<span class="swatch" style="background:${c ? c.cor : '#999'}"></span>`}
                     <div class="grow">
                       <div class="t">${escapeHTML(d.descricao || (c ? c.nome : 'Despesa'))}
                         ${d._overdue ? '<span class="tag atrasado">Atrasado</span>' : ''}
@@ -1339,7 +1342,9 @@ views.dashboard = (root) => {
             <ul class="compare-changes">
               ${topChanges.map(c => `
                 <li>
-                  <span class="swatch" style="background:${c.cor}"></span>
+                  ${c.icone
+                    ? `<span class="compare-emoji">${c.icone}</span>`
+                    : `<span class="swatch" style="background:${c.cor}"></span>`}
                   <span class="name">${escapeHTML(c.nome)}</span>
                   <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
                 </li>`).join('')}
