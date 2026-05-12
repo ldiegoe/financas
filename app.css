@@ -178,7 +178,7 @@ main#view {
 
 .tabbar {
   flex: 0 0 auto;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
   background: var(--bg-elev);
   border-top: 1px solid var(--separator);
   padding-bottom: var(--safe-bottom);
@@ -186,12 +186,14 @@ main#view {
 }
 .tabbar a {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 8px 4px;
+  padding: 8px 2px;
   text-decoration: none;
   color: var(--text-2);
-  font-size: 11px;
+  font-size: 10.5px;
   gap: 2px;
+  min-width: 0;
 }
+.tabbar a span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tabbar a.active { color: var(--tint); }
 .tabbar a .ico { width: 22px; height: 22px; }
 
@@ -449,6 +451,13 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .checkbox-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
 .checkbox-row input { width: auto; }
 .checkbox-row label { font-size: 15px; }
+
+/* Lista de checkboxes (ex: categorias que contam pra um objetivo) */
+.check-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; border: 1px solid var(--separator); border-radius: 10px; }
+.check-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; font-size: 15px; cursor: pointer; border-bottom: 1px solid var(--separator); }
+.check-item:last-child { border-bottom: 0; }
+.check-item input { width: auto; flex: 0 0 auto; }
+.check-item .swatch { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
 
 /* Faixa horizontal rolavel (mesmo padrao dos chips de filtro) — modal de
    categoria fica bem mais compacto que com flex-wrap em varias linhas. */

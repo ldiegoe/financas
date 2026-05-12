@@ -27,6 +27,7 @@ const defaultState = () => ({
   rendas: [],
   despesas: [],
   categorias: defaultCategorias(),
+  objetivos: [],
   config: { moeda: 'BRL' },
 });
 
@@ -77,7 +78,7 @@ let activeProfileId = _profilesMeta.current;
 // perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
-  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashCollapsed',
+  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashCollapsed',
   'onboardingDone','showCategoryIcons',
   // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
   'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
@@ -244,9 +245,13 @@ const db = {
     if (i >= 0) { state.categorias[i] = { ...state.categorias[i], ...patch }; persist(); }
   },
   removeCategoria(id) {
-    // Mantém integridade: despesas dessa categoria viram "sem categoria"
+    // Mantém integridade: despesas dessa categoria viram "sem categoria" e os
+    // objetivos param de contar essa categoria.
     state.despesas = state.despesas.map(d =>
       d.categoriaId === id ? { ...d, categoriaId: null } : d
+    );
+    state.objetivos = (state.objetivos || []).map(o =>
+      ({ ...o, categoriaIds: (o.categoriaIds || []).filter(c => c !== id) })
     );
     state.categorias = state.categorias.filter(x => x.id !== id);
     persist();
@@ -259,6 +264,13 @@ const db = {
     state.categorias = orderedIds.map(id => byId.get(id));
     persist();
   },
+
+  addObjetivo(o) { state.objetivos.push({ id: uid(), ...o }); persist(); },
+  updateObjetivo(id, patch) {
+    const i = state.objetivos.findIndex(x => x.id === id);
+    if (i >= 0) { state.objetivos[i] = { ...state.objetivos[i], ...patch }; persist(); }
+  },
+  removeObjetivo(id) { state.objetivos = state.objetivos.filter(x => x.id !== id); persist(); },
 
   exportJSON() { return JSON.stringify(state, null, 2); },
   importJSON(json) {
@@ -421,6 +433,56 @@ const clampDay = (y, m, d) => {
 
 const sumAmount = (arr) => arr.reduce((acc, x) => acc + (x.valor || 0), 0);
 
+// --------------------------- Objetivos (calculos) --------------------------
+// Quanto ja foi acumulado nas categorias linkadas a um objetivo: soma de todas
+// as despesas (expandindo recorrentes/parceladas) nessas categorias, com data
+// <= hoje e >= o.desde se definido. Itera ano a ano da despesa mais antiga
+// relevante ate o ano corrente.
+const objetivoAtual = (o) => {
+  const idSet = new Set(o.categoriaIds || []);
+  if (idSet.size === 0) return 0;
+  const relevantes = state.despesas.filter(d => idSet.has(d.categoriaId));
+  if (relevantes.length === 0) return 0;
+  const today = todayISO();
+  const startYear = Math.min(...relevantes.map(d => parseInt(d.data.slice(0, 4), 10)));
+  const endYear = new Date().getFullYear();
+  let total = 0;
+  for (let y = startYear; y <= endYear; y++) {
+    for (const d of expandWithRecurring(state.despesas, { type: 'year', year: y })) {
+      if (!idSet.has(d.categoriaId)) continue;
+      if (d.data > today) continue;
+      if (o.desde && d.data < o.desde) continue;
+      total += d.valor || 0;
+    }
+  }
+  return total;
+};
+
+// Media mensal de aporte nas categorias do objetivo nos 3 meses completos
+// anteriores (exclui o mes corrente parcial). 0 se nada nesse periodo.
+const objetivoRitmo = (o) => {
+  const idSet = new Set(o.categoriaIds || []);
+  if (idSet.size === 0) return 0;
+  const now = new Date();
+  let soma = 0;
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    for (const occ of expandWithRecurring(state.despesas, { type: 'month', year: d.getFullYear(), value: d.getMonth() + 1 })) {
+      if (!idSet.has(occ.categoriaId)) continue;
+      if (o.desde && occ.data < o.desde) continue;
+      soma += occ.valor || 0;
+    }
+  }
+  return Math.round(soma / 3);
+};
+
+// Meses inteiros de hoje (mes corrente) ate uma data ISO. >= 0.
+const monthsUntil = (iso) => {
+  const t = isoToDate(iso);
+  const now = new Date();
+  return Math.max(0, (t.getFullYear() - now.getFullYear()) * 12 + (t.getMonth() - now.getMonth()));
+};
+
 // Normaliza string de tags vinda do form: "Mercado, viagem, viagem" -> ["Mercado","viagem"]
 const parseTags = (str) => {
   if (!str) return [];
@@ -510,6 +572,7 @@ const ICONS = {
   lock:      '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   shield:    '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
   download:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
 };
 
 const icon = (name, size = 22) =>
@@ -1262,6 +1325,35 @@ views.dashboard = (root) => {
     </div>
 
     ${(() => {
+      // Card Objetivos: barra de progresso de cada meta de poupanca. So aparece
+      // se houver objetivos e o toggle estiver ligado.
+      if (state.config.dashGoalsShow === false) return '';
+      const objs = state.objetivos || [];
+      if (objs.length === 0) return '';
+      return `
+        <div class="card">
+          ${collapseHeader('goals', 'Objetivos')}
+          ${isCollapsed('goals') ? '' : `
+            <ul class="list" style="box-shadow:none;margin:0;">
+              ${objs.map(o => {
+                const atual = objetivoAtual(o);
+                const pct = o.alvo > 0 ? Math.min(100, Math.round(atual / o.alvo * 100)) : 0;
+                const done = atual >= o.alvo;
+                return `
+                  <li>
+                    <div class="grow">
+                      <div class="t">${escapeHTML(o.nome)}${done ? '<span class="tag poupanca">Concluído</span>' : ''}</div>
+                      <div class="s">${fmtBRL(atual)} de ${fmtBRL(o.alvo)} · ${pct}%</div>
+                      <div class="progress"><i style="width:${pct}%"></i></div>
+                    </div>
+                  </li>`;
+              }).join('')}
+            </ul>
+          `}
+        </div>`;
+    })()}
+
+    ${(() => {
       // Vencimentos: pendentes nos proximos 14 dias + atrasados ate 30 dias
       // pra tras (pra capturar boletos esquecidos sem puxar coisa antiga).
       // Escaneia mes anterior + corrente + proximo (cobre todas as janelas).
@@ -1982,6 +2074,140 @@ const sheetCategoriaHistorico = (c) => {
   });
 };
 
+// ----- Objetivos -----
+views.objetivos = (root) => {
+  const objetivos = state.objetivos || [];
+  root.innerHTML = `
+    <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
+      Defina metas de poupança e linke as categorias que contam pra cada uma. Arraste a linha pra esquerda pra editar/excluir.
+    </p>
+    ${objetivos.length === 0 ? `
+      <div class="empty"><span class="ico">${icon('target', 48)}</span>Nenhum objetivo ainda.<br/><br/>
+        <button class="primary" id="add-obj">Criar objetivo</button></div>
+    ` : `
+      <ul class="list">
+        ${objetivos.map(o => objetivoRowHTML(o)).join('')}
+      </ul>
+    `}
+    <button class="fab" id="fab-obj" aria-label="Adicionar objetivo">+</button>
+  `;
+  bindSwipe(root);
+  root.querySelectorAll('[data-action="edit-obj"]').forEach(b => b.addEventListener('click', (e) => {
+    const id = e.target.closest('[data-id]').dataset.id;
+    sheetObjetivo(state.objetivos.find(x => x.id === id));
+  }));
+  root.querySelectorAll('[data-action="del-obj"]').forEach(b => b.addEventListener('click', (e) => {
+    const id = e.target.closest('[data-id]').dataset.id;
+    const o = state.objetivos.find(x => x.id === id);
+    if (o && confirm(`Excluir o objetivo "${o.nome}"?`)) { db.removeObjetivo(id); toast('Objetivo excluído'); render(); }
+  }));
+  const addBtn = root.querySelector('#add-obj');
+  if (addBtn) addBtn.addEventListener('click', () => sheetObjetivo());
+  root.querySelector('#fab-obj').addEventListener('click', () => sheetObjetivo());
+};
+
+// Linha de um objetivo (lista da aba Objetivos): barra de progresso + numeros
+// + (se houver prazo) quanto precisa por mes + (se houver aportes) projecao no
+// ritmo atual.
+const objetivoRowHTML = (o) => {
+  const atual = objetivoAtual(o);
+  const pct = o.alvo > 0 ? Math.min(100, Math.round(atual / o.alvo * 100)) : 0;
+  const falta = Math.max(0, o.alvo - atual);
+  const done = atual >= o.alvo;
+  let prazoLine = '';
+  if (o.prazo) {
+    const m = monthsUntil(o.prazo);
+    prazoLine = done
+      ? `Concluído antes do prazo (${fmtDate(o.prazo)})`
+      : (m > 0
+          ? `Prazo ${fmtDate(o.prazo)} · ${m} ${m === 1 ? 'mês' : 'meses'} · ~${fmtBRL(Math.ceil(falta / m))}/mês pra bater`
+          : `Prazo ${fmtDate(o.prazo)} venceu · faltam ${fmtBRL(falta)}`);
+  }
+  let ritmoLine = '';
+  if (!done) {
+    const ritmo = objetivoRitmo(o);
+    if (ritmo > 0) {
+      const mesesNoRitmo = Math.ceil(falta / ritmo);
+      const proj = new Date(); proj.setMonth(proj.getMonth() + mesesNoRitmo);
+      ritmoLine = `No ritmo de ~${fmtBRL(ritmo)}/mês: chega em ${monthName(proj.getMonth() + 1, true)}/${String(proj.getFullYear()).slice(2)}`;
+    }
+  }
+  return `
+    <li class="swipe-row" data-id="${o.id}">
+      <div class="grow">
+        <div class="t">${escapeHTML(o.nome)}${done ? '<span class="tag poupanca">Concluído</span>' : ''}</div>
+        <div class="s">${fmtBRL(atual)} de ${fmtBRL(o.alvo)} · ${pct}%${done ? '' : ` · faltam ${fmtBRL(falta)}`}</div>
+        <div class="progress"><i style="width:${pct}%"></i></div>
+        ${prazoLine ? `<div class="s" style="margin-top:4px;">${prazoLine}</div>` : ''}
+        ${ritmoLine ? `<div class="s">${ritmoLine}</div>` : ''}
+      </div>
+      <div class="swipe-actions">
+        <button class="edit" data-action="edit-obj">Editar</button>
+        <button class="del"  data-action="del-obj">Excluir</button>
+      </div>
+    </li>`;
+};
+
+const sheetObjetivo = (obj) => {
+  const isEdit = !!obj;
+  const o = obj || { nome: '', alvo: 0, prazo: '', desde: '', categoriaIds: [] };
+  const linkedSet = new Set(o.categoriaIds || []);
+  openSheet(isEdit ? 'Editar objetivo' : 'Novo objetivo', () => `
+    <label class="field"><span>Nome</span>
+      <input id="o-nome" type="text" placeholder="Ex.: Reserva de emergência, Viagem, Carro" value="${escapeAttr(o.nome || '')}" required />
+    </label>
+    <label class="field"><span>Valor-alvo (R$)</span>
+      <input id="o-alvo" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(o.alvo)}" required />
+    </label>
+    <label class="field"><span>Prazo (opcional)</span>
+      <input id="o-prazo" type="date" value="${o.prazo || ''}" />
+    </label>
+    <label class="field"><span>Categorias que contam pra esse objetivo</span>
+      <div class="check-list" id="o-cats">
+        ${state.categorias.length === 0
+          ? '<p style="color:var(--text-2);font-size:13px;margin:0;">Crie categorias primeiro.</p>'
+          : state.categorias.map(c => `
+            <label class="check-item">
+              <input type="checkbox" data-cat="${c.id}" ${linkedSet.has(c.id) ? 'checked' : ''}/>
+              ${catEmoji(c) ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>` : `<span class="swatch" style="background:${c.cor}"></span>`}
+              <span>${escapeHTML(c.nome)}${c.poupanca ? ' <span class="tag poupanca">Poupança</span>' : ''}</span>
+            </label>`).join('')}
+      </div>
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        Geralmente categorias de poupança/investimento.
+      </small>
+    </label>
+    <label class="field"><span>Contar lançamentos a partir de (opcional)</span>
+      <input id="o-desde" type="date" value="${o.desde || ''}" />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        Vazio = conta tudo o que já existe nessas categorias.
+      </small>
+    </label>
+    <div class="actions">
+      <button class="secondary" id="cancel">Cancelar</button>
+      <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Criar'}</button>
+    </div>
+  `, (body) => {
+    bindCurrencyInput(body.querySelector('#o-alvo'));
+    body.querySelector('#cancel').addEventListener('click', closeSheet);
+    body.querySelector('#save').addEventListener('click', () => {
+      const data = {
+        nome: body.querySelector('#o-nome').value.trim(),
+        alvo: parseAmount(body.querySelector('#o-alvo').value),
+        prazo: body.querySelector('#o-prazo').value || null,
+        desde: body.querySelector('#o-desde').value || null,
+        categoriaIds: [...body.querySelectorAll('#o-cats input:checked')].map(el => el.dataset.cat),
+      };
+      if (!data.nome) { alert('Informe um nome.'); return; }
+      if (data.alvo <= 0) { alert('Informe um valor-alvo válido.'); return; }
+      if (isEdit) db.updateObjetivo(o.id, data); else db.addObjetivo(data);
+      closeSheet();
+      toast(isEdit ? 'Objetivo atualizado' : 'Objetivo criado');
+      render();
+    });
+  });
+};
+
 // ----- Configurações -----
 views.config = (root) => {
   const tema = state.config.tema || 'system';
@@ -2111,6 +2337,10 @@ views.config = (root) => {
         <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
           <input id="f-dash-upcoming-show" type="checkbox" ${state.config.dashUpcomingShow!==false?'checked':''}/>
           <label for="f-dash-upcoming-show">Vencimentos (pendentes e atrasados)</label>
+        </div>
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <input id="f-dash-goals-show" type="checkbox" ${state.config.dashGoalsShow!==false?'checked':''}/>
+          <label for="f-dash-goals-show">Objetivos (progresso das metas)</label>
         </div>
       `;
 
@@ -2311,6 +2541,7 @@ views.config = (root) => {
   wireToggle('#f-dash-compare-show',    'dashCompareShow');
   wireToggle('#f-dash-bars-show',       'dashBarsShow');
   wireToggle('#f-dash-upcoming-show',   'dashUpcomingShow');
+  wireToggle('#f-dash-goals-show',      'dashGoalsShow');
   wireToggle('#f-dash-tag-show',        'dashTagShow');
   // Categoria
   wireToggle('#f-dash-cat-donut-show',  'dashCatDonutShow');
@@ -3082,11 +3313,12 @@ const escapeHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
 const escapeAttr = (s) => escapeHTML(s);
 
 // --------------------------- Router & init ---------------------------------
-const tabs = ['dashboard','carteira','despesas','categorias','config'];
+const tabs = ['dashboard','carteira','despesas','objetivos','categorias','config'];
 const titles = {
   dashboard: 'Dashboard',
   carteira: 'Carteira',
   despesas: 'Despesas',
+  objetivos: 'Objetivos',
   categorias: 'Categorias',
   config: 'Ajustes',
 };
@@ -3137,6 +3369,7 @@ document.getElementById('quick-add').addEventListener('click', () => {
   if (currentTab === 'carteira') sheetRenda();
   else if (currentTab === 'despesas') sheetDespesa();
   else if (currentTab === 'categorias') sheetCategoria();
+  else if (currentTab === 'objetivos') sheetObjetivo();
   else sheetDespesa(); // default no dashboard / config
 });
 
