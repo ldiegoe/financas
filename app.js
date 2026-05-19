@@ -154,6 +154,9 @@ const migratePago = (s) => {
         migrated = true;
       }
     }
+    // criadoEm: data de cadastro (imutavel). Para despesas antigas sem o
+    // campo, usa o `data` como aproximacao — nao temos historico melhor.
+    if (d.criadoEm === undefined) { d.criadoEm = d.data; migrated = true; }
   }
   return migrated;
 };
@@ -232,10 +235,16 @@ const db = {
   },
   removeRenda(id) { state.rendas = state.rendas.filter(x => x.id !== id); persist(); },
 
-  addDespesa(d)   { state.despesas.push({ id: uid(), ...d }); persist(); },
+  addDespesa(d)   { state.despesas.push({ id: uid(), criadoEm: todayISO(), ...d }); persist(); },
   updateDespesa(id, patch) {
     const i = state.despesas.findIndex(x => x.id === id);
-    if (i >= 0) { state.despesas[i] = { ...state.despesas[i], ...patch }; persist(); }
+    if (i >= 0) {
+      // criadoEm eh imutavel — patch nao deve sobrescrever
+      const cur = state.despesas[i];
+      const { criadoEm: _ignored, ...safePatch } = patch;
+      state.despesas[i] = { ...cur, ...safePatch };
+      persist();
+    }
   },
   removeDespesa(id) { state.despesas = state.despesas.filter(x => x.id !== id); persist(); },
 
@@ -2791,8 +2800,11 @@ const sheetDespesa = (desp) => {
     <label class="field"><span>Valor (R$)${tipoInicial==='parcelada'?' — valor de cada parcela':''}</span>
       <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(d.valor)}" required />
     </label>
-    <label class="field"><span>Data ${tipoInicial==='parcelada'?'(1ª parcela)':'(início)'}</span>
+    <label class="field"><span>Data de pagamento${tipoInicial==='parcelada'?' (1ª parcela)':(tipoInicial==='mensal'?' (1º mês)':'')}</span>
       <input id="f-data" type="date" value="${d.data}" required />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        Quando o pagamento será feito (vencimento da fatura, dia do débito, data da compra à vista).
+      </small>
     </label>
     <label class="field"><span>Categoria</span>
       <select id="f-cat">
@@ -3240,7 +3252,7 @@ const sheetDespesaDetalhes = (d) => {
 
     <ul class="details-list">
       <li><span>Status</span><span style="color:${d._pago?'var(--green)':'var(--orange)'};font-weight:600;">${d._pago ? 'Paga' : 'Pendente'}</span></li>
-      <li><span>Data</span><span>${fmtDate(d.data)}</span></li>
+      <li><span>Data de pagamento</span><span>${fmtDate(d.data)}</span></li>
       <li><span>Tipo</span><span>${tipo}</span></li>
       ${d._parcelaTotal ? `
         <li><span>Total geral</span><span>${fmtBRL(d.valor * d._parcelaTotal)}</span></li>
@@ -3248,6 +3260,7 @@ const sheetDespesaDetalhes = (d) => {
       ${tags.length > 0 ? `
         <li><span>Tags</span><span>${tags.map(t => `#${escapeHTML(t)}`).join(' ')}</span></li>
       ` : ''}
+      ${d.criadoEm ? `<li><span>Cadastrado em</span><span style="color:var(--text-2);">${fmtDate(d.criadoEm)}</span></li>` : ''}
     </ul>
 
     ${d._virtual ? `
