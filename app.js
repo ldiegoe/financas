@@ -238,13 +238,7 @@ const db = {
   addDespesa(d)   { state.despesas.push({ id: uid(), criadoEm: todayISO(), ...d }); persist(); },
   updateDespesa(id, patch) {
     const i = state.despesas.findIndex(x => x.id === id);
-    if (i >= 0) {
-      // criadoEm eh imutavel — patch nao deve sobrescrever
-      const cur = state.despesas[i];
-      const { criadoEm: _ignored, ...safePatch } = patch;
-      state.despesas[i] = { ...cur, ...safePatch };
-      persist();
-    }
+    if (i >= 0) { state.despesas[i] = { ...state.despesas[i], ...patch }; persist(); }
   },
   removeDespesa(id) { state.despesas = state.despesas.filter(x => x.id !== id); persist(); },
 
@@ -2806,6 +2800,12 @@ const sheetDespesa = (desp) => {
         Quando o pagamento será feito (vencimento da fatura, dia do débito, data da compra à vista).
       </small>
     </label>
+    <label class="field"><span>Data de cadastro</span>
+      <input id="f-criado" type="date" value="${d.criadoEm || todayISO()}" required />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        Quando a despesa aconteceu/foi registrada. Padrão: hoje. Ajuste se estiver cadastrando algo de outro dia.
+      </small>
+    </label>
     <label class="field"><span>Categoria</span>
       <select id="f-cat">
         <option value="">— Sem categoria —</option>
@@ -2914,6 +2914,7 @@ const sheetDespesa = (desp) => {
         descricao: body.querySelector('#f-desc').value.trim(),
         valor: parseAmount(valorEl.value),
         data: body.querySelector('#f-data').value,
+        criadoEm: body.querySelector('#f-criado').value || todayISO(),
         categoriaId: body.querySelector('#f-cat').value || null,
         recorrente,
         parcelas,
