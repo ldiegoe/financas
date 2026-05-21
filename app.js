@@ -1889,6 +1889,7 @@ let tagFilter = new Set();      // chaves lowercase de tags ativas
 let searchQuery = '';           // texto digitado na busca
 let categoryFilter = new Set(); // ids de categorias ativas
 let statusFilter = null;        // null | 'pago' | 'pendente'
+let typeFilter = null;          // null | 'mensal' | 'parcelada'
 
 // Modo seleção da tela de Despesas — permite marcar várias e apagar de uma vez.
 let selectionMode = false;
@@ -1912,6 +1913,9 @@ const filterDespesas = (despesas) => {
   }
   if (statusFilter === 'pago') result = result.filter(d => d._pago);
   if (statusFilter === 'pendente') result = result.filter(d => !d._pago);
+  if (typeFilter === 'mensal') result = result.filter(d => d.recorrente);
+  if (typeFilter === 'parcelada') result = result.filter(d => (d.parcelas || 1) > 1);
+  if (typeFilter === 'unica') result = result.filter(d => !d.recorrente && (d.parcelas || 1) <= 1);
   const q = searchQuery.trim().toLowerCase();
   if (q) {
     result = result.filter(d =>
@@ -1944,7 +1948,7 @@ views.despesas = (root) => {
   const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
-  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null;
+  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null || typeFilter !== null;
 
   root.innerHTML = `
     ${periodHeader()}
@@ -1980,6 +1984,13 @@ views.despesas = (root) => {
       <button class="chip ${statusFilter===null?'active':''}" data-status="">Todas</button>
       <button class="chip ${statusFilter==='pago'?'active':''}" data-status="pago">Pagas</button>
       <button class="chip ${statusFilter==='pendente'?'active':''}" data-status="pendente">Pendentes</button>
+    </div>
+
+    <div class="filter-bar" id="type-filter">
+      <button class="chip ${typeFilter===null?'active':''}" data-type="">Todos os tipos</button>
+      <button class="chip ${typeFilter==='mensal'?'active':''}" data-type="mensal">Mensais</button>
+      <button class="chip ${typeFilter==='parcelada'?'active':''}" data-type="parcelada">Parceladas</button>
+      <button class="chip ${typeFilter==='unica'?'active':''}" data-type="unica">Apenas neste mês</button>
     </div>
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -2117,6 +2128,10 @@ views.despesas = (root) => {
     statusFilter = b.dataset.status || null;
     render();
   }));
+  root.querySelectorAll('#type-filter .chip').forEach(b => b.addEventListener('click', () => {
+    typeFilter = b.dataset.type || null;
+    render();
+  }));
   const searchEl = root.querySelector('#search');
   if (searchEl) {
     searchEl.addEventListener('input', () => {
@@ -2134,7 +2149,7 @@ views.despesas = (root) => {
   }
   const clearBtn = root.querySelector('#clear-filters');
   if (clearBtn) clearBtn.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null;
+    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null; typeFilter = null;
     render();
   });
   const addBtn = root.querySelector('#add-desp');
