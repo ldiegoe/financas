@@ -1455,9 +1455,9 @@ views.dashboard = (root) => {
         ? (v >= good ? 'good' : (v >= warn ? '' : 'bad'))
         : (v <= good ? 'good' : (v <= warn ? '' : 'bad'));
       const rows = [
-        { label: 'Taxa de poupança',  val: `${taxaPoup.toFixed(0)}%`,  cl: c(taxaPoup, 20, 10, true),  hint: 'da renda guardada' },
+        { label: 'Taxa de investimento',  val: `${taxaPoup.toFixed(0)}%`,  cl: c(taxaPoup, 20, 10, true),  hint: 'da renda guardada' },
         { label: 'Gastos / renda',     val: `${despRenda.toFixed(0)}%`, cl: c(despRenda, 70, 90, false), hint: 'da renda consumida' },
-        { label: 'Custo fixo / renda', val: `${fixoRenda.toFixed(0)}%`, cl: c(fixoRenda, 50, 65, false), hint: 'recorrentes (não-poupança)' },
+        { label: 'Custo fixo / renda', val: `${fixoRenda.toFixed(0)}%`, cl: c(fixoRenda, 50, 65, false), hint: 'recorrentes (não-investimento)' },
       ];
       if (mesesReserva !== null && poupancaIds.size > 0) {
         rows.push({ label: 'Reserva acumulada', val: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, cl: c(mesesReserva, 6, 3, true), hint: `de ~${fmtBRL(gastoMensal)}/mês` });
@@ -2196,7 +2196,7 @@ const sheetCategoriaHistorico = (c) => {
       <li><span>Média mensal</span><span>${fmtBRL(mediaMes)}</span></li>
       <li><span>Maior mês</span><span>${fmtBRL(maxVal)} (${monthName(months[maxIdx].m, true)}/${String(months[maxIdx].y).slice(2)})</span></li>
       <li><span>Acumulado (6 meses)</span><span>${fmtBRL(totalAcum)}</span></li>
-      ${c.meta ? `<li><span>${c.poupanca ? 'Meta de poupança' : 'Limite mensal'}</span><span>${fmtBRL(c.meta)}</span></li>` : ''}
+      ${c.meta ? `<li><span>${c.poupanca ? 'Meta de investimento' : 'Limite mensal'}</span><span>${fmtBRL(c.meta)}</span></li>` : ''}
     </ul>
     <div class="actions">
       <button class="secondary" id="close">Fechar</button>
@@ -2243,7 +2243,7 @@ views.objetivos = (root) => {
   const objetivos = state.objetivos || [];
   root.innerHTML = `
     <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
-      Defina metas de poupança e linke as categorias que contam pra cada uma. Arraste a linha pra esquerda pra editar/excluir.
+      Defina metas de investimento e linke as categorias que contam pra cada uma. Arraste a linha pra esquerda pra editar/excluir.
     </p>
     ${objetivos.length === 0 ? `
       <div class="empty"><span class="ico">${icon('target', 48)}</span>Nenhum objetivo ainda.<br/><br/>
@@ -2338,7 +2338,7 @@ const sheetObjetivo = (obj) => {
             </label>`).join('')}
       </div>
       <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-        Geralmente categorias de poupança/investimento.
+        Geralmente categorias de investimento.
       </small>
     </label>
     <label class="field"><span>Contar lançamentos a partir de (opcional)</span>
@@ -3150,7 +3150,7 @@ const sheetCategoria = (cat) => {
     </label>
     <div class="checkbox-row">
       <input id="f-poupanca" type="checkbox" ${c.poupanca?'checked':''}/>
-      <label for="f-poupanca">É poupança / investimento</label>
+      <label for="f-poupanca">É investimento</label>
     </div>
     <small style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 0;">
       Despesas nessa categoria contam como "guardado", não como gasto, no resumo do dashboard.
