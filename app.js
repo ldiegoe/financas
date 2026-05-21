@@ -463,6 +463,63 @@ const sumCategoriasAteHoje = (idSet, desde) => {
 // Quanto ja foi acumulado nas categorias linkadas a um objetivo.
 const objetivoAtual = (o) => sumCategoriasAteHoje(new Set(o.categoriaIds || []), o.desde);
 
+// Ocorrencias pendentes pro card Vencimentos: proximos 14 dias + atrasadas ate
+// 30 dias. Atrasadas primeiro (recente->antiga), depois proximas (cedo->tarde).
+// Cada item ganha _overdue. Compartilhado entre render e handlers de selecao.
+const upcomingItems = () => {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const horizon = new Date(today); horizon.setDate(today.getDate() + 14);
+  const overdueLimit = new Date(today); overdueLimit.setDate(today.getDate() - 30);
+  const pv = new Date(today); pv.setMonth(pv.getMonth() - 1);
+  const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
+  const periods = [
+    { type: 'month', year: pv.getFullYear(),    value: pv.getMonth() + 1 },
+    { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 },
+    { type: 'month', year: nx.getFullYear(),    value: nx.getMonth() + 1 },
+  ];
+  return periods.flatMap(p => expandWithRecurring(state.despesas, p))
+    .filter(d => !d._pago)
+    .filter(d => {
+      const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
+      return dt >= overdueLimit && dt <= horizon;
+    })
+    .map(d => {
+      const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
+      return { ...d, _overdue: dt < today };
+    })
+    .sort((a, b) => {
+      if (a._overdue !== b._overdue) return a._overdue ? -1 : 1;
+      return a._overdue ? b.data.localeCompare(a.data) : a.data.localeCompare(b.data);
+    })
+    .slice(0, 12);
+};
+
+// Marca uma lista de ocorrencias como pagas (recorrente/parcelada: adiciona o
+// YYYY-MM em pagasEm; unica: pago=true). Usado pela selecao em lote do card.
+const marcarOcorrenciasPagas = (occs) => {
+  for (const occ of occs) {
+    const base = state.despesas.find(x => x.id === occ.id);
+    if (!base) continue;
+    const isRecurring = !!base.recorrente;
+    const isInstallment = (base.parcelas || 0) > 1;
+    if (!isRecurring && !isInstallment) {
+      db.updateDespesa(occ.id, { pago: true });
+    } else {
+      const yyyyMm = occ.data.slice(0, 7);
+      const pagasEm = [...(base.pagasEm || [])];
+      if (!pagasEm.includes(yyyyMm)) pagasEm.push(yyyyMm);
+      db.updateDespesa(occ.id, { pagasEm });
+    }
+  }
+};
+
+// Resumo de tags pra exibir inline (compacto): "#primeira +N". '' se nao houver.
+const tagsInline = (tags) => {
+  if (!tags || tags.length === 0) return '';
+  const first = `#${escapeHTML(tags[0])}`;
+  return tags.length > 1 ? `${first} +${tags.length - 1}` : first;
+};
+
 // Media mensal de aporte nas categorias do objetivo nos 3 meses completos
 // anteriores (exclui o mes corrente parcial). 0 se nada nesse periodo.
 const objetivoRitmo = (o) => {
@@ -1409,41 +1466,12 @@ views.dashboard = (root) => {
     })()}
 
     ${(() => {
-      // Vencimentos: pendentes nos proximos 14 dias + atrasados ate 30 dias
-      // pra tras (pra capturar boletos esquecidos sem puxar coisa antiga).
-      // Escaneia mes anterior + corrente + proximo (cobre todas as janelas).
-      // Toggle no card "Personalizar dashboard" controla exibicao.
+      // Vencimentos: pendentes proximos 14 dias + atrasados ate 30 dias. Toggle
+      // controla exibicao. Tem modo de selecao pra marcar varias como pagas.
       if (state.config.dashUpcomingShow === false) return '';
-      const today = new Date(); today.setHours(0,0,0,0);
-      const horizon = new Date(today); horizon.setDate(today.getDate() + 14);
-      const overdueLimit = new Date(today); overdueLimit.setDate(today.getDate() - 30);
-      const pv = new Date(today); pv.setMonth(pv.getMonth() - 1);
-      const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
-      const periods = [
-        { type: 'month', year: pv.getFullYear(),    value: pv.getMonth() + 1 },
-        { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 },
-        { type: 'month', year: nx.getFullYear(),    value: nx.getMonth() + 1 },
-      ];
-      const items = periods.flatMap(p => expandWithRecurring(state.despesas, p))
-        .filter(d => !d._pago)
-        .filter(d => {
-          const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
-          return dt >= overdueLimit && dt <= horizon;
-        })
-        .map(d => {
-          const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
-          return { ...d, _overdue: dt < today };
-        })
-        // Atrasadas primeiro (mais urgente), ordenadas mais recente -> mais antiga.
-        // Proximas depois, ordenadas mais cedo -> mais tarde.
-        .sort((a, b) => {
-          if (a._overdue !== b._overdue) return a._overdue ? -1 : 1;
-          return a._overdue
-            ? b.data.localeCompare(a.data)  // atrasada: recente primeiro
-            : a.data.localeCompare(b.data); // proxima: mais cedo primeiro
-        })
-        .slice(0, 12);
+      const items = upcomingItems();
       if (items.length === 0) return '';
+      const collapsed = isCollapsed('upcoming');
       const overdueCount = items.filter(d => d._overdue).length;
       const upcomingCount = items.length - overdueCount;
       const total = items.reduce((s, d) => s + (d.valor || 0), 0);
@@ -1451,18 +1479,27 @@ views.dashboard = (root) => {
         overdueCount > 0 ? `${overdueCount} atrasada${overdueCount > 1 ? 's' : ''}` : null,
         upcomingCount > 0 ? `${upcomingCount} nos próximos 14 dias` : null,
       ].filter(Boolean).join(' + ');
+      const allKeys = items.map(d => `${d.id}|${d.data}`);
+      const allSel = allKeys.length > 0 && allKeys.every(k => vencSel.has(k));
       return `
         <div class="card">
           ${collapseHeader('upcoming', 'Vencimentos')}
-          ${isCollapsed('upcoming') ? '' : `
-            <p style="color:var(--text-2);font-size:13px;margin:0 0 10px;">
-              ${summary} · ${fmtBRL(total)}
-            </p>
-            <ul class="list upcoming-list" style="box-shadow:none;margin:0;">
+          ${collapsed ? '' : `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 10px;gap:12px;">
+              <span style="color:var(--text-2);font-size:13px;">${summary} · ${fmtBRL(total)}</span>
+              ${vencSelMode
+                ? `<button class="link" id="venc-select-all" style="padding:0;flex:0 0 auto;">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`
+                : `<button class="link" id="venc-enter-select" style="padding:0;flex:0 0 auto;">Selecionar</button>`}
+            </div>
+            <ul class="list upcoming-list ${vencSelMode ? 'selecting' : ''}" style="box-shadow:none;margin:0;">
               ${items.map(d => {
                 const c = state.categorias.find(x => x.id === d.categoriaId);
+                const key = `${d.id}|${d.data}`;
+                const sel = vencSel.has(key);
+                const meta = [c ? escapeHTML(c.nome) : null, tagsInline(d.tags)].filter(Boolean).join(' · ');
                 return `
-                  <li class="upcoming-row" data-id="${d.id}" data-data="${d.data}">
+                  <li class="upcoming-row ${vencSelMode ? 'select-row' : ''}" data-id="${d.id}" data-data="${d.data}">
+                    ${vencSelMode ? `<span class="select-circle ${sel ? 'checked' : ''}">${sel ? '✓' : ''}</span>` : ''}
                     ${catEmoji(c)
                       ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>`
                       : `<span class="swatch" style="background:${c ? c.cor : '#999'}"></span>`}
@@ -1470,12 +1507,19 @@ views.dashboard = (root) => {
                       <div class="t">${escapeHTML(d.descricao || (c ? c.nome : 'Despesa'))}
                         ${d._overdue ? '<span class="tag atrasado">Atrasado</span>' : ''}
                       </div>
-                      <div class="s">${fmtDate(d.data)}${c ? ' · '+escapeHTML(c.nome) : ''}</div>
+                      <div class="s">${fmtDate(d.data)}${meta ? ' · ' + meta : ''}</div>
                     </div>
                     <div class="amount neg">${fmtBRL(d.valor)}</div>
                   </li>`;
               }).join('')}
             </ul>
+            ${vencSelMode ? `
+              <div class="venc-actions">
+                <span class="count">${vencSel.size} selecionada${vencSel.size === 1 ? '' : 's'}</span>
+                <button class="link" id="venc-cancel">Cancelar</button>
+                <button class="primary" id="venc-pay" style="padding:8px 14px;" ${vencSel.size === 0 ? 'disabled' : ''}>Marcar pagas</button>
+              </div>
+            ` : ''}
           `}
         </div>`;
     })()}
@@ -1545,24 +1589,44 @@ views.dashboard = (root) => {
   const bannerBtn = root.querySelector('#banner-backup');
   if (bannerBtn) bannerBtn.addEventListener('click', () => { exportBackup(); render(); });
 
-  // Tap numa linha do card Vencimentos abre os detalhes da despesa — la o
-  // usuario pode marcar como paga direto sem precisar ir ate a aba Despesas.
+  // Card Vencimentos: fora do modo selecao, tap abre os detalhes da despesa.
+  // No modo selecao, tap alterna a marca da ocorrencia.
   root.querySelectorAll('.upcoming-row').forEach(row => {
     row.addEventListener('click', () => {
       const id = row.dataset.id;
       const data = row.dataset.data;
-      // Re-expande os mesmos periodos pra achar a ocorrencia exata por id+data.
-      const today = new Date();
-      const pv = new Date(today); pv.setMonth(pv.getMonth() - 1);
-      const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
-      const occ = [
-        { type: 'month', year: pv.getFullYear(),    value: pv.getMonth() + 1 },
-        { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 },
-        { type: 'month', year: nx.getFullYear(),    value: nx.getMonth() + 1 },
-      ].flatMap(p => expandWithRecurring(state.despesas, p))
-        .find(x => x.id === id && x.data === data);
+      if (vencSelMode) {
+        const key = `${id}|${data}`;
+        if (vencSel.has(key)) vencSel.delete(key); else vencSel.add(key);
+        render({ preserveScroll: true });
+        return;
+      }
+      const occ = upcomingItems().find(x => x.id === id && x.data === data);
       if (occ) sheetDespesaDetalhes(occ);
     });
+  });
+
+  const vencEnter = root.querySelector('#venc-enter-select');
+  if (vencEnter) vencEnter.addEventListener('click', () => { vencSelMode = true; vencSel.clear(); render({ preserveScroll: true }); });
+  const vencCancel = root.querySelector('#venc-cancel');
+  if (vencCancel) vencCancel.addEventListener('click', () => { vencSelMode = false; vencSel.clear(); render({ preserveScroll: true }); });
+  const vencSelAll = root.querySelector('#venc-select-all');
+  if (vencSelAll) vencSelAll.addEventListener('click', () => {
+    const keys = upcomingItems().map(d => `${d.id}|${d.data}`);
+    const allSel = keys.length > 0 && keys.every(k => vencSel.has(k));
+    if (allSel) keys.forEach(k => vencSel.delete(k));
+    else keys.forEach(k => vencSel.add(k));
+    render({ preserveScroll: true });
+  });
+  const vencPay = root.querySelector('#venc-pay');
+  if (vencPay) vencPay.addEventListener('click', () => {
+    const occs = upcomingItems().filter(d => vencSel.has(`${d.id}|${d.data}`));
+    if (occs.length === 0) return;
+    const n = occs.length;
+    marcarOcorrenciasPagas(occs);
+    vencSelMode = false; vencSel.clear();
+    toast(`${n} marcada${n === 1 ? '' : 's'} como paga${n === 1 ? '' : 's'}`);
+    render();
   });
 
   // Gráficos
@@ -1731,6 +1795,11 @@ let statusFilter = null;        // null | 'pago' | 'pendente'
 let selectionMode = false;
 let selectedIds = new Set();    // ids de despesas (reais, nao virtuais) marcadas
 
+// Modo seleção do card Vencimentos (dashboard) — marcar várias como pagas.
+// Chaves sao "id|data" pra distinguir ocorrencias de recorrentes/parceladas.
+let vencSelMode = false;
+let vencSel = new Set();
+
 // Aplica busca textual + filtro de categoria + filtro de tag + filtro de
 // status. Multi-select: dentro de cada filtro o match eh "OU" (qualquer das
 // categorias/tags selecionadas), entre filtros eh "E".
@@ -1816,9 +1885,13 @@ views.despesas = (root) => {
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>Lançamentos</span>
-      ${despesasPeriod.length > 0 && !selectionMode
-        ? `<button class="link" id="enter-select" style="padding:4px 0;">Selecionar</button>`
-        : ''}
+      ${despesasPeriod.length === 0 ? '' : (selectionMode
+        ? (() => {
+            const realIds = despesasPeriod.filter(d => !d._virtual).map(d => d.id);
+            const allSel = realIds.length > 0 && realIds.every(id => selectedIds.has(id));
+            return `<button class="link" id="select-all" style="padding:4px 0;">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`;
+          })()
+        : `<button class="link" id="enter-select" style="padding:4px 0;">Selecionar</button>`)}
     </div>
     ${despesasPeriod.length === 0 ? `
       <div class="empty"><span class="ico">${icon('card', 48)}</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
@@ -1882,6 +1955,14 @@ views.despesas = (root) => {
         else selectedIds.add(id);
         render({ preserveScroll: true });
       });
+    });
+    const selAllBtn = root.querySelector('#select-all');
+    if (selAllBtn) selAllBtn.addEventListener('click', () => {
+      const realIds = despesasPeriod.filter(d => !d._virtual).map(d => d.id);
+      const allSel = realIds.length > 0 && realIds.every(id => selectedIds.has(id));
+      if (allSel) realIds.forEach(id => selectedIds.delete(id));
+      else realIds.forEach(id => selectedIds.add(id));
+      render({ preserveScroll: true });
     });
     root.querySelector('#cancel-select').addEventListener('click', () => {
       selectionMode = false; selectedIds.clear(); render({ preserveScroll: true });
@@ -3400,6 +3481,7 @@ const setTab = (name) => {
   if (!tabs.includes(name)) name = 'dashboard';
   // Sair da tela de Despesas cancela o modo seleção (evita estado pendurado).
   if (name !== 'despesas') { selectionMode = false; selectedIds.clear(); }
+  if (name !== 'dashboard') { vencSelMode = false; vencSel.clear(); }
   currentTab = name;
   document.querySelectorAll('.tabbar a').forEach(a => {
     a.classList.toggle('active', a.dataset.tab === name);

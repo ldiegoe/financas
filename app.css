@@ -714,6 +714,14 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
    paga sem ir ate a aba Despesas). */
 .upcoming-list .upcoming-row { cursor: pointer; }
 .upcoming-list .upcoming-row:active { background: var(--separator); }
+/* Barra de acao inline do modo selecao do card Vencimentos */
+.venc-actions {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+.venc-actions .count { flex: 1; font-weight: 600; font-size: 14px; }
+.venc-actions .primary[disabled] { opacity: .4; cursor: default; }
 
 .tags-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tags-row .tag { margin-left: 0; }
