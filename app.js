@@ -1503,8 +1503,8 @@ views.dashboard = (root) => {
       const m = healthMetas();
       const rows = [
         { label: 'Taxa de investimento', val: taxaPoup,  fmt: `${taxaPoup.toFixed(0)}%`,  good: m.invest, warn: Math.round(m.invest * 0.5),  higher: true,  hint: `da renda guardada · meta ≥ ${m.invest}%`,           trend: trendOf(taxaPoup,  prevTaxaPoup,  true)  },
-        { label: 'Gastos / renda',       val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: m.gastos, warn: Math.min(100, m.gastos + 20), higher: false, hint: `da renda consumida · ideal ≤ ${m.gastos}%`,          trend: trendOf(despRenda, prevDespRenda, false) },
-        { label: 'Custo fixo / renda',   val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: m.fixo,   warn: m.fixo + 15,                 higher: false, hint: `recorrentes (não-investimento) · ideal ≤ ${m.fixo}%`, trend: null },
+        { label: 'Renda comprometida',          val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: m.gastos, warn: Math.min(100, m.gastos + 20), higher: false, hint: `Fatia da renda consumida pelos gastos do mês (fora investimentos) · ideal ≤ ${m.gastos}%`, trend: trendOf(despRenda, prevDespRenda, false) },
+        { label: 'Renda presa em contas fixas', val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: m.fixo,   warn: m.fixo + 15,                 higher: false, hint: `Fatia da renda já comprometida com despesas recorrentes · ideal ≤ ${m.fixo}%`,           trend: null },
       ];
       if (mesesReserva !== null && poupancaIds.size > 0) {
         const wReserva = Math.max(1, Math.round(m.reserva * 0.5));
@@ -1513,7 +1513,7 @@ views.dashboard = (root) => {
       rows.forEach(r => { r.cl = c(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
       // Índice geral: média ponderada dos sub-scores. Pesos renormalizados quando
       // a reserva não está disponível (sem categorias de investimento).
-      const weights = { 'Taxa de investimento': 0.3, 'Gastos / renda': 0.25, 'Custo fixo / renda': 0.2, 'Reserva acumulada': 0.25 };
+      const weights = { 'Taxa de investimento': 0.3, 'Renda comprometida': 0.25, 'Renda presa em contas fixas': 0.2, 'Reserva acumulada': 0.25 };
       let wsum = 0, acc = 0;
       rows.forEach(r => { const w = weights[r.label] || 0.2; acc += r.score * w; wsum += w; });
       const score = wsum > 0 ? Math.round(acc / wsum) : 0;
@@ -1522,8 +1522,8 @@ views.dashboard = (root) => {
       const worst = [...rows].sort((a, b) => a.score - b.score)[0];
       const tips = {
         'Taxa de investimento': `Você está guardando pouco da renda. Tente separar ao menos ${m.invest}% assim que receber.`,
-        'Gastos / renda': `Os gastos consomem boa parte da renda. Mire ficar abaixo de ${m.gastos}% cortando as maiores categorias.`,
-        'Custo fixo / renda': 'Custo fixo alto. Revise assinaturas e recorrências que dá pra reduzir.',
+        'Renda comprometida': `Os gastos consomem boa parte da renda. Mire ficar abaixo de ${m.gastos}% cortando as maiores categorias.`,
+        'Renda presa em contas fixas': 'Custo fixo alto. Revise assinaturas e recorrências que dá pra reduzir.',
         'Reserva acumulada': `Reserva curta. Mire ${m.reserva} meses de gastos pra ficar tranquilo.`,
       };
       const tip = (worst && worst.score < 60) ? tips[worst.label] : null;
