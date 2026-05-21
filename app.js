@@ -1453,9 +1453,8 @@ views.dashboard = (root) => {
       const despRenda = totalGastos   / totalRenda * 100;
       const custoFixo = despesasPeriod.filter(d => d.recorrente && !poupancaIds.has(d.categoriaId)).reduce((s, d) => s + (d.valor || 0), 0);
       const fixoRenda = custoFixo / totalRenda * 100;
-      // Médias dos 3 meses completos anteriores: gasto (p/ reserva e gasto médio),
-      // renda e guardado (p/ tendência das razões deste mês vs histórico).
-      const reservaAcum = sumCategoriasAteHoje(poupancaIds, null);
+      // Médias dos 3 meses completos anteriores (renda, gasto e guardado) p/ a
+      // tendência das razões deste mês vs histórico.
       let pGasto = 0, pRenda = 0, pGuardado = 0;
       const nowH = new Date();
       for (let i = 1; i <= 3; i++) {
@@ -1467,8 +1466,6 @@ views.dashboard = (root) => {
         }
         for (const occ of expandWithRecurring(state.rendas, per)) pRenda += occ.valor || 0;
       }
-      const gastoMensal = Math.round(pGasto / 3);
-      const mesesReserva = gastoMensal > 0 ? reservaAcum / gastoMensal : null;
       const prevTaxaPoup  = pRenda > 0 ? pGuardado / pRenda * 100 : null;
       const prevDespRenda = pRenda > 0 ? pGasto    / pRenda * 100 : null;
       // c: classe de cor (good/''/bad). higher=true → maior é melhor.
@@ -1506,14 +1503,9 @@ views.dashboard = (root) => {
         { label: 'Renda comprometida',          val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: m.gastos, warn: Math.min(100, m.gastos + 20), higher: false, hint: `Fatia da renda consumida pelos gastos do mês (fora investimentos) · ideal ≤ ${m.gastos}%`, trend: trendOf(despRenda, prevDespRenda, false) },
         { label: 'Renda presa em contas fixas', val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: m.fixo,   warn: m.fixo + 15,                 higher: false, hint: `Fatia da renda já comprometida com despesas recorrentes · ideal ≤ ${m.fixo}%`,           trend: null },
       ];
-      if (mesesReserva !== null && poupancaIds.size > 0) {
-        const wReserva = Math.max(1, Math.round(m.reserva * 0.5));
-        rows.push({ label: 'Reserva acumulada', val: mesesReserva, fmt: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, good: m.reserva, warn: wReserva, higher: true, hint: `de ~${fmtBRL(gastoMensal)}/mês · mire ${wReserva}–${m.reserva} meses`, trend: null });
-      }
       rows.forEach(r => { r.cl = c(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
-      // Índice geral: média ponderada dos sub-scores. Pesos renormalizados quando
-      // a reserva não está disponível (sem categorias de investimento).
-      const weights = { 'Taxa de investimento': 0.3, 'Renda comprometida': 0.25, 'Renda presa em contas fixas': 0.2, 'Reserva acumulada': 0.25 };
+      // Índice geral: média ponderada dos sub-scores dos indicadores.
+      const weights = { 'Taxa de investimento': 0.4, 'Renda comprometida': 0.35, 'Renda presa em contas fixas': 0.25 };
       let wsum = 0, acc = 0;
       rows.forEach(r => { const w = weights[r.label] || 0.2; acc += r.score * w; wsum += w; });
       const score = wsum > 0 ? Math.round(acc / wsum) : 0;
@@ -1524,7 +1516,6 @@ views.dashboard = (root) => {
         'Taxa de investimento': `Você está guardando pouco da renda. Tente separar ao menos ${m.invest}% assim que receber.`,
         'Renda comprometida': `Os gastos consomem boa parte da renda. Mire ficar abaixo de ${m.gastos}% cortando as maiores categorias.`,
         'Renda presa em contas fixas': 'Custo fixo alto. Revise assinaturas e recorrências que dá pra reduzir.',
-        'Reserva acumulada': `Reserva curta. Mire ${m.reserva} meses de gastos pra ficar tranquilo.`,
       };
       const tip = (worst && worst.score < 60) ? tips[worst.label] : null;
       const barCls = (cl) => cl === 'good' ? '' : (cl === 'bad' ? 'over' : 'warn');
@@ -2605,15 +2596,11 @@ views.config = (root) => {
           <input id="f-health-gastos" type="number" min="1" max="100" inputmode="numeric" value="${hm.gastos}" />
           <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Até quanto da renda os gastos podem consumir. Ficar abaixo = verde.</small>
         </label>
-        <label class="field"><span>Custo fixo / renda — limite ideal (%)</span>
+        <label class="field" style="margin-bottom:6px;"><span>Custo fixo / renda — limite ideal (%)</span>
           <input id="f-health-fixo" type="number" min="1" max="100" inputmode="numeric" value="${hm.fixo}" />
           <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Peso das despesas recorrentes (não-investimento) na renda.</small>
         </label>
-        <label class="field" style="margin-bottom:6px;"><span>Reserva — meses ideais</span>
-          <input id="f-health-reserva" type="number" min="1" max="60" inputmode="numeric" value="${hm.reserva}" />
-          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Quantos meses de gasto médio a reserva acumulada deveria cobrir.</small>
-        </label>
-        <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50% / 6 meses)</button>
+        <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50%)</button>
       `;
 
       return `
@@ -2832,7 +2819,6 @@ views.config = (root) => {
   wireNum('#f-health-invest',  'healthMetaInvest',  100);
   wireNum('#f-health-gastos',  'healthMetaGastos',  100);
   wireNum('#f-health-fixo',    'healthMetaFixo',    100);
-  wireNum('#f-health-reserva', 'healthMetaReserva', 60);
   const healthReset = root.querySelector('#health-reset');
   if (healthReset) healthReset.addEventListener('click', () => {
     updateConfig({ healthMetaInvest: null, healthMetaGastos: null, healthMetaFixo: null, healthMetaReserva: null });
