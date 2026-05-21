@@ -262,6 +262,17 @@ main#view {
 .card .big.negative { color: var(--red); }
 .card .big.positive { color: var(--green); }
 
+/* Linha menor abaixo do total — renda programada (data futura) ainda não
+   recebida. Cor laranja discreta, com ícone de relógio alinhado ao texto. */
+.card .big-sub {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--orange);
+}
+.card .big-sub .ico { display: inline-flex; }
+.card .big-sub strong { font-variant-numeric: tabular-nums; }
+
 /* Card unico no topo do dashboard com Receitas, Despesas e Saldo. Linha
    por metrica + divisoria e linha "Saldo" levemente maior pra hierarquia.
    Gradiente sutil baseado no sinal do saldo da personalidade sem cafona. */
@@ -677,6 +688,11 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .tag.pendente    { background: rgba(255,159,10,.15);  color: var(--orange); }
 .tag.atrasado    { background: rgba(255,69,58,.15);   color: var(--red); }
 .tag.poupanca    { background: rgba(48,209,88,.15);   color: var(--green); }
+.tag.programada  { background: rgba(255,159,10,.15);  color: var(--orange); }
+
+/* Lançamento de renda com data futura: ainda não entrou no caixa, então
+   aparece levemente esmaecido na lista da Carteira. */
+.swipe-row.is-prog { opacity: .62; }
 
 /* Picker de emoji no form de categoria — faixa horizontal rolavel pra nao
    ocupar varias linhas (eram ~5 com flex-wrap). */

@@ -383,6 +383,9 @@ const expandWithRecurring = (items, period) => {
     const parcelas = it.parcelas && it.parcelas > 1 ? it.parcelas : 0;
     const isRecurring = !!it.recorrente;
     const isInstallment = parcelas > 1;
+    // Rendas temporárias: recorrente com duração definida (ex.: seguro-desemprego
+    // por 4 meses). Encerra após `duracaoMeses` ocorrências a partir da data.
+    const recDur = (isRecurring && it.duracaoMeses && it.duracaoMeses > 0) ? it.duracaoMeses : 0;
 
     if (!isRecurring && !isInstallment) {
       if (periodMatches(it.data, period)) out.push({ ...it, _virtual: false, _pago: it.pago === true });
@@ -398,6 +401,7 @@ const expandWithRecurring = (items, period) => {
       const monthsFromStart = (y - start.y) * 12 + (m - start.m);
       if (monthsFromStart < 0) continue;
       if (isInstallment && monthsFromStart >= parcelas) continue;
+      if (recDur && monthsFromStart >= recDur) continue;
 
       const projectedDay = clampDay(y, m, day);
       const yyyyMm = `${y}-${String(m).padStart(2,'0')}`;
@@ -635,6 +639,7 @@ const ICONS = {
   shield:    '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
   download:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  clock:     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
 };
 
 const icon = (name, size = 22) =>
@@ -1190,11 +1195,17 @@ const mountDistribuicaoChart = (canvas, data, prefix) => {
 
 // ----- Dashboard -----
 views.dashboard = (root) => {
+  const hoje = todayISO();
   const rendasPeriod   = expandWithRecurring(state.rendas, period);
   const despesasPeriod = expandWithRecurring(state.despesas, period);
   const totalRenda    = sumAmount(rendasPeriod);
   const totalDespesa  = sumAmount(despesasPeriod);
   const saldo         = totalRenda - totalDespesa;
+  // Renda programada (data futura) ainda não entrou no caixa — separa pra que
+  // o "Saldo atual" reflita só o que já foi recebido. O Saldo do período acima
+  // continua sendo a projeção (renda inteira) pra planejamento/saúde/gráficos.
+  const rendaRecebida   = rendasPeriod.filter(r => r.data <= hoje).reduce((s, r) => s + (r.valor || 0), 0);
+  const rendaProgramada = totalRenda - rendaRecebida;
   // Gasto vs Guardado — separa consumo de poupanca/investimento. Soh exibido
   // no resumo quando ha pelo menos uma categoria de poupanca com lancamento.
   const poupancaIds    = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
@@ -1209,7 +1220,7 @@ views.dashboard = (root) => {
   // Saldo "atual" = receita - tudo que ja saiu da conta (gastos pagos +
   // poupanca paga). Considera que o que esta "guardado" ja foi transferido.
   const totalDespesaPaga = despesasPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
-  const saldoAtual       = totalRenda - totalDespesaPaga;
+  const saldoAtual       = rendaRecebida - totalDespesaPaga;
 
   // Período anterior: total + despesas por categoria, para comparação.
   const prev = previousPeriod(period);
@@ -1381,7 +1392,8 @@ views.dashboard = (root) => {
         <span class="summary-label">Saldo</span>
         <span class="summary-value ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</span>
       </div>
-      <div class="summary-sub" style="justify-content:flex-end;">
+      <div class="summary-sub" style="justify-content:flex-end;gap:16px;">
+        ${rendaProgramada > 0 ? `<span>A receber <strong>${fmtBRL(rendaProgramada)}</strong></span>` : ''}
         <span>Atual <strong>${fmtBRL(saldoAtual)}</strong></span>
       </div>
     </div>
@@ -1696,11 +1708,18 @@ const getCSS = (v) => getComputedStyle(document.documentElement).getPropertyValu
 
 // ----- Carteira -----
 views.carteira = (root) => {
+  const hoje = todayISO();
   const rendasPeriod = expandWithRecurring(state.rendas, period);
-  const total = sumAmount(rendasPeriod);
-  // Lista por fonte
+  // Renda só "conta" a partir da data escolhida: separa recebida (data <= hoje)
+  // de programada (data futura). O total exibido reflete só o que já entrou.
+  const recebidas   = rendasPeriod.filter(r => r.data <= hoje);
+  const programadas = rendasPeriod.filter(r => r.data >  hoje);
+  const total     = sumAmount(recebidas);
+  const totalProg = sumAmount(programadas);
+  const proxProg  = programadas.length ? programadas.reduce((a, b) => a.data < b.data ? a : b) : null;
+  // Lista por fonte (só do recebido, pra bater com o total exibido)
   const porFonte = new Map();
-  for (const r of rendasPeriod) {
+  for (const r of recebidas) {
     const k = r.fonte || 'Outros';
     porFonte.set(k, (porFonte.get(k) || 0) + (r.valor || 0));
   }
@@ -1710,6 +1729,12 @@ views.carteira = (root) => {
     <div class="card">
       <h2>Total de receitas em ${periodLabel()}</h2>
       <div class="big positive">${fmtBRL(total)}</div>
+      ${totalProg > 0 ? `
+        <div class="big-sub">
+          <span class="ico">${icon('clock', 15)}</span>
+          <strong>${fmtBRL(totalProg)}</strong> programado${proxProg ? ` · entra ${fmtDate(proxProg.data)}` : ''}
+        </div>
+      ` : ''}
     </div>
 
     ${porFonte.size > 0 ? `
@@ -1731,12 +1756,15 @@ views.carteira = (root) => {
         <button class="primary" id="add-renda">Adicionar receita</button></div>
     ` : `
       <ul class="list">
-        ${rendasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(r => `
-          <li class="swipe-row" data-id="${r.id}" data-data="${r.data}" data-real="${!r._virtual}">
+        ${rendasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(r => {
+          const prog = r.data > hoje;
+          return `
+          <li class="swipe-row${prog ? ' is-prog' : ''}" data-id="${r.id}" data-data="${r.data}" data-real="${!r._virtual}">
             <span class="swatch" style="background:#30d158"></span>
             <div class="grow">
               <div class="t">${escapeHTML(r.fonte || 'Receita')}
                 ${r.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
+                ${prog ? '<span class="tag programada">Programada</span>' : ''}
               </div>
               <div class="s">${fmtDate(r.data)}${r.descricao ? ' · '+escapeHTML(r.descricao) : ''}</div>
             </div>
@@ -1748,7 +1776,7 @@ views.carteira = (root) => {
               </div>
             ` : ''}
           </li>
-        `).join('')}
+        `;}).join('')}
       </ul>
     `}
 
@@ -2819,7 +2847,7 @@ const bindPeriodHeader = (root) => {
 // --------------------------- Sheets (forms) ---------------------------------
 const sheetRenda = (renda) => {
   const isEdit = !!renda;
-  const r = renda || { fonte: '', valor: 0, data: todayISO(), descricao: '', recorrente: false };
+  const r = renda || { fonte: '', valor: 0, data: todayISO(), descricao: '', recorrente: false, duracaoMeses: null };
   openSheet(isEdit ? 'Editar receita' : 'Nova receita', () => `
     <label class="field"><span>Fonte / nome</span>
       <input id="f-fonte" type="text" placeholder="Ex.: Salário, Freela, Dividendos" value="${escapeAttr(r.fonte || '')}" required />
@@ -2829,6 +2857,9 @@ const sheetRenda = (renda) => {
     </label>
     <label class="field"><span>Data</span>
       <input id="f-data" type="date" value="${r.data}" required />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        A receita só conta a partir deste dia. Datas futuras ficam como "programado".
+      </small>
     </label>
     <label class="field"><span>Descrição (opcional)</span>
       <input id="f-desc" type="text" value="${escapeAttr(r.descricao || '')}" />
@@ -2837,20 +2868,35 @@ const sheetRenda = (renda) => {
       <input id="f-rec" type="checkbox" ${r.recorrente ? 'checked' : ''}/>
       <label for="f-rec">Receita mensal recorrente</label>
     </div>
+    <label class="field" id="row-dur" ${r.recorrente ? '' : 'hidden'}>
+      <span>Por quantos meses?</span>
+      <input id="f-dur" type="number" min="1" max="600" inputmode="numeric"
+             placeholder="Deixe vazio para sem fim" value="${r.duracaoMeses || ''}" />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        Para rendas temporárias (seguro-desemprego, bolsa, contrato). Vazio = recebe todo mês sem fim.
+      </small>
+    </label>
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
     </div>
   `, (body) => {
     bindCurrencyInput(body.querySelector('#f-valor'));
+    // Campo de duração só faz sentido para receita recorrente.
+    const rec = body.querySelector('#f-rec');
+    const rowDur = body.querySelector('#row-dur');
+    rec.addEventListener('change', () => { rowDur.hidden = !rec.checked; });
     body.querySelector('#cancel').addEventListener('click', closeSheet);
     body.querySelector('#save').addEventListener('click', () => {
+      const recorrente = rec.checked;
+      const durRaw = parseInt(body.querySelector('#f-dur').value, 10);
       const data = {
         fonte: body.querySelector('#f-fonte').value.trim() || 'Receita',
         valor: parseAmount(body.querySelector('#f-valor').value),
         data: body.querySelector('#f-data').value,
         descricao: body.querySelector('#f-desc').value.trim(),
-        recorrente: body.querySelector('#f-rec').checked,
+        recorrente,
+        duracaoMeses: (recorrente && durRaw > 0) ? durRaw : null,
       };
       if (data.valor <= 0) { alert('Informe um valor válido.'); return; }
       if (isEdit) db.updateRenda(r.id, data); else db.addRenda(data);
@@ -3388,7 +3434,10 @@ const sheetDespesaDetalhes = (d) => {
 };
 
 const sheetRendaDetalhes = (r) => {
-  const tipo = r.recorrente ? 'Mensal recorrente' : 'Apenas neste mês';
+  const tipo = r.recorrente
+    ? (r.duracaoMeses ? `Mensal por ${r.duracaoMeses} ${r.duracaoMeses === 1 ? 'mês' : 'meses'}` : 'Mensal recorrente')
+    : 'Apenas neste mês';
+  const programada = r.data > todayISO();
   openSheet('Detalhes da receita', () => `
     <div style="margin-bottom:12px;">
       <div style="font-size:18px;font-weight:600;word-break:break-word;line-height:1.3;">
@@ -3400,6 +3449,7 @@ const sheetRendaDetalhes = (r) => {
 
     <ul class="details-list">
       <li><span>Data</span><span>${fmtDate(r.data)}</span></li>
+      <li><span>Status</span><span>${programada ? 'Programada (entra na data)' : 'Recebida'}</span></li>
       <li><span>Tipo</span><span>${tipo}</span></li>
       ${r.descricao ? `
         <li><span>Descrição</span><span>${escapeHTML(r.descricao)}</span></li>
