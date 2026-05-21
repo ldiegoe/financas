@@ -2106,7 +2106,7 @@ views.categorias = (root) => {
                 ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>`
                 : `<span class="swatch" style="background:${c.cor}"></span>`}
               <div class="grow">
-                <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Poupança</span>' : ''}</div>
+                <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Investimento</span>' : ''}</div>
                 ${c.meta ? `
                   <div class="s">${fmtBRL(gasto)} / ${fmtBRL(c.meta)}${metaLabel ? ' '+metaLabel : ' este mês'} · ${pct}%</div>
                   <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
@@ -2334,7 +2334,7 @@ const sheetObjetivo = (obj) => {
             <label class="check-item">
               <input type="checkbox" data-cat="${c.id}" ${linkedSet.has(c.id) ? 'checked' : ''}/>
               ${catEmoji(c) ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>` : `<span class="swatch" style="background:${c.cor}"></span>`}
-              <span>${escapeHTML(c.nome)}${c.poupanca ? ' <span class="tag poupanca">Poupança</span>' : ''}</span>
+              <span>${escapeHTML(c.nome)}${c.poupanca ? ' <span class="tag poupanca">Investimento</span>' : ''}</span>
             </label>`).join('')}
       </div>
       <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
