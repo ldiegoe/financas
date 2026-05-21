@@ -440,6 +440,23 @@ const clampDay = (y, m, d) => {
 
 const sumAmount = (arr) => arr.reduce((acc, x) => acc + (x.valor || 0), 0);
 
+// Metas configuráveis do painel de saúde financeira (Ajustes). Os defaults
+// reproduzem os valores fixos originais. Clamp evita limiares quebrados.
+const HEALTH_META_DEFAULTS = { invest: 20, gastos: 70, fixo: 50, reserva: 6 };
+const healthMetas = () => {
+  const cfg = state.config || {};
+  const pick = (v, d, max) => {
+    const n = Number(v);
+    return (Number.isFinite(n) && n > 0) ? Math.min(n, max) : d;
+  };
+  return {
+    invest:  pick(cfg.healthMetaInvest,  HEALTH_META_DEFAULTS.invest,  100),
+    gastos:  pick(cfg.healthMetaGastos,  HEALTH_META_DEFAULTS.gastos,  100),
+    fixo:    pick(cfg.healthMetaFixo,    HEALTH_META_DEFAULTS.fixo,    100),
+    reserva: pick(cfg.healthMetaReserva, HEALTH_META_DEFAULTS.reserva, 60),
+  };
+};
+
 // --------------------------- Objetivos (calculos) --------------------------
 // Soma de despesas (expandindo recorrentes/parceladas) nas categorias do
 // idSet, com data <= hoje e >= `desde` se definido. Itera ano a ano da
@@ -1481,13 +1498,17 @@ views.dashboard = (root) => {
         const up = diff > 0;
         return { sign: up ? '↑' : '↓', cls: (higher ? up : !up) ? 'good' : 'bad' };
       };
+      // Metas configuráveis (Ajustes > Personalizar dashboard). A linha de
+      // "atenção" (warn) é derivada da meta pra manter um só campo por indicador.
+      const m = healthMetas();
       const rows = [
-        { label: 'Taxa de investimento', val: taxaPoup,  fmt: `${taxaPoup.toFixed(0)}%`,  good: 20, warn: 10, higher: true,  hint: 'da renda guardada · meta ≥ 20%',          trend: trendOf(taxaPoup,  prevTaxaPoup,  true)  },
-        { label: 'Gastos / renda',       val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: 70, warn: 90, higher: false, hint: 'da renda consumida · ideal ≤ 70%',          trend: trendOf(despRenda, prevDespRenda, false) },
-        { label: 'Custo fixo / renda',   val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: 50, warn: 65, higher: false, hint: 'recorrentes (não-investimento) · ideal ≤ 50%', trend: null },
+        { label: 'Taxa de investimento', val: taxaPoup,  fmt: `${taxaPoup.toFixed(0)}%`,  good: m.invest, warn: Math.round(m.invest * 0.5),  higher: true,  hint: `da renda guardada · meta ≥ ${m.invest}%`,           trend: trendOf(taxaPoup,  prevTaxaPoup,  true)  },
+        { label: 'Gastos / renda',       val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: m.gastos, warn: Math.min(100, m.gastos + 20), higher: false, hint: `da renda consumida · ideal ≤ ${m.gastos}%`,          trend: trendOf(despRenda, prevDespRenda, false) },
+        { label: 'Custo fixo / renda',   val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: m.fixo,   warn: m.fixo + 15,                 higher: false, hint: `recorrentes (não-investimento) · ideal ≤ ${m.fixo}%`, trend: null },
       ];
       if (mesesReserva !== null && poupancaIds.size > 0) {
-        rows.push({ label: 'Reserva acumulada', val: mesesReserva, fmt: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, good: 6, warn: 3, higher: true, hint: `de ~${fmtBRL(gastoMensal)}/mês · mire 3–6 meses`, trend: null });
+        const wReserva = Math.max(1, Math.round(m.reserva * 0.5));
+        rows.push({ label: 'Reserva acumulada', val: mesesReserva, fmt: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, good: m.reserva, warn: wReserva, higher: true, hint: `de ~${fmtBRL(gastoMensal)}/mês · mire ${wReserva}–${m.reserva} meses`, trend: null });
       }
       rows.forEach(r => { r.cl = c(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
       // Índice geral: média ponderada dos sub-scores. Pesos renormalizados quando
@@ -1500,10 +1521,10 @@ views.dashboard = (root) => {
       // Dica acionável: aponta o indicador mais fraco quando ele está abaixo do bom.
       const worst = [...rows].sort((a, b) => a.score - b.score)[0];
       const tips = {
-        'Taxa de investimento': 'Você está guardando pouco da renda. Tente separar 10–20% assim que receber.',
-        'Gastos / renda': 'Os gastos consomem boa parte da renda. Veja as maiores categorias pra cortar.',
+        'Taxa de investimento': `Você está guardando pouco da renda. Tente separar ao menos ${m.invest}% assim que receber.`,
+        'Gastos / renda': `Os gastos consomem boa parte da renda. Mire ficar abaixo de ${m.gastos}% cortando as maiores categorias.`,
         'Custo fixo / renda': 'Custo fixo alto. Revise assinaturas e recorrências que dá pra reduzir.',
-        'Reserva acumulada': 'Reserva curta. Mire de 3 a 6 meses de gastos pra ficar tranquilo.',
+        'Reserva acumulada': `Reserva curta. Mire ${m.reserva} meses de gastos pra ficar tranquilo.`,
       };
       const tip = (worst && worst.score < 60) ? tips[worst.label] : null;
       const barCls = (cl) => cl === 'good' ? '' : (cl === 'bad' ? 'over' : 'warn');
@@ -2571,15 +2592,40 @@ views.config = (root) => {
         </div>
       `;
 
+      const hm = healthMetas();
+      const healthControls = `
+        <p style="color:var(--text-2);font-size:13px;margin:0 2px 14px;">
+          Definem a cor dos indicadores e a nota do índice. A linha de "atenção" é derivada da meta.
+        </p>
+        <label class="field"><span>Taxa de investimento — meta mínima (%)</span>
+          <input id="f-health-invest" type="number" min="1" max="100" inputmode="numeric" value="${hm.invest}" />
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Quanto da renda você quer guardar/investir. Atingir ou passar = verde.</small>
+        </label>
+        <label class="field"><span>Gastos / renda — limite ideal (%)</span>
+          <input id="f-health-gastos" type="number" min="1" max="100" inputmode="numeric" value="${hm.gastos}" />
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Até quanto da renda os gastos podem consumir. Ficar abaixo = verde.</small>
+        </label>
+        <label class="field"><span>Custo fixo / renda — limite ideal (%)</span>
+          <input id="f-health-fixo" type="number" min="1" max="100" inputmode="numeric" value="${hm.fixo}" />
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Peso das despesas recorrentes (não-investimento) na renda.</small>
+        </label>
+        <label class="field" style="margin-bottom:6px;"><span>Reserva — meses ideais</span>
+          <input id="f-health-reserva" type="number" min="1" max="60" inputmode="numeric" value="${hm.reserva}" />
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Quantos meses de gasto médio a reserva acumulada deveria cobrir.</small>
+        </label>
+        <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50% / 6 meses)</button>
+      `;
+
       return `
         <div class="card">
           <h2>Personalizar dashboard</h2>
           <p style="color:var(--text-2);font-size:14px;margin:6px 0 0;">
             Toque numa seção pra expandir os controles.
           </p>
-          ${subSection('ajGrpCards', 'Cards do dashboard', cardsControls)}
-          ${subSection('ajGrpCat',   'Gráfico de despesas por categoria', dashControls('Cat', 'cat'))}
-          ${subSection('ajGrpTag',   'Despesas por tag', dashControls('Tag', 'tag', tagExtra))}
+          ${subSection('ajGrpCards',  'Cards do dashboard', cardsControls)}
+          ${subSection('ajGrpHealth', 'Metas da saúde financeira', healthControls)}
+          ${subSection('ajGrpCat',    'Gráfico de despesas por categoria', dashControls('Cat', 'cat'))}
+          ${subSection('ajGrpTag',    'Despesas por tag', dashControls('Tag', 'tag', tagExtra))}
         </div>
       `;
     })()}
@@ -2770,6 +2816,29 @@ views.config = (root) => {
   wireToggle('#f-dash-upcoming-show',   'dashUpcomingShow');
   wireToggle('#f-dash-goals-show',      'dashGoalsShow');
   wireToggle('#f-dash-health-show',     'dashHealthShow');
+  // Metas da saude financeira: campos numericos. Vazio/invalido -> null (volta
+  // ao default em healthMetas). Sao por perfil (nao estao em DEVICE_CONFIG_KEYS).
+  const wireNum = (id, key, max) => {
+    const el = root.querySelector(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      let n = parseInt(el.value, 10);
+      if (!Number.isFinite(n) || n < 1) n = null;
+      else if (n > max) n = max;
+      if (n != null) el.value = n;
+      updateConfig({ [key]: n });
+    });
+  };
+  wireNum('#f-health-invest',  'healthMetaInvest',  100);
+  wireNum('#f-health-gastos',  'healthMetaGastos',  100);
+  wireNum('#f-health-fixo',    'healthMetaFixo',    100);
+  wireNum('#f-health-reserva', 'healthMetaReserva', 60);
+  const healthReset = root.querySelector('#health-reset');
+  if (healthReset) healthReset.addEventListener('click', () => {
+    updateConfig({ healthMetaInvest: null, healthMetaGastos: null, healthMetaFixo: null, healthMetaReserva: null });
+    toast('Metas restauradas');
+    render({ preserveScroll: true });
+  });
   wireToggle('#f-dash-tag-show',        'dashTagShow');
   // Categoria
   wireToggle('#f-dash-cat-donut-show',  'dashCatDonutShow');
