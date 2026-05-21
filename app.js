@@ -1079,7 +1079,7 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => 
               ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
               : `<span class="swatch" style="background:${c.cor}"></span>`}
             <div class="grow">
-              <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Poupança</span>' : ''}</div>
+              <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Investimento</span>' : ''}</div>
               ${c.meta ? `
                 <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
                 <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
