@@ -3487,6 +3487,73 @@ const sheetRenameProfile = (id) => {
 // inclusive descricoes longas que ficam truncadas na lista. Aceita tanto o
 // registro original quanto uma ocorrencia projetada (recorrente/parcelada),
 // mas Editar/Excluir afetam sempre o registro base.
+// Antecipar parcelas: o usuário informa quantas parcelas quitou adiantado e o
+// total de parcelas diminui (as últimas saem da projeção). Não deixa reduzir
+// abaixo da parcela atual nem das já marcadas como pagas, pra não apagar
+// parcelas que já aconteceram.
+const sheetAnteciparParcelas = (d) => {
+  const desp = state.despesas.find(x => x.id === d.id);
+  if (!desp) return;
+  const total = desp.parcelas || 1;
+  if (total <= 1) return;
+  const start = partsOf(desp.data);
+  const now = new Date();
+  const monthsFromStart = (now.getFullYear() - start.y) * 12 + (now.getMonth() + 1 - start.m);
+  const parcelaAtual = Math.min(total, Math.max(1, monthsFromStart + 1));
+  const pagas = (desp.pagasEm || []).length;
+  const minTotal = Math.max(parcelaAtual, pagas, 1);
+  const maxAntecipar = total - minTotal;
+
+  openSheet('Antecipar parcelas', () => maxAntecipar < 1 ? `
+    <p style="color:var(--text-2);font-size:14px;margin:0 2px;">
+      Não há parcelas futuras para antecipar — você já está na última.
+    </p>
+    <div class="actions"><button class="secondary" id="close">Fechar</button></div>
+  ` : `
+    <p style="color:var(--text-2);font-size:14px;margin:0 2px 14px;">
+      ${escapeHTML(desp.descricao || 'Despesa parcelada')} — ${total}x de ${fmtBRL(desp.valor)}.
+      Você está na parcela ${parcelaAtual} de ${total}.
+    </p>
+    <label class="field"><span>Quantas parcelas você antecipou?</span>
+      <input id="f-antecipar" type="number" min="1" max="${maxAntecipar}" inputmode="numeric" value="1" />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+        Isso reduz o total de parcelas. Pode antecipar até ${maxAntecipar}.
+      </small>
+    </label>
+    <div id="antecipar-preview" style="font-size:15px;color:var(--text);margin:2px 2px 4px;"></div>
+    <div class="actions">
+      <button class="secondary" id="close">Cancelar</button>
+      <button class="primary"   id="save">Antecipar</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#close').addEventListener('click', closeSheet);
+    if (maxAntecipar < 1) return;
+    const input = body.querySelector('#f-antecipar');
+    const preview = body.querySelector('#antecipar-preview');
+    const clamp = () => {
+      let x = parseInt(input.value, 10);
+      if (!Number.isFinite(x) || x < 1) x = 1;
+      if (x > maxAntecipar) x = maxAntecipar;
+      return x;
+    };
+    const updatePreview = () => {
+      const x = clamp();
+      preview.innerHTML = `De <strong>${total}x</strong> passará para <strong>${total - x}x</strong>.`;
+    };
+    input.addEventListener('input', updatePreview);
+    updatePreview();
+    body.querySelector('#save').addEventListener('click', () => {
+      const x = clamp();
+      input.value = x;
+      const novoTotal = total - x;
+      db.updateDespesa(d.id, { parcelas: novoTotal });
+      closeSheet();
+      toast(`${x} parcela${x === 1 ? '' : 's'} antecipada${x === 1 ? '' : 's'} · agora ${novoTotal}x`);
+      render();
+    });
+  });
+};
+
 const sheetDespesaDetalhes = (d) => {
   const cat = state.categorias.find(c => c.id === d.categoriaId);
   const tipo = d.recorrente
@@ -3530,6 +3597,10 @@ const sheetDespesaDetalhes = (d) => {
       ${d._pago ? 'Marcar como pendente' : 'Marcar como paga'}
     </button>
 
+    ${d._parcelaTotal ? `
+      <button id="antecipar" class="secondary" style="width:100%;margin-top:8px;">Antecipar parcelas</button>
+    ` : ''}
+
     <div class="actions">
       <button class="secondary" id="close">Fechar</button>
       <button class="primary"   id="edit">Editar</button>
@@ -3537,6 +3608,11 @@ const sheetDespesaDetalhes = (d) => {
     </div>
   `, (body) => {
     body.querySelector('#close').addEventListener('click', closeSheet);
+    const antBtn = body.querySelector('#antecipar');
+    if (antBtn) antBtn.addEventListener('click', () => {
+      closeSheet();
+      sheetAnteciparParcelas(d);
+    });
     body.querySelector('#toggle-pago').addEventListener('click', () => {
       const wasPago = d._pago;
       toggleDespesaPago(d);
