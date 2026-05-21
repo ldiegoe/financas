@@ -1436,43 +1436,102 @@ views.dashboard = (root) => {
       const despRenda = totalGastos   / totalRenda * 100;
       const custoFixo = despesasPeriod.filter(d => d.recorrente && !poupancaIds.has(d.categoriaId)).reduce((s, d) => s + (d.valor || 0), 0);
       const fixoRenda = custoFixo / totalRenda * 100;
-      // Reserva acumulada (todas as categorias de poupanca) / gasto mensal medio
-      // dos 3 meses completos anteriores.
+      // Médias dos 3 meses completos anteriores: gasto (p/ reserva e gasto médio),
+      // renda e guardado (p/ tendência das razões deste mês vs histórico).
       const reservaAcum = sumCategoriasAteHoje(poupancaIds, null);
-      let gastoMensal = 0;
+      let pGasto = 0, pRenda = 0, pGuardado = 0;
       const nowH = new Date();
       for (let i = 1; i <= 3; i++) {
         const dm = new Date(nowH.getFullYear(), nowH.getMonth() - i, 1);
-        for (const occ of expandWithRecurring(state.despesas, { type: 'month', year: dm.getFullYear(), value: dm.getMonth() + 1 })) {
-          if (poupancaIds.has(occ.categoriaId)) continue;
-          gastoMensal += occ.valor || 0;
+        const per = { type: 'month', year: dm.getFullYear(), value: dm.getMonth() + 1 };
+        for (const occ of expandWithRecurring(state.despesas, per)) {
+          if (poupancaIds.has(occ.categoriaId)) pGuardado += occ.valor || 0;
+          else pGasto += occ.valor || 0;
         }
+        for (const occ of expandWithRecurring(state.rendas, per)) pRenda += occ.valor || 0;
       }
-      gastoMensal = Math.round(gastoMensal / 3);
+      const gastoMensal = Math.round(pGasto / 3);
       const mesesReserva = gastoMensal > 0 ? reservaAcum / gastoMensal : null;
-      // c: classe de cor. higher=true → maior eh melhor.
+      const prevTaxaPoup  = pRenda > 0 ? pGuardado / pRenda * 100 : null;
+      const prevDespRenda = pRenda > 0 ? pGasto    / pRenda * 100 : null;
+      // c: classe de cor (good/''/bad). higher=true → maior é melhor.
       const c = (v, good, warn, higher) => higher
         ? (v >= good ? 'good' : (v >= warn ? '' : 'bad'))
         : (v <= good ? 'good' : (v <= warn ? '' : 'bad'));
+      // sub-score 0–100 por indicador (p/ a barrinha e o índice geral). 60 = limite
+      // de "atenção" (warn), 100 = "bom" (good); decai linearmente fora disso.
+      const scoreOf = (v, good, warn, higher) => {
+        let s;
+        if (higher) {
+          if (v >= good) s = 100;
+          else if (v >= warn) s = 60 + 40 * (v - warn) / (good - warn);
+          else s = warn > 0 ? 60 * (v / warn) : 0;
+        } else {
+          if (v <= good) s = 100;
+          else if (v <= warn) s = 60 + 40 * (warn - v) / (warn - good);
+          else { const cap = warn + (warn - good); s = v >= cap ? 0 : 60 * (cap - v) / (cap - warn); }
+        }
+        return Math.max(0, Math.min(100, s));
+      };
+      // tendência: valor atual vs média dos 3 meses. higher define o que é melhorar.
+      const trendOf = (cur, prev, higher) => {
+        if (prev == null) return null;
+        const diff = cur - prev;
+        if (Math.abs(diff) < 0.5) return { sign: '→', cls: 'flat' };
+        const up = diff > 0;
+        return { sign: up ? '↑' : '↓', cls: (higher ? up : !up) ? 'good' : 'bad' };
+      };
       const rows = [
-        { label: 'Taxa de investimento',  val: `${taxaPoup.toFixed(0)}%`,  cl: c(taxaPoup, 20, 10, true),  hint: 'da renda guardada' },
-        { label: 'Gastos / renda',     val: `${despRenda.toFixed(0)}%`, cl: c(despRenda, 70, 90, false), hint: 'da renda consumida' },
-        { label: 'Custo fixo / renda', val: `${fixoRenda.toFixed(0)}%`, cl: c(fixoRenda, 50, 65, false), hint: 'recorrentes (não-investimento)' },
+        { label: 'Taxa de investimento', val: taxaPoup,  fmt: `${taxaPoup.toFixed(0)}%`,  good: 20, warn: 10, higher: true,  hint: 'da renda guardada · meta ≥ 20%',          trend: trendOf(taxaPoup,  prevTaxaPoup,  true)  },
+        { label: 'Gastos / renda',       val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: 70, warn: 90, higher: false, hint: 'da renda consumida · ideal ≤ 70%',          trend: trendOf(despRenda, prevDespRenda, false) },
+        { label: 'Custo fixo / renda',   val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: 50, warn: 65, higher: false, hint: 'recorrentes (não-investimento) · ideal ≤ 50%', trend: null },
       ];
       if (mesesReserva !== null && poupancaIds.size > 0) {
-        rows.push({ label: 'Reserva acumulada', val: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, cl: c(mesesReserva, 6, 3, true), hint: `de ~${fmtBRL(gastoMensal)}/mês` });
+        rows.push({ label: 'Reserva acumulada', val: mesesReserva, fmt: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, good: 6, warn: 3, higher: true, hint: `de ~${fmtBRL(gastoMensal)}/mês · mire 3–6 meses`, trend: null });
       }
+      rows.forEach(r => { r.cl = c(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
+      // Índice geral: média ponderada dos sub-scores. Pesos renormalizados quando
+      // a reserva não está disponível (sem categorias de investimento).
+      const weights = { 'Taxa de investimento': 0.3, 'Gastos / renda': 0.25, 'Custo fixo / renda': 0.2, 'Reserva acumulada': 0.25 };
+      let wsum = 0, acc = 0;
+      rows.forEach(r => { const w = weights[r.label] || 0.2; acc += r.score * w; wsum += w; });
+      const score = wsum > 0 ? Math.round(acc / wsum) : 0;
+      const status = score >= 75 ? { txt: 'Saudável', cls: 'good' } : (score >= 50 ? { txt: 'Atenção', cls: '' } : { txt: 'Crítico', cls: 'bad' });
+      // Dica acionável: aponta o indicador mais fraco quando ele está abaixo do bom.
+      const worst = [...rows].sort((a, b) => a.score - b.score)[0];
+      const tips = {
+        'Taxa de investimento': 'Você está guardando pouco da renda. Tente separar 10–20% assim que receber.',
+        'Gastos / renda': 'Os gastos consomem boa parte da renda. Veja as maiores categorias pra cortar.',
+        'Custo fixo / renda': 'Custo fixo alto. Revise assinaturas e recorrências que dá pra reduzir.',
+        'Reserva acumulada': 'Reserva curta. Mire de 3 a 6 meses de gastos pra ficar tranquilo.',
+      };
+      const tip = (worst && worst.score < 60) ? tips[worst.label] : null;
+      const barCls = (cl) => cl === 'good' ? '' : (cl === 'bad' ? 'over' : 'warn');
       return `
         <div class="card">
           ${collapseHeader('health', 'Saúde financeira')}
           ${isCollapsed('health') ? '' : `
+            <div class="health-score">
+              <div class="hs-ring ${status.cls}" style="--p:${score};">
+                <span class="hs-num">${score}</span>
+              </div>
+              <div class="hs-meta">
+                <div class="hs-status ${status.cls}">${status.txt}</div>
+                <div class="hs-sub">Índice de saúde financeira</div>
+              </div>
+            </div>
             <ul class="health-list">
               ${rows.map(r => `
                 <li>
-                  <div class="grow"><div class="hl-label">${r.label}</div><div class="hl-hint">${r.hint}</div></div>
-                  <span class="hl-val ${r.cl}">${r.val}</span>
+                  <div class="grow">
+                    <div class="hl-label">${r.label}${r.trend ? ` <span class="hl-trend ${r.trend.cls}">${r.trend.sign}</span>` : ''}</div>
+                    <div class="hl-hint">${r.hint}</div>
+                    <div class="progress"><i class="${barCls(r.cl)}" style="width:${r.score.toFixed(0)}%"></i></div>
+                  </div>
+                  <span class="hl-val ${r.cl}">${r.fmt}</span>
                 </li>`).join('')}
             </ul>
+            ${tip ? `<div class="health-tip"><span class="ico">${icon('sparkles', 16)}</span><span>${tip}</span></div>` : ''}
           `}
         </div>`;
     })()}

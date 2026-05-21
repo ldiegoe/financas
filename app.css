@@ -474,6 +474,41 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .hl-val.good { color: var(--green); }
 .hl-val.bad  { color: var(--red); }
 
+/* Tendência (seta) ao lado do indicador: verde melhorando, vermelho piorando. */
+.hl-trend { font-size: 13px; font-weight: 700; }
+.hl-trend.good { color: var(--green); }
+.hl-trend.bad  { color: var(--red); }
+.hl-trend.flat { color: var(--text-2); }
+
+/* Índice de saúde: anel circular (conic-gradient) com a nota no centro +
+   status ao lado. A cor do anel/segue o nível (good/neutro/bad). */
+.health-score { display: flex; align-items: center; gap: 14px; padding: 4px 0 14px; }
+.hs-ring {
+  --c: var(--orange);
+  position: relative; flex: 0 0 auto;
+  width: 66px; height: 66px; border-radius: 50%;
+  background: conic-gradient(var(--c) calc(var(--p) * 3.6deg), var(--separator) 0);
+  display: grid; place-items: center;
+}
+.hs-ring.good { --c: var(--green); }
+.hs-ring.bad  { --c: var(--red); }
+.hs-ring::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--bg-elev); }
+.hs-num { position: relative; z-index: 1; font-weight: 800; font-size: 22px; font-variant-numeric: tabular-nums; }
+.hs-meta { min-width: 0; }
+.hs-status { font-size: 18px; font-weight: 700; color: var(--orange); }
+.hs-status.good { color: var(--green); }
+.hs-status.bad  { color: var(--red); }
+.hs-sub { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+
+/* Dica acionável no rodapé do card de saúde. */
+.health-tip {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 12px; padding: 10px 12px;
+  background: var(--separator); border-radius: 10px;
+  font-size: 13px; color: var(--text); line-height: 1.4;
+}
+.health-tip .ico { flex: 0 0 auto; display: inline-flex; color: var(--tint); margin-top: 1px; }
+
 /* Lista de checkboxes (ex: categorias que contam pra um objetivo) */
 .check-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; border: 1px solid var(--separator); border-radius: 10px; }
 .check-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; font-size: 15px; cursor: pointer; border-bottom: 1px solid var(--separator); }
