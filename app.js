@@ -79,6 +79,8 @@ let activeProfileId = _profilesMeta.current;
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
   'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashHealthShow','dashCollapsed',
+  // Por grafico (investimentos) — card proprio no dashboard
+  'dashInvestShow','dashInvestDonutShow','dashInvestDonutType','dashInvestDonutInnerPct','dashInvestListShow','dashInvestListPct',
   'onboardingDone','showCategoryIcons',
   // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
   'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
@@ -657,6 +659,7 @@ const ICONS = {
   download:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   clock:     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  trending:  '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
 };
 
 const icon = (name, size = 22) =>
@@ -1096,7 +1099,7 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => 
               ? `<span class="cat-emoji" style="background:${c.cor}22;">${c.icone}</span>`
               : `<span class="swatch" style="background:${c.cor}"></span>`}
             <div class="grow">
-              <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Investimento</span>' : ''}</div>
+              <div class="t">${escapeHTML(c.nome)}${c.poupanca && !c.hideTag ? '<span class="tag poupanca">Investimento</span>' : ''}</div>
               ${c.meta ? `
                 <div class="s">${fmtBRL(c.valor)} de ${fmtBRL(c.meta)}${pct!=null?` · ${pct}% da meta`:''}</div>
                 <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
@@ -1289,9 +1292,9 @@ views.dashboard = (root) => {
     .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
     .slice(0, 3);
 
-  // Despesas por categoria
+  // Despesas por categoria (exclui investimento — que tem card próprio).
   const porCategoria = new Map();
-  for (const d of despesasPeriod) {
+  for (const d of gastosPeriod) {
     const id = d.categoriaId || '_sem';
     porCategoria.set(id, (porCategoria.get(id) || 0) + (d.valor || 0));
   }
@@ -1303,7 +1306,30 @@ views.dashboard = (root) => {
       cor:  c ? c.cor  : '#999',
       meta: c ? c.meta : null,
       icone: catEmoji(c),
-      poupanca: c ? !!c.poupanca : false,
+      poupanca: false,
+      valor,
+    };
+  }).sort((a, b) => b.valor - a.valor);
+
+  // Investimentos por categoria (categorias marcadas como investimento). Card
+  // próprio no dashboard; hideTag evita repetir o selo "Investimento" em todas
+  // as linhas. poupanca:true mantém a barra de meta "sempre verde" (superar a
+  // meta de investir é bom).
+  const porInvest = new Map();
+  for (const d of despesasPeriod) {
+    if (!poupancaIds.has(d.categoriaId)) continue;
+    porInvest.set(d.categoriaId, (porInvest.get(d.categoriaId) || 0) + (d.valor || 0));
+  }
+  const investData = [...porInvest.entries()].map(([id, valor]) => {
+    const c = state.categorias.find(x => x.id === id);
+    return {
+      id,
+      nome: c ? c.nome : 'Investimento',
+      cor:  c ? c.cor  : '#30d158',
+      meta: c ? c.meta : null,
+      icone: catEmoji(c),
+      poupanca: true,
+      hideTag: true,
       valor,
     };
   }).sort((a, b) => b.valor - a.valor);
@@ -1397,7 +1423,7 @@ views.dashboard = (root) => {
       ${totalGuardado > 0 ? `
         <div class="summary-sub">
           <span>Gastos <strong>${fmtBRL(totalGastos)}</strong></span>
-          <span>Guardado <strong>${fmtBRL(totalGuardado)}</strong></span>
+          <span>Investido <strong>${fmtBRL(totalGuardado)}</strong></span>
         </div>
       ` : ''}
       <div class="summary-sub">
@@ -1653,6 +1679,7 @@ views.dashboard = (root) => {
     ` : ''}
 
     ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat', 'Cat')}
+    ${(state.config.dashInvestShow !== false && investData.length > 0) ? renderDistribuicaoCard('Investimentos por categoria', investData, 'ch-invest', 'invest', 'Invest') : ''}
     ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag', 'Tag') : ''}
   `;
 
@@ -1730,6 +1757,7 @@ views.dashboard = (root) => {
     }
 
     mountDistribuicaoChart(root.querySelector('#ch-cat'), catData, 'Cat');
+    mountDistribuicaoChart(root.querySelector('#ch-invest'), investData, 'Invest');
     mountDistribuicaoChart(root.querySelector('#ch-tag'), tagData, 'Tag');
   }
 };
@@ -1944,7 +1972,11 @@ const labelOfPeriod = (p) => {
 };
 
 views.despesas = (root) => {
-  const expanded = expandWithRecurring(state.despesas, period);
+  // Investimentos têm aba própria — a aba Despesas ignora as categorias de
+  // investimento (tanto na lista quanto nos chips de filtro).
+  const invIds = investCategoriaIds();
+  const despesasCats = state.categorias.filter(c => !c.poupanca);
+  const expanded = expandWithRecurring(state.despesas, period).filter(d => !invIds.has(d.categoriaId));
   const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
@@ -1963,10 +1995,10 @@ views.despesas = (root) => {
              placeholder="Buscar por descrição ou tag" value="${escapeAttr(searchQuery)}" />
     </div>
 
-    ${state.categorias.length > 0 ? `
+    ${despesasCats.length > 0 ? `
       <div class="filter-bar" id="cat-filter">
         <button class="chip ${categoryFilter.size===0?'active':''}" data-cat="">Todas categorias</button>
-        ${state.categorias.map(c => `
+        ${despesasCats.map(c => `
           <button class="chip ${categoryFilter.has(c.id)?'active':''}" data-cat="${c.id}">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.cor};margin-right:6px;vertical-align:middle;"></span>${escapeHTML(c.nome)}
           </button>`).join('')}
@@ -2324,10 +2356,113 @@ const sheetCategoriaHistorico = (c) => {
   });
 };
 
-// ----- Objetivos -----
-views.objetivos = (root) => {
+// ----- Investimentos (aba) -----
+// Sub-abas: "Investimentos" (aportes = despesas em categorias marcadas como
+// investimento) e "Objetivos" (metas de investimento). investSub guarda a ativa.
+let investSub = 'aportes'; // 'aportes' | 'objetivos'
+
+// Ids das categorias marcadas como investimento (flag poupanca).
+const investCategoriaIds = () => new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
+
+views.investimentos = (root) => {
+  const seg = `
+    <div class="segmented invest-subtabs">
+      <button data-sub="aportes"   class="${investSub==='aportes'?'active':''}">Investimentos</button>
+      <button data-sub="objetivos" class="${investSub==='objetivos'?'active':''}">Objetivos</button>
+    </div>`;
+  if (investSub === 'objetivos') renderObjetivosSub(root, seg);
+  else renderAportesSub(root, seg);
+  root.querySelectorAll('.invest-subtabs button').forEach(b => b.addEventListener('click', () => {
+    investSub = b.dataset.sub;
+    render();
+  }));
+};
+
+// Linha de um lançamento de investimento (mesma cara da despesa, ações próprias).
+const investRowHTML = (d) => {
+  const cat = state.categorias.find(c => c.id === d.categoriaId);
+  const dTags = d.tags || [];
+  return `
+    <li class="swipe-row" data-id="${d.id}" data-data="${d.data}" data-real="${!d._virtual}">
+      ${catEmoji(cat)
+        ? `<span class="cat-emoji" style="background:${cat.cor}22;">${catEmoji(cat)}</span>`
+        : `<span class="swatch" style="background:${cat ? cat.cor : '#999'}"></span>`}
+      <div class="grow">
+        <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Investimento'))}
+          ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
+          ${d._parcelaTotal ? `<span class="tag installment">${d._parcelaNum}/${d._parcelaTotal}</span>` : ''}
+          ${d._pago ? '' : '<span class="tag pendente">Pendente</span>'}
+        </div>
+        <div class="s">${fmtDate(d.data)} · ${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</div>
+        ${dTags.length > 0 ? `<div class="tags-row">${dTags.map(t => `<span class="tag usertag">#${escapeHTML(t)}</span>`).join('')}</div>` : ''}
+      </div>
+      <div class="amount">${fmtBRL(d.valor)}</div>
+      ${!d._virtual ? `
+        <div class="swipe-actions">
+          <button class="edit" data-action="edit-invest">Editar</button>
+          <button class="del"  data-action="del-invest">Excluir</button>
+        </div>
+      ` : ''}
+    </li>`;
+};
+
+// Sub-aba "Investimentos": total + lista dos aportes do período.
+const renderAportesSub = (root, seg) => {
+  const invIds = investCategoriaIds();
+  const all = expandWithRecurring(state.despesas, period).filter(d => invIds.has(d.categoriaId));
+  const total = sumAmount(all);
+  const lancs = [...all].sort((a, b) => b.data.localeCompare(a.data));
+  root.innerHTML = `
+    ${seg}
+    ${periodHeader()}
+    <div class="card">
+      <h2>Total investido em ${periodLabel()}</h2>
+      <div class="big">${fmtBRL(total)}</div>
+    </div>
+    ${invIds.size === 0 ? `
+      <div class="empty"><span class="ico">${icon('trending', 48)}</span>
+        Nenhuma categoria de investimento ainda.<br/><br/>
+        Crie uma categoria marcando <strong>"É investimento"</strong> para começar a registrar aportes.
+      </div>
+    ` : (lancs.length === 0 ? `
+      <div class="empty"><span class="ico">${icon('trending', 48)}</span>Nenhum investimento no período.<br/><br/>
+        <button class="primary" id="add-invest">Adicionar investimento</button></div>
+    ` : `
+      <div class="section-title">Lançamentos</div>
+      <ul class="list">
+        ${lancs.map(d => investRowHTML(d)).join('')}
+      </ul>
+    `)}
+    <button class="fab" id="fab-invest" aria-label="Adicionar investimento">+</button>
+  `;
+  bindSwipe(root);
+  root.querySelectorAll('.swipe-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.swipe-actions')) return;
+      if (row.classList.contains('open')) { row.classList.remove('open'); return; }
+      const occ = all.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
+      if (occ) sheetDespesaDetalhes(occ);
+    });
+  });
+  root.querySelectorAll('[data-action="edit-invest"]').forEach(b => b.addEventListener('click', (e) => {
+    const id = e.target.closest('[data-id]').dataset.id;
+    sheetDespesa(state.despesas.find(x => x.id === id), { investimento: true });
+  }));
+  root.querySelectorAll('[data-action="del-invest"]').forEach(b => b.addEventListener('click', (e) => {
+    const id = e.target.closest('[data-id]').dataset.id;
+    if (confirm('Excluir este investimento?')) { db.removeDespesa(id); toast('Investimento excluído'); render(); }
+  }));
+  const addBtn = root.querySelector('#add-invest');
+  if (addBtn) addBtn.addEventListener('click', () => sheetDespesa(null, { investimento: true }));
+  root.querySelector('#fab-invest').addEventListener('click', () => sheetDespesa(null, { investimento: true }));
+  bindPeriodHeader(root);
+};
+
+// Sub-aba "Objetivos": metas de investimento (lista + progresso).
+const renderObjetivosSub = (root, seg) => {
   const objetivos = state.objetivos || [];
   root.innerHTML = `
+    ${seg}
     <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
       Defina metas de investimento e linke as categorias que contam pra cada uma. Arraste a linha pra esquerda pra editar/excluir.
     </p>
@@ -2402,6 +2537,8 @@ const sheetObjetivo = (obj) => {
   const isEdit = !!obj;
   const o = obj || { nome: '', alvo: 0, prazo: '', desde: '', categoriaIds: [] };
   const linkedSet = new Set(o.categoriaIds || []);
+  // Objetivos contam só categorias de investimento.
+  const investCats = state.categorias.filter(c => c.poupanca);
   openSheet(isEdit ? 'Editar objetivo' : 'Novo objetivo', () => `
     <label class="field"><span>Nome</span>
       <input id="o-nome" type="text" placeholder="Ex.: Reserva de emergência, Viagem, Carro" value="${escapeAttr(o.nome || '')}" required />
@@ -2414,17 +2551,17 @@ const sheetObjetivo = (obj) => {
     </label>
     <label class="field"><span>Categorias que contam pra esse objetivo</span>
       <div class="check-list" id="o-cats">
-        ${state.categorias.length === 0
-          ? '<p style="color:var(--text-2);font-size:13px;margin:0;">Crie categorias primeiro.</p>'
-          : state.categorias.map(c => `
+        ${investCats.length === 0
+          ? '<p style="color:var(--text-2);font-size:13px;margin:0;">Crie uma categoria marcada como "É investimento" primeiro.</p>'
+          : investCats.map(c => `
             <label class="check-item">
               <input type="checkbox" data-cat="${c.id}" ${linkedSet.has(c.id) ? 'checked' : ''}/>
               ${catEmoji(c) ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>` : `<span class="swatch" style="background:${c.cor}"></span>`}
-              <span>${escapeHTML(c.nome)}${c.poupanca ? ' <span class="tag poupanca">Investimento</span>' : ''}</span>
+              <span>${escapeHTML(c.nome)}</span>
             </label>`).join('')}
       </div>
       <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-        Geralmente categorias de investimento.
+        Só aparecem categorias marcadas como investimento.
       </small>
     </label>
     <label class="field"><span>Contar lançamentos a partir de (opcional)</span>
@@ -2596,6 +2733,10 @@ views.config = (root) => {
           <input id="f-dash-health-show" type="checkbox" ${state.config.dashHealthShow!==false?'checked':''}/>
           <label for="f-dash-health-show">Saúde financeira (indicadores)</label>
         </div>
+        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <input id="f-dash-invest-show" type="checkbox" ${state.config.dashInvestShow!==false?'checked':''}/>
+          <label for="f-dash-invest-show">Investimentos por categoria</label>
+        </div>
       `;
 
       const hm = healthMetas();
@@ -2627,6 +2768,7 @@ views.config = (root) => {
           ${subSection('ajGrpCards',  'Cards do dashboard', cardsControls)}
           ${subSection('ajGrpHealth', 'Metas da saúde financeira', healthControls)}
           ${subSection('ajGrpCat',    'Gráfico de despesas por categoria', dashControls('Cat', 'cat'))}
+          ${subSection('ajGrpInvest', 'Gráfico de investimentos por categoria', dashControls('Invest', 'invest'))}
           ${subSection('ajGrpTag',    'Despesas por tag', dashControls('Tag', 'tag', tagExtra))}
         </div>
       `;
@@ -2818,6 +2960,7 @@ views.config = (root) => {
   wireToggle('#f-dash-upcoming-show',   'dashUpcomingShow');
   wireToggle('#f-dash-goals-show',      'dashGoalsShow');
   wireToggle('#f-dash-health-show',     'dashHealthShow');
+  wireToggle('#f-dash-invest-show',     'dashInvestShow');
   // Metas da saude financeira: campos numericos. Vazio/invalido -> null (volta
   // ao default em healthMetas). Sao por perfil (nao estao em DEVICE_CONFIG_KEYS).
   const wireNum = (id, key, max) => {
@@ -2849,6 +2992,17 @@ views.config = (root) => {
   root.querySelectorAll('#dash-cat-donut-type button').forEach(btn => {
     btn.addEventListener('click', () => {
       updateConfig({ dashCatDonutType: btn.dataset.type });
+      render({ preserveScroll: true });
+    });
+  });
+  // Investimentos
+  wireToggle('#f-dash-invest-donut-show',  'dashInvestDonutShow');
+  wireToggle('#f-dash-invest-donut-inner', 'dashInvestDonutInnerPct');
+  wireToggle('#f-dash-invest-list-show',   'dashInvestListShow');
+  wireToggle('#f-dash-invest-list-pct',    'dashInvestListPct');
+  root.querySelectorAll('#dash-invest-donut-type button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateConfig({ dashInvestDonutType: btn.dataset.type });
       render({ preserveScroll: true });
     });
   });
@@ -3036,16 +3190,25 @@ const sheetRenda = (renda) => {
   });
 };
 
-const sheetDespesa = (desp) => {
+const sheetDespesa = (desp, opts = {}) => {
   const isEdit = !!desp;
-  const d = desp || { descricao: '', valor: 0, data: todayISO(), categoriaId: state.categorias[0]?.id || null, recorrente: false, parcelas: 1, tags: [] };
+  const catById = (id) => state.categorias.find(c => c.id === id);
+  // Contexto investimento: explícito (opts) ou inferido pela categoria da
+  // despesa editada (categoria marcada como "É investimento").
+  const investimento = !!opts.investimento || (isEdit && !!(catById(desp.categoriaId) || {}).poupanca);
+  const cats = state.categorias.filter(c => investimento ? c.poupanca : !c.poupanca);
+  if (investimento && cats.length === 0) {
+    alert('Crie uma categoria marcada como "É investimento" primeiro.');
+    return;
+  }
+  const d = desp || { descricao: '', valor: 0, data: todayISO(), categoriaId: cats[0]?.id || null, recorrente: false, parcelas: 1, tags: [] };
   const existingTags = allTags();
   // Determina o "tipo" inicial a partir do estado atual da despesa
   const tipoInicial = d.recorrente ? 'mensal' : ((d.parcelas || 1) > 1 ? 'parcelada' : 'unica');
 
-  openSheet(isEdit ? 'Editar despesa' : 'Nova despesa', () => `
+  openSheet(isEdit ? (investimento ? 'Editar investimento' : 'Editar despesa') : (investimento ? 'Novo investimento' : 'Nova despesa'), () => `
     <label class="field"><span>Descrição</span>
-      <input id="f-desc" type="text" placeholder="Ex.: Mercado, Uber, Geladeira" value="${escapeAttr(d.descricao || '')}" required />
+      <input id="f-desc" type="text" placeholder="${investimento ? 'Ex.: Tesouro Direto, CDB, Ações' : 'Ex.: Mercado, Uber, Geladeira'}" value="${escapeAttr(d.descricao || '')}" required />
     </label>
     <label class="field"><span>Valor (R$)${tipoInicial==='parcelada'?' — valor de cada parcela':''}</span>
       <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(d.valor)}" required />
@@ -3062,10 +3225,10 @@ const sheetDespesa = (desp) => {
         Quando a despesa aconteceu/foi registrada. Padrão: hoje. Ajuste se estiver cadastrando algo de outro dia.
       </small>
     </label>
-    <label class="field"><span>Categoria</span>
+    <label class="field"><span>Categoria${investimento ? ' (de investimento)' : ''}</span>
       <select id="f-cat">
-        <option value="">— Sem categoria —</option>
-        ${state.categorias.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+        ${investimento ? '' : '<option value="">— Sem categoria —</option>'}
+        ${cats.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
       </select>
     </label>
     <label class="field"><span>Tipo</span>
@@ -3213,7 +3376,7 @@ const sheetDespesa = (desp) => {
 
       if (isEdit) db.updateDespesa(d.id, data); else db.addDespesa(data);
       closeSheet();
-      toast(isEdit ? 'Despesa atualizada' : 'Despesa adicionada');
+      toast(investimento ? (isEdit ? 'Investimento atualizado' : 'Investimento adicionado') : (isEdit ? 'Despesa atualizada' : 'Despesa adicionada'));
       render();
     });
   });
@@ -3720,12 +3883,12 @@ const escapeHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
 const escapeAttr = (s) => escapeHTML(s);
 
 // --------------------------- Router & init ---------------------------------
-const tabs = ['dashboard','carteira','despesas','objetivos','categorias','config'];
+const tabs = ['dashboard','carteira','despesas','investimentos','categorias','config'];
 const titles = {
   dashboard: 'Dashboard',
   carteira: 'Carteira',
   despesas: 'Despesas',
-  objetivos: 'Objetivos',
+  investimentos: 'Investimentos',
   categorias: 'Categorias',
   config: 'Ajustes',
 };
@@ -3733,6 +3896,7 @@ const titles = {
 let currentTab = 'dashboard';
 
 const setTab = (name) => {
+  if (name === 'objetivos') name = 'investimentos'; // alias do hash antigo
   if (!tabs.includes(name)) name = 'dashboard';
   // Sair da tela de Despesas cancela o modo seleção (evita estado pendurado).
   if (name !== 'despesas') { selectionMode = false; selectedIds.clear(); }
@@ -3777,7 +3941,7 @@ document.getElementById('quick-add').addEventListener('click', () => {
   if (currentTab === 'carteira') sheetRenda();
   else if (currentTab === 'despesas') sheetDespesa();
   else if (currentTab === 'categorias') sheetCategoria();
-  else if (currentTab === 'objetivos') sheetObjetivo();
+  else if (currentTab === 'investimentos') { if (investSub === 'objetivos') sheetObjetivo(); else sheetDespesa(null, { investimento: true }); }
   else sheetDespesa(); // default no dashboard / config
 });
 

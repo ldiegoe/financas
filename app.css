@@ -670,6 +670,8 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   padding: 4px;
   border: 1px solid var(--separator);
 }
+/* Sub-abas no topo da aba Investimentos (Investimentos / Objetivos). */
+.invest-subtabs { margin: 2px 0 14px; }
 .segmented button {
   appearance: none; -webkit-appearance: none;
   border: 0;
