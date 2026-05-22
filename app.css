@@ -726,6 +726,7 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .tag.atrasado    { background: rgba(255,69,58,.15);   color: var(--red); }
 .tag.poupanca    { background: rgba(48,209,88,.15);   color: var(--green); }
 .tag.programada  { background: rgba(255,159,10,.15);  color: var(--orange); }
+.tag.reserva     { background: rgba(10,132,255,.15);  color: var(--tint); }
 
 /* Lançamento de renda com data futura: ainda não entrou no caixa, então
    aparece levemente esmaecido na lista da Carteira. */

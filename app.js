@@ -1517,6 +1517,16 @@ views.dashboard = (root) => {
       }
       const prevTaxaPoup  = pRenda > 0 ? pGuardado / pRenda * 100 : null;
       const prevDespRenda = pRenda > 0 ? pGasto    / pRenda * 100 : null;
+      // Reserva de emergência: saldo acumulado nas categorias marcadas como
+      // reserva ÷ custo fixo MENSAL (recorrentes não-investimento do mês atual)
+      // = quantos meses de contas fixas a reserva cobre.
+      const reservaIds = new Set(state.categorias.filter(cc => cc.reserva).map(cc => cc.id));
+      const reservaSaldo = sumCategoriasAteHoje(reservaIds);
+      const curMonthH = { type: 'month', year: nowH.getFullYear(), value: nowH.getMonth() + 1 };
+      const custoFixoMensal = expandWithRecurring(state.despesas, curMonthH)
+        .filter(d => d.recorrente && !poupancaIds.has(d.categoriaId))
+        .reduce((s, d) => s + (d.valor || 0), 0);
+      const mesesReserva = (reservaIds.size > 0 && custoFixoMensal > 0) ? reservaSaldo / custoFixoMensal : null;
       // c: classe de cor (good/''/bad). higher=true → maior é melhor.
       const c = (v, good, warn, higher) => higher
         ? (v >= good ? 'good' : (v >= warn ? '' : 'bad'))
@@ -1552,9 +1562,13 @@ views.dashboard = (root) => {
         { label: 'Renda comprometida',          val: despRenda, fmt: `${despRenda.toFixed(0)}%`, good: m.gastos, warn: Math.min(100, m.gastos + 20), higher: false, hint: `Fatia da renda consumida pelos gastos do mês (fora investimentos) · ideal ≤ ${m.gastos}%`, trend: trendOf(despRenda, prevDespRenda, false) },
         { label: 'Renda presa em contas fixas', val: fixoRenda, fmt: `${fixoRenda.toFixed(0)}%`, good: m.fixo,   warn: m.fixo + 15,                 higher: false, hint: `Fatia da renda já comprometida com despesas recorrentes · ideal ≤ ${m.fixo}%`,           trend: null },
       ];
+      if (mesesReserva !== null) {
+        const wR = Math.max(1, Math.round(m.reserva * 0.5));
+        rows.push({ label: 'Reserva de emergência', val: mesesReserva, fmt: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, good: m.reserva, warn: wR, higher: true, hint: `de custo fixo coberto (~${fmtBRL(custoFixoMensal)}/mês) · mire ${m.reserva} meses`, trend: null });
+      }
       rows.forEach(r => { r.cl = c(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
       // Índice geral: média ponderada dos sub-scores dos indicadores.
-      const weights = { 'Taxa de investimento': 0.4, 'Renda comprometida': 0.35, 'Renda presa em contas fixas': 0.25 };
+      const weights = { 'Taxa de investimento': 0.3, 'Renda comprometida': 0.25, 'Renda presa em contas fixas': 0.2, 'Reserva de emergência': 0.25 };
       let wsum = 0, acc = 0;
       rows.forEach(r => { const w = weights[r.label] || 0.2; acc += r.score * w; wsum += w; });
       const score = wsum > 0 ? Math.round(acc / wsum) : 0;
@@ -1565,6 +1579,7 @@ views.dashboard = (root) => {
         'Taxa de investimento': `Você está guardando pouco da renda. Tente separar ao menos ${m.invest}% assim que receber.`,
         'Renda comprometida': `Os gastos consomem boa parte da renda. Mire ficar abaixo de ${m.gastos}% cortando as maiores categorias.`,
         'Renda presa em contas fixas': 'Custo fixo alto. Revise assinaturas e recorrências que dá pra reduzir.',
+        'Reserva de emergência': `Reserva curta. Mire ${m.reserva} meses de custo fixo guardados pra emergências.`,
       };
       const tip = (worst && worst.score < 60) ? tips[worst.label] : null;
       const barCls = (cl) => cl === 'good' ? '' : (cl === 'bad' ? 'over' : 'warn');
@@ -2245,7 +2260,7 @@ views.categorias = (root) => {
                 ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>`
                 : `<span class="swatch" style="background:${c.cor}"></span>`}
               <div class="grow">
-                <div class="t">${escapeHTML(c.nome)}${c.poupanca ? '<span class="tag poupanca">Investimento</span>' : ''}</div>
+                <div class="t">${escapeHTML(c.nome)}${c.reserva ? '<span class="tag reserva">Reserva</span>' : (c.poupanca ? '<span class="tag poupanca">Investimento</span>' : '')}</div>
                 ${c.meta ? `
                   <div class="s">${fmtBRL(gasto)} / ${fmtBRL(c.meta)}${metaLabel ? ' '+metaLabel : ' este mês'} · ${pct}%</div>
                   <div class="progress"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
@@ -2786,11 +2801,15 @@ views.config = (root) => {
           <input id="f-health-gastos" type="number" min="1" max="100" inputmode="numeric" value="${hm.gastos}" />
           <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Até quanto da renda os gastos podem consumir. Ficar abaixo = verde.</small>
         </label>
-        <label class="field" style="margin-bottom:6px;"><span>Custo fixo / renda — limite ideal (%)</span>
+        <label class="field"><span>Custo fixo / renda — limite ideal (%)</span>
           <input id="f-health-fixo" type="number" min="1" max="100" inputmode="numeric" value="${hm.fixo}" />
           <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Peso das despesas recorrentes (não-investimento) na renda.</small>
         </label>
-        <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50%)</button>
+        <label class="field" style="margin-bottom:6px;"><span>Reserva de emergência — meses ideais</span>
+          <input id="f-health-reserva" type="number" min="1" max="60" inputmode="numeric" value="${hm.reserva}" />
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Quantos meses de custo fixo a reserva deveria cobrir. Só aparece se houver categoria de reserva.</small>
+        </label>
+        <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50% / 6 meses)</button>
       `;
 
       return `
@@ -3011,6 +3030,7 @@ views.config = (root) => {
   wireNum('#f-health-invest',  'healthMetaInvest',  100);
   wireNum('#f-health-gastos',  'healthMetaGastos',  100);
   wireNum('#f-health-fixo',    'healthMetaFixo',    100);
+  wireNum('#f-health-reserva', 'healthMetaReserva', 60);
   const healthReset = root.querySelector('#health-reset');
   if (healthReset) healthReset.addEventListener('click', () => {
     updateConfig({ healthMetaInvest: null, healthMetaGastos: null, healthMetaFixo: null, healthMetaReserva: null });
@@ -3458,7 +3478,7 @@ const sheetCategoria = (cat) => {
   );
   const defaultCor = palette.find(p => !usedColors.has(p))
     || palette[Math.floor(Math.random()*palette.length)];
-  const c = cat || { nome: '', cor: defaultCor, meta: null, icone: '', poupanca: false };
+  const c = cat || { nome: '', cor: defaultCor, meta: null, icone: '', poupanca: false, reserva: false };
   openSheet(isEdit ? 'Editar categoria' : 'Nova categoria', () => `
     <label class="field"><span>Nome</span>
       <input id="f-nome" type="text" value="${escapeAttr(c.nome || '')}" required />
@@ -3499,6 +3519,13 @@ const sheetCategoria = (cat) => {
     <small style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 0;">
       Despesas nessa categoria contam como "guardado", não como gasto, no resumo do dashboard.
     </small>
+    <div class="checkbox-row" id="row-reserva" ${c.poupanca ? '' : 'hidden'}>
+      <input id="f-reserva" type="checkbox" ${c.reserva?'checked':''}/>
+      <label for="f-reserva">É reserva de emergência</label>
+    </div>
+    <small id="reserva-hint" style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 0;" ${c.poupanca ? '' : 'hidden'}>
+      Conta na "Reserva de emergência" da saúde financeira (meses de custo fixo cobertos).
+    </small>
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
       <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
@@ -3533,16 +3560,24 @@ const sheetCategoria = (cat) => {
         x.classList.toggle('active', x.dataset.emoji === iconeInput.value.trim());
       });
     });
-    // Hint da meta muda conforme "poupanca" — limite de gasto vs meta de guardar.
+    // "Reserva" é sub-opção de investimento: só aparece/vale quando "É
+    // investimento" está marcado. O hint da meta também muda conforme poupanca.
     const poupEl = body.querySelector('#f-poupanca');
     const metaHint = body.querySelector('#meta-hint');
-    const updateMetaHint = () => {
-      metaHint.textContent = poupEl.checked
+    const reservaRow = body.querySelector('#row-reserva');
+    const reservaHint = body.querySelector('#reserva-hint');
+    const reservaEl = body.querySelector('#f-reserva');
+    const updatePoup = () => {
+      const on = poupEl.checked;
+      reservaRow.hidden = !on;
+      reservaHint.hidden = !on;
+      if (!on) reservaEl.checked = false;
+      metaHint.textContent = on
         ? 'Meta de quanto guardar por mês — atingir é bom.'
         : 'Limite de gasto por mês — você é avisado ao chegar perto.';
     };
-    poupEl.addEventListener('change', updateMetaHint);
-    updateMetaHint();
+    poupEl.addEventListener('change', updatePoup);
+    updatePoup();
     body.querySelector('#cancel').addEventListener('click', closeSheet);
     body.querySelector('#save').addEventListener('click', () => {
       const data = {
@@ -3550,6 +3585,7 @@ const sheetCategoria = (cat) => {
         cor: chosen,
         icone: iconeInput.value.trim(),
         poupanca: poupEl.checked,
+        reserva: poupEl.checked && reservaEl.checked,
         meta: body.querySelector('#f-meta').value.trim() ? parseAmount(body.querySelector('#f-meta').value) : null,
       };
       if (!data.nome) { alert('Informe um nome.'); return; }
