@@ -78,7 +78,7 @@ let activeProfileId = _profilesMeta.current;
 // perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
-  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashHealthShow','dashCollapsed',
+  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashHealthShow','dashCollapsed','dashOrder',
   // Por grafico (investimentos) — card proprio no dashboard
   'dashInvestShow','dashInvestDonutShow','dashInvestDonutType','dashInvestDonutInnerPct','dashInvestListShow','dashInvestListPct',
   'onboardingDone','showCategoryIcons',
@@ -90,6 +90,28 @@ const DEVICE_CONFIG_KEYS = [
   'dashTagDonutShow','dashTagDonutType','dashTagDonutInnerPct','dashTagListShow','dashTagListPct',
   'dashTagSplit',
 ];
+
+// Cards reordenáveis do dashboard (o card de saldo fica fixo no topo, fora
+// desta lista). DASH_CARD_KEYS é a ordem padrão; o usuário reordena em Ajustes
+// e a ordem fica em state.config.dashOrder.
+const DASH_CARD_KEYS = ['goals','health','upcoming','compare','bars','cat','invest','tag'];
+const DASH_CARD_NAMES = {
+  goals: 'Objetivos',
+  health: 'Saúde financeira',
+  upcoming: 'Vencimentos',
+  compare: 'Comparação com mês anterior',
+  bars: 'Receitas vs Despesas',
+  cat: 'Despesas por categoria',
+  invest: 'Investimentos por categoria',
+  tag: 'Despesas por tag',
+};
+// Ordem efetiva: a salva (filtrada pras chaves válidas) + qualquer card ainda
+// não presente, acrescentado no fim (cobre cards novos após uma ordem salva).
+const dashCardOrder = () => {
+  const saved = Array.isArray(state.config.dashOrder)
+    ? state.config.dashOrder.filter(k => DASH_CARD_KEYS.includes(k)) : [];
+  return [...saved, ...DASH_CARD_KEYS.filter(k => !saved.includes(k))];
+};
 
 // Le config namespaced (dashCatDonutShow, dashTagDonutType, ...) com fallback
 // pra chave legacy (dashDonutShow, dashDonutType, ...). Mantem compatibilidade
@@ -1442,6 +1464,8 @@ views.dashboard = (root) => {
     </div>
 
     ${(() => {
+      const _cards = {};
+      _cards.goals = (() => {
       // Card Objetivos: barra de progresso de cada meta de poupanca. So aparece
       // se houver objetivos e o toggle estiver ligado.
       if (state.config.dashGoalsShow === false) return '';
@@ -1468,9 +1492,8 @@ views.dashboard = (root) => {
             </ul>
           `}
         </div>`;
-    })()}
-
-    ${(() => {
+      })();
+      _cards.health = (() => {
       // Painel de saude financeira: indicadores derivados do periodo + reserva
       // acumulada. So aparece com renda no periodo (senao as razoes nao fazem
       // sentido) e com o toggle ligado.
@@ -1572,9 +1595,8 @@ views.dashboard = (root) => {
             ${tip ? `<div class="health-tip"><span class="ico">${icon('sparkles', 16)}</span><span>${tip}</span></div>` : ''}
           `}
         </div>`;
-    })()}
-
-    ${(() => {
+      })();
+      _cards.upcoming = (() => {
       // Vencimentos: pendentes proximos 14 dias + atrasados ate 30 dias. Toggle
       // controla exibicao. Tem modo de selecao pra marcar varias como pagas.
       if (state.config.dashUpcomingShow === false) return '';
@@ -1631,9 +1653,8 @@ views.dashboard = (root) => {
             ` : ''}
           `}
         </div>`;
-    })()}
-
-    ${state.config.dashCompareShow !== false ? `
+      })();
+      _cards.compare = state.config.dashCompareShow !== false ? `
       <div class="card">
         ${collapseHeader('compare', `Comparação com ${labelOfPeriod(prev)}`)}
         ${isCollapsed('compare') ? '' : `
@@ -1669,18 +1690,18 @@ views.dashboard = (root) => {
           ` : ''}
         `}
       </div>
-    ` : ''}
-
-    ${state.config.dashBarsShow !== false ? `
+    ` : '';
+      _cards.bars = state.config.dashBarsShow !== false ? `
       <div class="card">
         ${collapseHeader('bars', 'Receitas vs Despesas')}
         ${isCollapsed('bars') ? '' : `<div class="chart-wrap"><canvas id="ch-bars"></canvas></div>`}
       </div>
-    ` : ''}
-
-    ${renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat', 'Cat')}
-    ${(state.config.dashInvestShow !== false && investData.length > 0) ? renderDistribuicaoCard('Investimentos por categoria', investData, 'ch-invest', 'invest', 'Invest') : ''}
-    ${state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag', 'Tag') : ''}
+    ` : '';
+      _cards.cat = renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat', 'Cat');
+      _cards.invest = (state.config.dashInvestShow !== false && investData.length > 0) ? renderDistribuicaoCard('Investimentos por categoria', investData, 'ch-invest', 'invest', 'Invest') : '';
+      _cards.tag = state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag', 'Tag') : '';
+      return dashCardOrder().map(k => _cards[k] || '').join('');
+    })()}
   `;
 
   bindPeriodHeader(root);
@@ -2737,6 +2758,19 @@ views.config = (root) => {
           <input id="f-dash-invest-show" type="checkbox" ${state.config.dashInvestShow!==false?'checked':''}/>
           <label for="f-dash-invest-show">Investimentos por categoria</label>
         </div>
+        <div style="border-top:1px solid var(--separator);padding-top:14px;margin-top:14px;">
+          <div style="font-weight:600;font-size:14px;margin:0 2px 2px;">Ordem dos cards</div>
+          <p style="color:var(--text-2);font-size:13px;margin:0 2px 10px;">
+            Arraste pelo ≡ pra mudar a ordem em que aparecem. O card de saldo fica sempre fixo no topo.
+          </p>
+          <ul class="list" id="dash-order-list">
+            ${dashCardOrder().map(k => `
+              <li class="dash-order-row" data-key="${k}">
+                <span class="drag-handle" aria-label="Arrastar para reordenar">≡</span>
+                <div class="grow"><div class="t">${escapeHTML(DASH_CARD_NAMES[k])}</div></div>
+              </li>`).join('')}
+          </ul>
+        </div>
       `;
 
       const hm = healthMetas();
@@ -2983,6 +3017,24 @@ views.config = (root) => {
     toast('Metas restauradas');
     render({ preserveScroll: true });
   });
+  // Ordem dos cards do dashboard: drag-and-drop (igual reordenar categorias).
+  // Persiste em dashOrder sem re-render (mantém a lista no lugar).
+  const orderUl = root.querySelector('#dash-order-list');
+  if (orderUl && window.Sortable) {
+    new Sortable(orderUl, {
+      animation: 150,
+      handle: '.drag-handle',
+      delay: 200,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      onEnd: () => {
+        const keys = [...orderUl.querySelectorAll('[data-key]')].map(li => li.dataset.key);
+        updateConfig({ dashOrder: keys });
+      },
+    });
+  }
   wireToggle('#f-dash-tag-show',        'dashTagShow');
   // Categoria
   wireToggle('#f-dash-cat-donut-show',  'dashCatDonutShow');
