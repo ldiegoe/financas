@@ -2666,7 +2666,7 @@ views.config = (root) => {
     </div>
 
     <div class="card">
-      <h2>Privacidade</h2>
+      <h2>Privacidade e segurança</h2>
       ${lockSupported() ? `
         <div class="checkbox-row">
           <input id="f-lock" type="checkbox" ${lockEnabled() ? 'checked' : ''}/>
@@ -2814,9 +2814,9 @@ views.config = (root) => {
 
       return `
         <div class="card">
-          <h2>Personalizar dashboard</h2>
+          <h2>Dashboard</h2>
           <p style="color:var(--text-2);font-size:14px;margin:6px 0 0;">
-            Toque numa seção pra expandir os controles.
+            Personalize cards, ordem, metas e gráficos. Toque numa seção pra expandir.
           </p>
           ${subSection('ajGrpCards',  'Cards do dashboard', cardsControls)}
           ${subSection('ajGrpHealth', 'Metas da saúde financeira', healthControls)}
@@ -2827,12 +2827,42 @@ views.config = (root) => {
       `;
     })()}
 
+    ${(() => {
+      const meta = profileStore.meta();
+      return `
+        <div class="card">
+          <h2>Perfis</h2>
+          <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
+            Cada perfil tem dados, categorias e backups separados. Bloqueio
+            biométrico e preferências visuais são compartilhados entre perfis.
+          </p>
+          <ul class="list" style="box-shadow:none;">
+            ${meta.list.map(p => `
+              <li data-pid="${p.id}">
+                <div class="grow">
+                  <div class="t">${escapeHTML(p.name)}${p.id===meta.current?' <span class="tag" style="background:rgba(10,132,255,.15);color:var(--tint);margin-left:6px;">atual</span>':''}</div>
+                </div>
+                <button class="link" data-action="rename-profile">Renomear</button>
+                ${meta.list.length > 1 && p.id !== meta.current ? `<button class="link" data-action="delete-profile" style="color:var(--red);">Excluir</button>` : ''}
+              </li>
+            `).join('')}
+          </ul>
+          <button class="primary" id="add-profile" style="margin-top:12px;">+ Novo perfil</button>
+        </div>
+      `;
+    })()}
+
     <div class="card">
-      <h2>Backup</h2>
+      <h2>Dados e backup</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
         Os dados ficam apenas neste dispositivo. Faça backup regularmente
         para não perder histórico.
       </p>
+      <ul class="list" style="box-shadow:none;margin:0 0 14px;">
+        <li><div class="grow">Receitas</div><div class="amount">${state.rendas.length}</div></li>
+        <li><div class="grow">Despesas</div><div class="amount">${state.despesas.length}</div></li>
+        <li><div class="grow">Categorias</div><div class="amount">${state.categorias.length}</div></li>
+      </ul>
       ${state.lastBackupAt ? `
         <p style="color:var(--text-2);font-size:13px;margin:0 0 12px;">
           Último backup: ${fmtDate(state.lastBackupAt)}${(() => {
@@ -2868,58 +2898,7 @@ views.config = (root) => {
     </div>
 
     <div class="card">
-      <h2>Resumo dos dados</h2>
-      <ul class="list" style="box-shadow:none;">
-        <li><div class="grow">Receitas</div><div class="amount">${state.rendas.length}</div></li>
-        <li><div class="grow">Despesas</div><div class="amount">${state.despesas.length}</div></li>
-        <li><div class="grow">Categorias</div><div class="amount">${state.categorias.length}</div></li>
-      </ul>
-    </div>
-
-    ${(() => {
-      const meta = profileStore.meta();
-      return `
-        <div class="card">
-          <h2>Perfis</h2>
-          <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-            Cada perfil tem dados, categorias e backups separados. Bloqueio
-            biométrico e preferências visuais são compartilhados entre perfis.
-          </p>
-          <ul class="list" style="box-shadow:none;">
-            ${meta.list.map(p => `
-              <li data-pid="${p.id}">
-                <div class="grow">
-                  <div class="t">${escapeHTML(p.name)}${p.id===meta.current?' <span class="tag" style="background:rgba(10,132,255,.15);color:var(--tint);margin-left:6px;">atual</span>':''}</div>
-                </div>
-                <button class="link" data-action="rename-profile">Renomear</button>
-                ${meta.list.length > 1 && p.id !== meta.current ? `<button class="link" data-action="delete-profile" style="color:var(--red);">Excluir</button>` : ''}
-              </li>
-            `).join('')}
-          </ul>
-          <button class="primary" id="add-profile" style="margin-top:12px;">+ Novo perfil</button>
-        </div>
-      `;
-    })()}
-
-    <div class="card">
-      <h2>Manutenção</h2>
-      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-        Limpa o cache do app e recarrega — útil se algo travou ou se a versão
-        nova não chegou. Seus dados não são afetados.
-      </p>
-      <button class="secondary" id="force-refresh">Forçar atualização do app</button>
-    </div>
-
-    <div class="card">
-      <h2>Zona perigosa</h2>
-      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-        Apaga todos os dados deste dispositivo. Faça backup antes.
-      </p>
-      <button class="danger" id="reset">Apagar tudo</button>
-    </div>
-
-    <div class="card">
-      <h2>Sobre</h2>
+      <h2>Sobre e suporte</h2>
       <p style="margin:4px 0 4px;font-weight:600;font-size:16px;">Finanças PWA</p>
       <p style="color:var(--text-2);font-size:14px;margin:0 0 12px;">
         Sem servidor — todos os dados ficam neste aparelho.
@@ -2936,6 +2915,21 @@ views.config = (root) => {
         })()}
       </ul>
       <button class="link" id="replay-onboarding" style="padding:8px 0 0;">Ver tutorial novamente</button>
+      <div style="margin-top:14px;border-top:1px solid var(--separator);padding-top:14px;">
+        <p style="color:var(--text-2);font-size:14px;margin:0 0 12px;">
+          Limpa o cache do app e recarrega — útil se algo travou ou se a versão
+          nova não chegou. Seus dados não são afetados.
+        </p>
+        <button class="secondary" id="force-refresh">Forçar atualização do app</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Zona perigosa</h2>
+      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
+        Apaga todos os dados deste dispositivo. Faça backup antes.
+      </p>
+      <button class="danger" id="reset">Apagar tudo</button>
     </div>
   `;
 
