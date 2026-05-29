@@ -1959,6 +1959,7 @@ let statusFilter = null;        // null | 'pago' | 'pendente'
 let typeFilter = null;          // null | 'mensal' | 'parcelada'
 let dateFromFilter = null;      // ISO 'YYYY-MM-DD' (data >= valor) ou null
 let dateToFilter = null;        // ISO 'YYYY-MM-DD' (data <= valor) ou null
+let dateBasisFilter = 'pagamento'; // 'pagamento' (data) | 'cadastro' (criadoEm)
 
 // Modo seleção da tela de Despesas — permite marcar várias e apagar de uma vez.
 let selectionMode = false;
@@ -1985,8 +1986,15 @@ const filterDespesas = (despesas) => {
   if (typeFilter === 'mensal') result = result.filter(d => d.recorrente);
   if (typeFilter === 'parcelada') result = result.filter(d => (d.parcelas || 1) > 1);
   if (typeFilter === 'unica') result = result.filter(d => !d.recorrente && (d.parcelas || 1) <= 1);
-  if (dateFromFilter) result = result.filter(d => d.data >= dateFromFilter);
-  if (dateToFilter)   result = result.filter(d => d.data <= dateToFilter);
+  if (dateFromFilter || dateToFilter) {
+    const field = dateBasisFilter === 'cadastro' ? 'criadoEm' : 'data';
+    result = result.filter(d => {
+      const v = d[field] || d.data; // fallback p/ despesas antigas sem criadoEm
+      if (dateFromFilter && v < dateFromFilter) return false;
+      if (dateToFilter && v > dateToFilter) return false;
+      return true;
+    });
+  }
   const q = searchQuery.trim().toLowerCase();
   if (q) {
     result = result.filter(d =>
@@ -2069,15 +2077,21 @@ views.despesas = (root) => {
     </div>
 
     <div class="date-range">
-      <label class="date-range-field">
-        <span>De</span>
-        <input type="date" id="date-from" value="${dateFromFilter || ''}" />
-      </label>
-      <label class="date-range-field">
-        <span>Até</span>
-        <input type="date" id="date-to" value="${dateToFilter || ''}" />
-      </label>
-      ${(dateFromFilter || dateToFilter) ? `<button class="link" id="date-clear" style="padding:0;align-self:center;">Limpar intervalo</button>` : ''}
+      <div class="segmented date-basis" id="date-basis">
+        <button data-basis="pagamento" class="${dateBasisFilter==='pagamento'?'active':''}">Por pagamento</button>
+        <button data-basis="cadastro"  class="${dateBasisFilter==='cadastro' ?'active':''}">Por cadastro</button>
+      </div>
+      <div class="date-range-row">
+        <label class="date-range-field">
+          <span>De</span>
+          <input type="date" id="date-from" value="${dateFromFilter || ''}" />
+        </label>
+        <label class="date-range-field">
+          <span>Até</span>
+          <input type="date" id="date-to" value="${dateToFilter || ''}" />
+        </label>
+        ${(dateFromFilter || dateToFilter) ? `<button class="link" id="date-clear" style="padding:0;align-self:center;">Limpar intervalo</button>` : ''}
+      </div>
     </div>
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -2225,6 +2239,11 @@ views.despesas = (root) => {
   if (dateToEl) dateToEl.addEventListener('change', () => { dateToFilter = dateToEl.value || null; render(); });
   const dateClearEl = root.querySelector('#date-clear');
   if (dateClearEl) dateClearEl.addEventListener('click', () => { dateFromFilter = null; dateToFilter = null; render(); });
+  root.querySelectorAll('#date-basis button').forEach(b => b.addEventListener('click', () => {
+    dateBasisFilter = b.dataset.basis;
+    if (dateFromFilter || dateToFilter) render(); // só re-renderiza se houver intervalo ativo
+    else { b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); }
+  }));
   const searchEl = root.querySelector('#search');
   if (searchEl) {
     searchEl.addEventListener('input', () => {
@@ -2242,7 +2261,7 @@ views.despesas = (root) => {
   }
   const clearBtn = root.querySelector('#clear-filters');
   if (clearBtn) clearBtn.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null; typeFilter = null; dateFromFilter = null; dateToFilter = null;
+    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null; typeFilter = null; dateFromFilter = null; dateToFilter = null; dateBasisFilter = 'pagamento';
     render();
   });
   const addBtn = root.querySelector('#add-desp');
