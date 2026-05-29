@@ -1076,6 +1076,9 @@ const openSheet = (title, contentFn, onMount) => {
     if (e.target.dataset.close !== undefined) closeSheet();
   });
   if (onMount) onMount(body);
+
+
+  
 };
 const closeSheet = () => { document.getElementById('modal-root').innerHTML = ''; };
 
@@ -1954,6 +1957,8 @@ let searchQuery = '';           // texto digitado na busca
 let categoryFilter = new Set(); // ids de categorias ativas
 let statusFilter = null;        // null | 'pago' | 'pendente'
 let typeFilter = null;          // null | 'mensal' | 'parcelada'
+let dateFromFilter = null;      // ISO 'YYYY-MM-DD' (data >= valor) ou null
+let dateToFilter = null;        // ISO 'YYYY-MM-DD' (data <= valor) ou null
 
 // Modo seleção da tela de Despesas — permite marcar várias e apagar de uma vez.
 let selectionMode = false;
@@ -1980,6 +1985,8 @@ const filterDespesas = (despesas) => {
   if (typeFilter === 'mensal') result = result.filter(d => d.recorrente);
   if (typeFilter === 'parcelada') result = result.filter(d => (d.parcelas || 1) > 1);
   if (typeFilter === 'unica') result = result.filter(d => !d.recorrente && (d.parcelas || 1) <= 1);
+  if (dateFromFilter) result = result.filter(d => d.data >= dateFromFilter);
+  if (dateToFilter)   result = result.filter(d => d.data <= dateToFilter);
   const q = searchQuery.trim().toLowerCase();
   if (q) {
     result = result.filter(d =>
@@ -2016,7 +2023,7 @@ views.despesas = (root) => {
   const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
-  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null || typeFilter !== null;
+  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null || typeFilter !== null || !!dateFromFilter || !!dateToFilter;
 
   root.innerHTML = `
     ${periodHeader()}
@@ -2059,6 +2066,18 @@ views.despesas = (root) => {
       <button class="chip ${typeFilter==='mensal'?'active':''}" data-type="mensal">Mensais</button>
       <button class="chip ${typeFilter==='parcelada'?'active':''}" data-type="parcelada">Parceladas</button>
       <button class="chip ${typeFilter==='unica'?'active':''}" data-type="unica">Apenas neste mês</button>
+    </div>
+
+    <div class="date-range">
+      <label class="date-range-field">
+        <span>De</span>
+        <input type="date" id="date-from" value="${dateFromFilter || ''}" />
+      </label>
+      <label class="date-range-field">
+        <span>Até</span>
+        <input type="date" id="date-to" value="${dateToFilter || ''}" />
+      </label>
+      ${(dateFromFilter || dateToFilter) ? `<button class="link" id="date-clear" style="padding:0;align-self:center;">Limpar intervalo</button>` : ''}
     </div>
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -2200,6 +2219,12 @@ views.despesas = (root) => {
     typeFilter = b.dataset.type || null;
     render();
   }));
+  const dateFromEl = root.querySelector('#date-from');
+  if (dateFromEl) dateFromEl.addEventListener('change', () => { dateFromFilter = dateFromEl.value || null; render(); });
+  const dateToEl = root.querySelector('#date-to');
+  if (dateToEl) dateToEl.addEventListener('change', () => { dateToFilter = dateToEl.value || null; render(); });
+  const dateClearEl = root.querySelector('#date-clear');
+  if (dateClearEl) dateClearEl.addEventListener('click', () => { dateFromFilter = null; dateToFilter = null; render(); });
   const searchEl = root.querySelector('#search');
   if (searchEl) {
     searchEl.addEventListener('input', () => {
@@ -2217,7 +2242,7 @@ views.despesas = (root) => {
   }
   const clearBtn = root.querySelector('#clear-filters');
   if (clearBtn) clearBtn.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null; typeFilter = null;
+    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null; typeFilter = null; dateFromFilter = null; dateToFilter = null;
     render();
   });
   const addBtn = root.querySelector('#add-desp');
