@@ -368,6 +368,78 @@ main#view {
 }
 .filter-bar::-webkit-scrollbar { display: none; }
 
+/* Botão "Filtros" + link "Limpar tudo" na tela de Despesas. Esconde os chips
+   de cat/tag/status/tipo/data atrás de um sheet, deixando espaço pra lista. */
+.filters-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.filters-btn {
+  appearance: none; -webkit-appearance: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--separator);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.filters-btn.has-filters {
+  background: rgba(10,132,255,.15);
+  border-color: rgba(10,132,255,.4);
+  color: var(--tint);
+}
+.filters-btn svg { display: block; }
+
+/* Pills dos filtros ATIVOS (× remove só aquele). Rolagem horizontal. */
+.active-pills {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 0 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.active-pills::-webkit-scrollbar { display: none; }
+.active-pill {
+  appearance: none; -webkit-appearance: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--separator);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.active-pill-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.active-pill-label { line-height: 1; }
+.active-pill-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--separator);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Grupos do sheet de filtros: rótulo (pequeno, maiúsculo) + chips. */
+.filter-group { margin-bottom: 14px; }
+.filter-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin: 0 2px 6px;
+}
+
 /* Filtro por intervalo de datas (Despesas) — segmented (pagamento/cadastro)
    + dois inputs De/Até + link Limpar. Funciona como sub-filtro: estreita o
    que ja vem do periodo selecionado. */

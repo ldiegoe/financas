@@ -682,6 +682,7 @@ const ICONS = {
   target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   clock:     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   trending:  '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  filter:    '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
 };
 
 const icon = (name, size = 22) =>
@@ -2005,6 +2006,177 @@ const filterDespesas = (despesas) => {
   return result;
 };
 
+// Contagem de filtros ativos (exceto busca, que tem campo próprio na tela).
+// Usado pra mostrar o badge "Filtros · N" no botão que abre o sheet.
+const activeFilterCount = () => {
+  let n = 0;
+  n += categoryFilter.size;
+  n += tagFilter.size;
+  if (statusFilter !== null) n++;
+  if (typeFilter !== null) n++;
+  if (dateFromFilter || dateToFilter) n++;
+  return n;
+};
+
+// Pills dos filtros ativos exibidas na tela de Despesas (cada uma com × pra
+// remover sem abrir o sheet). Cada pill tem uma `key` (ex.: "cat:<id>") que
+// o handler usa pra remover só aquele filtro.
+const activeFilterPills = () => {
+  const pills = [];
+  for (const cid of categoryFilter) {
+    const c = state.categorias.find(x => x.id === cid);
+    if (c) pills.push({ key: `cat:${cid}`, label: escapeHTML(c.nome), color: c.cor });
+  }
+  for (const t of tagFilter) {
+    pills.push({ key: `tag:${t}`, label: `#${escapeHTML(t)}` });
+  }
+  if (statusFilter) {
+    pills.push({ key: 'status', label: statusFilter === 'pago' ? 'Pagas' : 'Pendentes' });
+  }
+  if (typeFilter) {
+    const lbl = typeFilter === 'mensal' ? 'Mensais'
+              : typeFilter === 'parcelada' ? 'Parceladas'
+              : 'Apenas neste mês';
+    pills.push({ key: 'type', label: lbl });
+  }
+  if (dateFromFilter || dateToFilter) {
+    const ds = (iso) => iso ? fmtDate(iso) : '…';
+    const basis = dateBasisFilter === 'cadastro' ? ' (cadastro)' : '';
+    pills.push({ key: 'date', label: `${ds(dateFromFilter)} → ${ds(dateToFilter)}${basis}` });
+  }
+  return pills;
+};
+
+// Remove um filtro específico pela `key` da pill (cat:<id>, tag:<nome>,
+// status, type, date). Usado pelo clique no × das pills ativas.
+const removeFilterByKey = (key) => {
+  if (key.startsWith('cat:')) categoryFilter.delete(key.slice(4));
+  else if (key.startsWith('tag:')) tagFilter.delete(key.slice(4));
+  else if (key === 'status') statusFilter = null;
+  else if (key === 'type') typeFilter = null;
+  else if (key === 'date') { dateFromFilter = null; dateToFilter = null; }
+};
+
+// Sheet com TODOS os controles de filtro (cat/tag/status/tipo/intervalo).
+// Toques nos chips/inputs aplicam IMEDIATAMENTE (state + render do view de
+// fundo); o sheet em si fica aberto pra o usuário continuar ajustando.
+// "Limpar tudo" zera tudo (inclusive busca) e reabre o sheet limpo.
+const sheetFilters = () => {
+  const tags = allTags();
+  const despesasCats = state.categorias.filter(c => !c.poupanca);
+  openSheet('Filtros', () => `
+    ${despesasCats.length > 0 ? `
+      <div class="filter-group">
+        <div class="filter-group-label">Categoria</div>
+        <div class="filter-bar" id="sheet-cat-filter">
+          <button class="chip ${categoryFilter.size===0?'active':''}" data-cat="">Todas</button>
+          ${despesasCats.map(c => `
+            <button class="chip ${categoryFilter.has(c.id)?'active':''}" data-cat="${c.id}">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.cor};margin-right:6px;vertical-align:middle;"></span>${escapeHTML(c.nome)}
+            </button>`).join('')}
+        </div>
+      </div>
+    ` : ''}
+    ${tags.length > 0 ? `
+      <div class="filter-group">
+        <div class="filter-group-label">Tag</div>
+        <div class="filter-bar" id="sheet-tag-filter">
+          <button class="chip ${tagFilter.size===0?'active':''}" data-tag="">Todas</button>
+          ${tags.map(t => `<button class="chip ${tagFilter.has(t.toLowerCase())?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
+        </div>
+      </div>
+    ` : ''}
+    <div class="filter-group">
+      <div class="filter-group-label">Status</div>
+      <div class="filter-bar" id="sheet-status-filter">
+        <button class="chip ${statusFilter===null?'active':''}" data-status="">Todas</button>
+        <button class="chip ${statusFilter==='pago'?'active':''}" data-status="pago">Pagas</button>
+        <button class="chip ${statusFilter==='pendente'?'active':''}" data-status="pendente">Pendentes</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-group-label">Tipo</div>
+      <div class="filter-bar" id="sheet-type-filter">
+        <button class="chip ${typeFilter===null?'active':''}" data-type="">Todos</button>
+        <button class="chip ${typeFilter==='mensal'?'active':''}" data-type="mensal">Mensais</button>
+        <button class="chip ${typeFilter==='parcelada'?'active':''}" data-type="parcelada">Parceladas</button>
+        <button class="chip ${typeFilter==='unica'?'active':''}" data-type="unica">Apenas neste mês</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-group-label">Intervalo de datas</div>
+      <div class="segmented" id="sheet-date-basis" style="max-width:280px;margin-bottom:10px;">
+        <button data-basis="pagamento" class="${dateBasisFilter==='pagamento'?'active':''}">Por pagamento</button>
+        <button data-basis="cadastro"  class="${dateBasisFilter==='cadastro' ?'active':''}">Por cadastro</button>
+      </div>
+      <div class="date-range-row">
+        <label class="date-range-field">
+          <span>De</span>
+          <input type="date" id="sheet-date-from" value="${dateFromFilter || ''}" />
+        </label>
+        <label class="date-range-field">
+          <span>Até</span>
+          <input type="date" id="sheet-date-to" value="${dateToFilter || ''}" />
+        </label>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="secondary" id="sheet-filters-clear">Limpar tudo</button>
+      <button class="primary"   id="sheet-filters-close">Concluir</button>
+    </div>
+  `, (body) => {
+    const syncCls = (sel, getter) => body.querySelectorAll(sel).forEach(x => x.classList.toggle('active', getter(x)));
+    body.querySelectorAll('#sheet-cat-filter .chip').forEach(b => b.addEventListener('click', () => {
+      const c = b.dataset.cat;
+      if (!c) categoryFilter.clear();
+      else categoryFilter.has(c) ? categoryFilter.delete(c) : categoryFilter.add(c);
+      syncCls('#sheet-cat-filter .chip', x => x.dataset.cat ? categoryFilter.has(x.dataset.cat) : categoryFilter.size === 0);
+      render();
+    }));
+    body.querySelectorAll('#sheet-tag-filter .chip').forEach(b => b.addEventListener('click', () => {
+      const t = b.dataset.tag;
+      if (!t) tagFilter.clear();
+      else tagFilter.has(t) ? tagFilter.delete(t) : tagFilter.add(t);
+      syncCls('#sheet-tag-filter .chip', x => x.dataset.tag ? tagFilter.has(x.dataset.tag) : tagFilter.size === 0);
+      render();
+    }));
+    body.querySelectorAll('#sheet-status-filter .chip').forEach(b => b.addEventListener('click', () => {
+      statusFilter = b.dataset.status || null;
+      syncCls('#sheet-status-filter .chip', x => (x.dataset.status || null) === statusFilter);
+      render();
+    }));
+    body.querySelectorAll('#sheet-type-filter .chip').forEach(b => b.addEventListener('click', () => {
+      typeFilter = b.dataset.type || null;
+      syncCls('#sheet-type-filter .chip', x => (x.dataset.type || null) === typeFilter);
+      render();
+    }));
+    body.querySelectorAll('#sheet-date-basis button').forEach(b => b.addEventListener('click', () => {
+      dateBasisFilter = b.dataset.basis;
+      syncCls('#sheet-date-basis button', x => x.dataset.basis === dateBasisFilter);
+      if (dateFromFilter || dateToFilter) render();
+    }));
+    const dFrom = body.querySelector('#sheet-date-from');
+    if (dFrom) dFrom.addEventListener('change', () => { dateFromFilter = dFrom.value || null; render(); });
+    const dTo = body.querySelector('#sheet-date-to');
+    if (dTo) dTo.addEventListener('change', () => { dateToFilter = dTo.value || null; render(); });
+    body.querySelector('#sheet-filters-clear').addEventListener('click', () => {
+      searchQuery = ''; categoryFilter.clear(); tagFilter.clear();
+      statusFilter = null; typeFilter = null;
+      dateFromFilter = null; dateToFilter = null; dateBasisFilter = 'pagamento';
+      // Atualiza as classes/valores do sheet sem fechar/reabrir (sem flash).
+      syncCls('#sheet-cat-filter .chip',    x => !x.dataset.cat);
+      syncCls('#sheet-tag-filter .chip',    x => !x.dataset.tag);
+      syncCls('#sheet-status-filter .chip', x => !x.dataset.status);
+      syncCls('#sheet-type-filter .chip',   x => !x.dataset.type);
+      syncCls('#sheet-date-basis button',   x => x.dataset.basis === 'pagamento');
+      const df = body.querySelector('#sheet-date-from'); if (df) df.value = '';
+      const dt = body.querySelector('#sheet-date-to');   if (dt) dt.value = '';
+      render();
+    });
+    body.querySelector('#sheet-filters-close').addEventListener('click', closeSheet);
+  });
+};
+
 // Período imediatamente anterior, mantendo o mesmo "tipo" (mês/tri/sem/ano).
 const previousPeriod = (p) => {
   const np = { ...p };
@@ -2038,7 +2210,6 @@ views.despesas = (root) => {
     <div class="card">
       <h2>Total ${hasFilter ? '(filtrado)' : ''} em ${periodLabel()}</h2>
       <div class="big negative">${fmtBRL(total)}</div>
-      ${hasFilter ? `<button class="link" id="clear-filters" style="padding:8px 0 0;">Limpar filtros</button>` : ''}
     </div>
 
     <div class="search-row">
@@ -2046,53 +2217,29 @@ views.despesas = (root) => {
              placeholder="Buscar por descrição ou tag" value="${escapeAttr(searchQuery)}" />
     </div>
 
-    ${despesasCats.length > 0 ? `
-      <div class="filter-bar" id="cat-filter">
-        <button class="chip ${categoryFilter.size===0?'active':''}" data-cat="">Todas categorias</button>
-        ${despesasCats.map(c => `
-          <button class="chip ${categoryFilter.has(c.id)?'active':''}" data-cat="${c.id}">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.cor};margin-right:6px;vertical-align:middle;"></span>${escapeHTML(c.nome)}
-          </button>`).join('')}
-      </div>
-    ` : ''}
-
-    ${tags.length > 0 ? `
-      <div class="filter-bar" id="tag-filter">
-        <button class="chip ${tagFilter.size===0?'active':''}" data-tag="">Todas tags</button>
-        ${tags.map(t => `<button class="chip ${tagFilter.has(t.toLowerCase())?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
-      </div>
-    ` : ''}
-
-    <div class="filter-bar" id="status-filter">
-      <button class="chip ${statusFilter===null?'active':''}" data-status="">Todas</button>
-      <button class="chip ${statusFilter==='pago'?'active':''}" data-status="pago">Pagas</button>
-      <button class="chip ${statusFilter==='pendente'?'active':''}" data-status="pendente">Pendentes</button>
-    </div>
-
-    <div class="filter-bar" id="type-filter">
-      <button class="chip ${typeFilter===null?'active':''}" data-type="">Todos os tipos</button>
-      <button class="chip ${typeFilter==='mensal'?'active':''}" data-type="mensal">Mensais</button>
-      <button class="chip ${typeFilter==='parcelada'?'active':''}" data-type="parcelada">Parceladas</button>
-      <button class="chip ${typeFilter==='unica'?'active':''}" data-type="unica">Apenas neste mês</button>
-    </div>
-
-    <div class="date-range">
-      <div class="segmented date-basis" id="date-basis">
-        <button data-basis="pagamento" class="${dateBasisFilter==='pagamento'?'active':''}">Por pagamento</button>
-        <button data-basis="cadastro"  class="${dateBasisFilter==='cadastro' ?'active':''}">Por cadastro</button>
-      </div>
-      <div class="date-range-row">
-        <label class="date-range-field">
-          <span>De</span>
-          <input type="date" id="date-from" value="${dateFromFilter || ''}" />
-        </label>
-        <label class="date-range-field">
-          <span>Até</span>
-          <input type="date" id="date-to" value="${dateToFilter || ''}" />
-        </label>
-        ${(dateFromFilter || dateToFilter) ? `<button class="link" id="date-clear" style="padding:0;align-self:center;">Limpar intervalo</button>` : ''}
-      </div>
-    </div>
+    ${(() => {
+      const filterCount = activeFilterCount();
+      const pills = activeFilterPills();
+      return `
+        <div class="filters-row">
+          <button class="filters-btn ${filterCount > 0 ? 'has-filters' : ''}" id="open-filters" type="button">
+            ${icon('filter', 14)}
+            <span>Filtros${filterCount > 0 ? ` · ${filterCount}` : ''}</span>
+          </button>
+          ${hasFilter ? `<button class="link" id="clear-filters-inline" style="padding:0;">Limpar tudo</button>` : ''}
+        </div>
+        ${pills.length > 0 ? `
+          <div class="active-pills">
+            ${pills.map(p => `
+              <button class="active-pill" data-pill="${escapeAttr(p.key)}" type="button">
+                ${p.color ? `<span class="active-pill-dot" style="background:${p.color}"></span>` : ''}
+                <span class="active-pill-label">${p.label}</span>
+                <span class="active-pill-x">×</span>
+              </button>`).join('')}
+          </div>
+        ` : ''}
+      `;
+    })()}
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>Lançamentos</span>
@@ -2213,37 +2360,21 @@ views.despesas = (root) => {
     const enterSelBtn = root.querySelector('#enter-select');
     if (enterSelBtn) enterSelBtn.addEventListener('click', () => { selectionMode = true; selectedIds.clear(); render({ preserveScroll: true }); });
   }
-  root.querySelectorAll('#tag-filter .chip').forEach(b => b.addEventListener('click', () => {
-    const t = b.dataset.tag;
-    if (!t) tagFilter.clear();
-    else tagFilter.has(t) ? tagFilter.delete(t) : tagFilter.add(t);
+  // Botão "Filtros" abre o sheet com TODOS os controles. As pills mostram
+  // os filtros ativos com × pra remover individualmente sem abrir o sheet.
+  const openFiltersBtn = root.querySelector('#open-filters');
+  if (openFiltersBtn) openFiltersBtn.addEventListener('click', sheetFilters);
+  root.querySelectorAll('.active-pill').forEach(b => b.addEventListener('click', () => {
+    removeFilterByKey(b.dataset.pill);
     render();
   }));
-  root.querySelectorAll('#cat-filter .chip').forEach(b => b.addEventListener('click', () => {
-    const c = b.dataset.cat;
-    if (!c) categoryFilter.clear();
-    else categoryFilter.has(c) ? categoryFilter.delete(c) : categoryFilter.add(c);
+  const clearInline = root.querySelector('#clear-filters-inline');
+  if (clearInline) clearInline.addEventListener('click', () => {
+    searchQuery = ''; categoryFilter.clear(); tagFilter.clear();
+    statusFilter = null; typeFilter = null;
+    dateFromFilter = null; dateToFilter = null; dateBasisFilter = 'pagamento';
     render();
-  }));
-  root.querySelectorAll('#status-filter .chip').forEach(b => b.addEventListener('click', () => {
-    statusFilter = b.dataset.status || null;
-    render();
-  }));
-  root.querySelectorAll('#type-filter .chip').forEach(b => b.addEventListener('click', () => {
-    typeFilter = b.dataset.type || null;
-    render();
-  }));
-  const dateFromEl = root.querySelector('#date-from');
-  if (dateFromEl) dateFromEl.addEventListener('change', () => { dateFromFilter = dateFromEl.value || null; render(); });
-  const dateToEl = root.querySelector('#date-to');
-  if (dateToEl) dateToEl.addEventListener('change', () => { dateToFilter = dateToEl.value || null; render(); });
-  const dateClearEl = root.querySelector('#date-clear');
-  if (dateClearEl) dateClearEl.addEventListener('click', () => { dateFromFilter = null; dateToFilter = null; render(); });
-  root.querySelectorAll('#date-basis button').forEach(b => b.addEventListener('click', () => {
-    dateBasisFilter = b.dataset.basis;
-    if (dateFromFilter || dateToFilter) render(); // só re-renderiza se houver intervalo ativo
-    else { b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); }
-  }));
+  });
   const searchEl = root.querySelector('#search');
   if (searchEl) {
     searchEl.addEventListener('input', () => {
@@ -2259,11 +2390,6 @@ views.despesas = (root) => {
       }
     });
   }
-  const clearBtn = root.querySelector('#clear-filters');
-  if (clearBtn) clearBtn.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter.clear(); tagFilter.clear(); statusFilter = null; typeFilter = null; dateFromFilter = null; dateToFilter = null; dateBasisFilter = 'pagamento';
-    render();
-  });
   const addBtn = root.querySelector('#add-desp');
   if (addBtn) addBtn.addEventListener('click', () => sheetDespesa());
   const fab = root.querySelector('#fab-desp');
