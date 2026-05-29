@@ -2105,7 +2105,7 @@ const sheetFilters = () => {
     </div>
     <div class="filter-group">
       <div class="filter-group-label">Intervalo de datas</div>
-      <div class="segmented" id="sheet-date-basis" style="max-width:280px;margin-bottom:10px;">
+      <div class="segmented" id="sheet-date-basis" style="margin-bottom:10px;">
         <button data-basis="pagamento" class="${dateBasisFilter==='pagamento'?'active':''}">Por pagamento</button>
         <button data-basis="cadastro"  class="${dateBasisFilter==='cadastro' ?'active':''}">Por cadastro</button>
       </div>
