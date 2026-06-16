@@ -25,7 +25,7 @@
 
 /* Tema do sistema: aplica escuro só se o usuário não tiver forçado claro */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"]):not([data-theme="oled"]) {
     --bg: #000000;
     --bg-elev: #1c1c1e;
     --text: #ffffff;
@@ -33,6 +33,17 @@
     --separator: #38383a;
   }
 }
+
+/* Tema OLED — variante do escuro com preto absoluto na superfície dos cards
+   (economia em telas OLED). Borda sutil mantém hierarquia visual. */
+:root[data-theme="oled"] {
+  --bg: #000000;
+  --bg-elev: #0a0a0a;
+  --text: #ffffff;
+  --text-2: #8e8e93;
+  --separator: #1f1f1f;
+}
+:root[data-theme="oled"] .card { border: 1px solid var(--separator); }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
@@ -429,6 +440,40 @@ main#view {
   line-height: 1;
 }
 
+/* Templates de despesa: linha rolável de chips no topo do formulário.
+   Toque no chip preenche o form; toque no × remove o template. */
+.templates-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.templates-row::-webkit-scrollbar { display: none; }
+.template-chip {
+  appearance: none; -webkit-appearance: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 4px 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--separator);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.template-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--separator);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+}
+
 /* Grupos do sheet de filtros: rótulo (pequeno, maiúsculo) + chips. */
 .filter-group { margin-bottom: 14px; }
 .filter-group-label {
@@ -689,6 +734,8 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .swipe-actions button { border: 0; padding: 0 16px; color: white; font-size: 14px; cursor: pointer; }
 .swipe-actions .edit { background: var(--orange); }
 .swipe-actions .del { background: var(--red); }
+.swipe-actions .pago { background: var(--green); }
+.swipe-actions .undo { background: #636366; }
 
 .chart-wrap { position: relative; height: 240px; }
 .chart-wrap.donut { height: 260px; }

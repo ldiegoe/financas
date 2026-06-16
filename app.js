@@ -28,6 +28,7 @@ const defaultState = () => ({
   despesas: [],
   categorias: defaultCategorias(),
   objetivos: [],
+  templates: [],
   config: { moeda: 'BRL' },
 });
 
@@ -298,6 +299,9 @@ const db = {
     if (i >= 0) { state.objetivos[i] = { ...state.objetivos[i], ...patch }; persist(); }
   },
   removeObjetivo(id) { state.objetivos = state.objetivos.filter(x => x.id !== id); persist(); },
+
+  addTemplate(t)     { state.templates.push({ id: uid(), ...t }); persist(); },
+  removeTemplate(id) { state.templates = state.templates.filter(x => x.id !== id); persist(); },
 
   exportJSON() { return JSON.stringify(state, null, 2); },
   importJSON(json) {
@@ -695,10 +699,11 @@ const iconsEnabled = () => state.config.showCategoryIcons !== false;
 // decidir entre emoji vs swatch nos diversos lugares de exibicao.
 const catEmoji = (c) => (iconsEnabled() && c && c.icone) ? c.icone : '';
 
-// 'system' (padrão) | 'light' | 'dark'. Atributo data-theme no <html> é
-// quem comanda o CSS; ausência do atributo = seguir sistema operacional.
+// 'system' (padrão) | 'light' | 'dark' | 'oled'. Atributo data-theme no <html>
+// é quem comanda o CSS; ausência do atributo = seguir sistema operacional.
+// 'oled' é uma variante do dark com preto absoluto (economia em telas OLED).
 const applyTheme = (tema) => {
-  if (tema === 'light' || tema === 'dark') {
+  if (tema === 'light' || tema === 'dark' || tema === 'oled') {
     document.documentElement.setAttribute('data-theme', tema);
   } else {
     document.documentElement.removeAttribute('data-theme');
@@ -2283,10 +2288,13 @@ views.despesas = (root) => {
               ` : ''}
             </div>
             <div class="amount neg">${fmtBRL(d.valor)}</div>
-            ${!d._virtual && !selectionMode ? `
+            ${!selectionMode ? `
               <div class="swipe-actions">
-                <button class="edit" data-action="edit-desp">Editar</button>
-                <button class="del"  data-action="del-desp">Excluir</button>
+                <button class="${d._pago ? 'undo' : 'pago'}" data-action="toggle-pago-swipe">${d._pago ? 'Pendente' : 'Paga'}</button>
+                ${!d._virtual ? `
+                  <button class="edit" data-action="edit-desp">Editar</button>
+                  <button class="del"  data-action="del-desp">Excluir</button>
+                ` : ''}
               </div>
             ` : ''}
           </li>`;
@@ -2356,6 +2364,17 @@ views.despesas = (root) => {
     root.querySelectorAll('[data-action="del-desp"]').forEach(b => b.addEventListener('click', (e) => {
       const id = e.target.closest('[data-id]').dataset.id;
       if (confirm('Excluir esta despesa?')) { db.removeDespesa(id); toast('Despesa excluída'); render(); }
+    }));
+    // Swipe → "Marcar paga / Marcar pendente" sem abrir o sheet de detalhes.
+    // Para recorrentes/parceladas, alterna só esta ocorrência via toggleDespesaPago.
+    root.querySelectorAll('[data-action="toggle-pago-swipe"]').forEach(b => b.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-id]');
+      const occ = expanded.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
+      if (!occ) return;
+      const wasPago = occ._pago;
+      toggleDespesaPago(occ);
+      toast(wasPago ? 'Marcada como pendente' : 'Marcada como paga');
+      render();
     }));
     const enterSelBtn = root.querySelector('#enter-select');
     if (enterSelBtn) enterSelBtn.addEventListener('click', () => { selectionMode = true; selectedIds.clear(); render({ preserveScroll: true }); });
@@ -2603,12 +2622,13 @@ const investRowHTML = (d) => {
         ${dTags.length > 0 ? `<div class="tags-row">${dTags.map(t => `<span class="tag usertag">#${escapeHTML(t)}</span>`).join('')}</div>` : ''}
       </div>
       <div class="amount">${fmtBRL(d.valor)}</div>
-      ${!d._virtual ? `
-        <div class="swipe-actions">
+      <div class="swipe-actions">
+        <button class="${d._pago ? 'undo' : 'pago'}" data-action="toggle-pago-swipe">${d._pago ? 'Pendente' : 'Paga'}</button>
+        ${!d._virtual ? `
           <button class="edit" data-action="edit-invest">Editar</button>
           <button class="del"  data-action="del-invest">Excluir</button>
-        </div>
-      ` : ''}
+        ` : ''}
+      </div>
     </li>`;
 };
 
@@ -2657,6 +2677,16 @@ const renderAportesSub = (root, seg) => {
   root.querySelectorAll('[data-action="del-invest"]').forEach(b => b.addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]').dataset.id;
     if (confirm('Excluir este investimento?')) { db.removeDespesa(id); toast('Investimento excluído'); render(); }
+  }));
+  // Swipe → marcar aporte como pago/pendente (recorrentes/parceladas alteram só esta ocorrência).
+  root.querySelectorAll('[data-action="toggle-pago-swipe"]').forEach(b => b.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-id]');
+    const occ = all.find(x => x.id === row.dataset.id && x.data === row.dataset.data);
+    if (!occ) return;
+    const wasPago = occ._pago;
+    toggleDespesaPago(occ);
+    toast(wasPago ? 'Marcada como pendente' : 'Marcada como paga');
+    render();
   }));
   const addBtn = root.querySelector('#add-invest');
   if (addBtn) addBtn.addEventListener('click', () => sheetDespesa(null, { investimento: true }));
@@ -2812,6 +2842,7 @@ views.config = (root) => {
         <button data-t="system" class="${tema==='system'?'active':''}">Sistema</button>
         <button data-t="light"  class="${tema==='light'?'active':''}">Claro</button>
         <button data-t="dark"   class="${tema==='dark'?'active':''}">Escuro</button>
+        <button data-t="oled"   class="${tema==='oled'?'active':''}">OLED</button>
       </div>
       <p style="color:var(--text-2);font-size:13px;margin:10px 2px 14px;">
         "Sistema" segue o tema do dispositivo automaticamente.
@@ -3443,6 +3474,15 @@ const sheetDespesa = (desp, opts = {}) => {
   const tipoInicial = d.recorrente ? 'mensal' : ((d.parcelas || 1) > 1 ? 'parcelada' : 'unica');
 
   openSheet(isEdit ? (investimento ? 'Editar investimento' : 'Editar despesa') : (investimento ? 'Novo investimento' : 'Nova despesa'), () => `
+    ${!isEdit && !investimento && state.templates.length > 0 ? `
+      <div class="templates-row">
+        ${state.templates.map(t => `
+          <button class="template-chip" data-tpl="${t.id}" type="button">
+            ${escapeHTML(t.nome)}
+            <span class="template-chip-x" data-del="${t.id}">×</span>
+          </button>`).join('')}
+      </div>
+    ` : ''}
     <label class="field"><span>Descrição</span>
       <input id="f-desc" type="text" placeholder="${investimento ? 'Ex.: Tesouro Direto, CDB, Ações' : 'Ex.: Mercado, Uber, Geladeira'}" value="${escapeAttr(d.descricao || '')}" required />
     </label>
@@ -3499,6 +3539,9 @@ const sheetDespesa = (desp, opts = {}) => {
         <label for="f-pago">Já paga</label>
       </div>
       <small id="pago-hint" style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 12px;"></small>
+    ` : ''}
+    ${!isEdit && !investimento ? `
+      <button type="button" class="link" id="save-template" style="display:block;margin:12px auto 0;padding:0;">+ Salvar como template</button>
     ` : ''}
     <div class="actions">
       <button class="secondary" id="cancel">Cancelar</button>
@@ -3557,6 +3600,55 @@ const sheetDespesa = (desp, opts = {}) => {
         }
         inp.focus();
       });
+    });
+
+    // Templates de despesa: chip aplica os valores no formulário (descrição,
+    // valor, categoria, tags, tipo). × remove o template após confirmação.
+    const applyTemplate = (tpl) => {
+      body.querySelector('#f-desc').value  = tpl.descricao || '';
+      body.querySelector('#f-valor').value = formatCentsDisplay(tpl.valor || 0);
+      const catSel = body.querySelector('#f-cat');
+      if (catSel && tpl.categoriaId !== undefined) catSel.value = tpl.categoriaId || '';
+      body.querySelector('#f-tags').value  = (tpl.tags || []).join(', ');
+      const newTipo = tpl.recorrente ? 'mensal' : ((tpl.parcelas || 1) > 1 ? 'parcelada' : 'unica');
+      tipoEl.value = newTipo;
+      if (newTipo === 'parcelada' && tpl.parcelas > 1) parcEl.value = tpl.parcelas;
+      updateInfo();
+    };
+    body.querySelectorAll('.template-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        if (e.target.closest('.template-chip-x')) return;
+        const id = chip.dataset.tpl;
+        const tpl = state.templates.find(x => x.id === id);
+        if (tpl) applyTemplate(tpl);
+      });
+    });
+    body.querySelectorAll('.template-chip-x').forEach(x => {
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = x.dataset.del;
+        const tpl = state.templates.find(t => t.id === id);
+        if (!tpl) return;
+        if (!confirm(`Remover o template "${tpl.nome}"?`)) return;
+        db.removeTemplate(id);
+        x.closest('.template-chip').remove();
+        toast('Template removido');
+      });
+    });
+    const saveTplBtn = body.querySelector('#save-template');
+    if (saveTplBtn) saveTplBtn.addEventListener('click', () => {
+      const desc = body.querySelector('#f-desc').value.trim();
+      const valor = parseAmount(body.querySelector('#f-valor').value);
+      const catId = body.querySelector('#f-cat').value || null;
+      const tagsArr = parseTags(body.querySelector('#f-tags').value);
+      const tipo = tipoEl.value;
+      const nome = (prompt('Nome do template:', desc) || '').trim();
+      if (!nome) return;
+      let parcelas = 1, recorrente = false;
+      if (tipo === 'mensal') recorrente = true;
+      if (tipo === 'parcelada') parcelas = Math.max(2, Math.min(360, parseInt(parcEl.value, 10) || 0));
+      db.addTemplate({ nome, descricao: desc, valor, categoriaId: catId, tags: tagsArr, recorrente, parcelas });
+      toast('Template salvo');
     });
     body.querySelector('#save').addEventListener('click', () => {
       const tipo = tipoEl.value;
@@ -4218,13 +4310,15 @@ const ONBOARDING_SLIDES = [
   { icon: 'shield',    title: 'Bem-vindo ao Finanças',
     body: 'Controle pessoal sem servidor — todos os dados ficam neste aparelho. Sem cadastro, sem conta.' },
   { icon: 'dashboard', title: 'Dashboard',
-    body: 'Veja receitas, despesas, saldo e gráficos do período. Personalize quais cards aparecem em Ajustes.' },
+    body: 'Receitas, despesas, saldo, comparações e saúde financeira. Em Ajustes você escolhe quais cards aparecem e arrasta pra mudar a ordem.' },
   { icon: 'wallet',    title: 'Cadastre suas receitas',
-    body: 'Na aba Carteira, registre salário, freela ou dividendos. Receitas mensais contam automaticamente todo mês.' },
+    body: 'Na aba Carteira: salário, freelas, dividendos. Receitas mensais (com duração opcional) e datas futuras viram "programadas" até a data chegar.' },
   { icon: 'card',      title: 'Cadastre suas despesas',
-    body: 'Únicas, mensais fixas ou parceladas. Marque como paga ou pendente, organize com categorias e tags.' },
+    body: 'Únicas, mensais ou parceladas. Marque como paga/pendente, organize com categorias e tags. Os filtros (busca, categoria, tag, status, tipo, data) ficam num sheet só.' },
+  { icon: 'trending',  title: 'Investimentos & Objetivos',
+    body: 'Categorias marcadas como "investimento" viram aportes na aba Investimentos, separadas das despesas. Objetivos linkam essas categorias pra acompanhar metas.' },
   { icon: 'tag',       title: 'Organize com categorias',
-    body: 'Cada categoria tem cor e meta mensal opcional. Reordene arrastando o ≡ pra esquerda.' },
+    body: 'Cor, ícone e meta mensal opcional. Marque "É investimento" pra separar aporte de gasto — e "É reserva de emergência" pra contar no indicador da saúde.' },
   { icon: 'download',  title: 'Backup dos dados',
     body: 'Em Ajustes você exporta e importa um arquivo a qualquer momento. Ative o lembrete pra não esquecer.' },
   { icon: 'sparkles',  title: 'Tudo pronto!',

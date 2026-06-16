@@ -18,7 +18,7 @@
     try {
       var raw = localStorage.getItem('financas:v1');
       var tema = raw ? (JSON.parse(raw).config || {}).tema : null;
-      if (tema === 'light' || tema === 'dark') {
+      if (tema === 'light' || tema === 'dark' || tema === 'oled') {
         document.documentElement.setAttribute('data-theme', tema);
       }
     } catch (e) {}
