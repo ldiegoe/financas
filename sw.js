@@ -1,5 +1,5 @@
 // Service Worker — cache offline + auto-update no celular
-const CACHE = 'financas-v78';
+const CACHE = 'financas-v79';
 const ASSETS = [
   './',
   './index.html',
@@ -25,6 +25,23 @@ self.addEventListener('activate', (e) => {
 // Permite que a página force a troca para uma versão nova já instalada.
 self.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Clique na notificação: foca a aba do app (ou abre uma nova) e manda
+// o app navegar pra aba solicitada (geralmente o dashboard pra ver os vencimentos).
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const tab = (e.notification.data && e.notification.data.tab) || 'dashboard';
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (all.length > 0) {
+      const c = all[0];
+      try { await c.focus(); } catch {}
+      try { c.postMessage({ type: 'NAV', tab }); } catch {}
+      return;
+    }
+    await self.clients.openWindow(`./#/${tab}`);
+  })());
 });
 
 // Estratégia: HTML / app.js / app.css / manifest sempre tentam rede primeiro

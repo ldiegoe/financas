@@ -79,6 +79,8 @@ let activeProfileId = _profilesMeta.current;
 // perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
 const DEVICE_CONFIG_KEYS = [
   'tema','textSize','valuesHidden','backupReminderDays',
+  // Notificacoes de vencimento (ligar/desligar e quantos dias antes avisar)
+  'notifEnabled','notifDaysAhead',
   'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashHealthShow','dashCollapsed','dashOrder',
   // Por grafico (investimentos) — card proprio no dashboard
   'dashInvestShow','dashInvestDonutShow','dashInvestDonutType','dashInvestDonutInnerPct','dashInvestListShow','dashInvestListPct',
@@ -821,6 +823,68 @@ const applyAlertBadge = () => {
   const count = activeAlerts().length;
   if (badge) badge.hidden = count === 0;
   btn.setAttribute('aria-label', count > 0 ? `${count} notificações` : 'Notificações');
+};
+
+// --------------------------- Notificacoes nativas --------------------------
+// Notificacoes do sistema (via service worker) sobre vencimentos.
+// Limitado pelo navegador: PWA instalado no iOS 16.4+ ou Chrome Android/desktop.
+// Sem servidor: a checagem roda ao abrir o app e ao voltar pra primeiro plano.
+// Por isso o usuario precisa abrir o app pelo menos 1x no dia pra receber.
+const notifSupported = () => typeof Notification !== 'undefined' && 'serviceWorker' in navigator;
+
+const requestNotifPermission = async () => {
+  if (!notifSupported()) return 'unsupported';
+  if (Notification.permission === 'granted') return 'granted';
+  if (Notification.permission === 'denied') return 'denied';
+  try { return await Notification.requestPermission(); } catch { return 'denied'; }
+};
+
+// Roda na abertura do app e no visibilitychange→visible. Agrupa em duas
+// notificacoes (atrasadas e proximas) e marca como mostrada no dia pra
+// nao spammar a cada abertura.
+const checkAndNotifyUpcoming = async () => {
+  if (state.config.notifEnabled !== true) return;
+  if (!notifSupported() || Notification.permission !== 'granted') return;
+  const today = todayISO();
+  // Reseta flags do dia ao virar para um novo dia.
+  if (state.config.notifShownDate !== today) {
+    updateConfig({ notifShownDate: today, notifShownAtrasadas: false, notifShownProximas: false });
+  }
+  const items = upcomingItems();
+  if (items.length === 0) return;
+  const daysAhead = Math.max(0, Math.min(14, state.config.notifDaysAhead ?? 1));
+  const horizon = new Date(); horizon.setHours(0,0,0,0); horizon.setDate(horizon.getDate() + daysAhead);
+  const horizonISO = `${horizon.getFullYear()}-${String(horizon.getMonth()+1).padStart(2,'0')}-${String(horizon.getDate()).padStart(2,'0')}`;
+  const atrasadas = items.filter(d => d._overdue);
+  const proximas  = items.filter(d => !d._overdue && d.data <= horizonISO);
+  let reg;
+  try { reg = await navigator.serviceWorker.ready; } catch { return; }
+
+  if (atrasadas.length > 0 && !state.config.notifShownAtrasadas) {
+    const total = atrasadas.reduce((s, d) => s + (d.valor || 0), 0);
+    try {
+      await reg.showNotification('Contas atrasadas', {
+        body: `${atrasadas.length} ${atrasadas.length === 1 ? 'conta atrasada' : 'contas atrasadas'} · ${fmtBRL(total)}`,
+        icon: 'icon.svg', badge: 'icon.svg',
+        tag: 'financas-atrasadas',
+        data: { tab: 'dashboard' },
+      });
+      updateConfig({ notifShownAtrasadas: true });
+    } catch {}
+  }
+  if (proximas.length > 0 && !state.config.notifShownProximas) {
+    const total = proximas.reduce((s, d) => s + (d.valor || 0), 0);
+    const quando = daysAhead === 0 ? 'hoje' : daysAhead === 1 ? 'hoje ou amanhã' : `nos próximos ${daysAhead} dias`;
+    try {
+      await reg.showNotification('Vencimentos próximos', {
+        body: `${proximas.length} ${proximas.length === 1 ? 'conta vence' : 'contas vencem'} ${quando} · ${fmtBRL(total)}`,
+        icon: 'icon.svg', badge: 'icon.svg',
+        tag: 'financas-proximas',
+        data: { tab: 'dashboard' },
+      });
+      updateConfig({ notifShownProximas: true });
+    } catch {}
+  }
 };
 
 // 'small' | 'normal' (padrão) | 'large'. Aplica via classe no html — CSS usa
@@ -2893,6 +2957,35 @@ views.config = (root) => {
       </p>
     </div>
 
+    <div class="card">
+      <h2>Lembretes</h2>
+      ${notifSupported() ? `
+        <div class="checkbox-row">
+          <input id="f-notif" type="checkbox" ${state.config.notifEnabled===true?'checked':''}/>
+          <label for="f-notif">Notificações de vencimento</label>
+        </div>
+        <p style="color:var(--text-2);font-size:13px;margin:6px 2px 12px;">
+          Recebe um aviso do sistema quando há contas atrasadas ou perto de vencer.
+          Como o app não tem servidor, a checagem roda quando você abre — ou seja,
+          é preciso abrir o app pelo menos uma vez no dia.
+        </p>
+        <label class="field" style="margin-bottom:6px;">
+          <span>Lembrar quantos dias antes do vencimento</span>
+          <input id="f-notif-days" type="number" min="0" max="14" inputmode="numeric"
+                 value="${state.config.notifDaysAhead ?? 1}" />
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+            0 = só no dia · 1 = hoje ou amanhã · 7 = próximos 7 dias.
+          </small>
+        </label>
+        <button class="secondary" id="notif-test" style="margin-top:6px;">Testar notificação</button>
+      ` : `
+        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 0;">
+          Este navegador não suporta notificações nativas. No iOS, isso fica disponível
+          quando o app é instalado na tela de início (iOS 16.4+).
+        </p>
+      `}
+    </div>
+
     ${(() => {
       // Controles de um grafico (categoria/tag) — 5 toggles + segmented de tipo.
       // prefix='Cat'/'Tag', idSuf='cat'/'tag' nos ids; cfg() le com fallback legacy.
@@ -3203,6 +3296,50 @@ views.config = (root) => {
     const el = root.querySelector(id);
     if (el) el.addEventListener('change', () => updateConfig({ [key]: el.checked }));
   };
+  // Card "Lembretes": toggle pede permissão na hora de ligar.
+  const notifEl = root.querySelector('#f-notif');
+  if (notifEl) notifEl.addEventListener('change', async () => {
+    if (notifEl.checked) {
+      const perm = await requestNotifPermission();
+      if (perm !== 'granted') {
+        notifEl.checked = false;
+        if (perm === 'denied') alert('Notificações bloqueadas no navegador. Habilite nas configurações do app/site.');
+        else if (perm === 'unsupported') alert('Este navegador não suporta notificações.');
+        return;
+      }
+      updateConfig({ notifEnabled: true });
+      toast('Notificações ativadas');
+      setTimeout(checkAndNotifyUpcoming, 300);
+    } else {
+      updateConfig({ notifEnabled: false });
+      toast('Notificações desativadas');
+    }
+  });
+  const notifDaysEl = root.querySelector('#f-notif-days');
+  if (notifDaysEl) notifDaysEl.addEventListener('change', () => {
+    let n = parseInt(notifDaysEl.value, 10);
+    if (!Number.isFinite(n) || n < 0) n = 0;
+    if (n > 14) n = 14;
+    notifDaysEl.value = n;
+    updateConfig({ notifDaysAhead: n });
+  });
+  const notifTestBtn = root.querySelector('#notif-test');
+  if (notifTestBtn) notifTestBtn.addEventListener('click', async () => {
+    if (!notifSupported()) { alert('Sem suporte a notificações.'); return; }
+    if (Notification.permission !== 'granted') {
+      const perm = await requestNotifPermission();
+      if (perm !== 'granted') { alert('Permita as notificações primeiro.'); return; }
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('Finanças', {
+        body: 'Teste de notificação — está tudo certo!',
+        icon: 'icon.svg', badge: 'icon.svg',
+        tag: 'financas-test',
+        data: { tab: 'dashboard' },
+      });
+    } catch (err) { alert('Falha ao testar: ' + (err.message || err)); }
+  });
   wireToggle('#f-dash-compare-show',    'dashCompareShow');
   wireToggle('#f-dash-bars-show',       'dashBarsShow');
   wireToggle('#f-dash-upcoming-show',   'dashUpcomingShow');
@@ -4383,6 +4520,17 @@ const initApp = () => {
   if (!location.hash) location.hash = '#/dashboard';
   setTab(initial);
   if (!state.config.onboardingDone) showOnboarding();
+  // Check vencimentos pra notificacao do sistema; tambem quando voltar ao foreground.
+  setTimeout(checkAndNotifyUpcoming, 800);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') setTimeout(checkAndNotifyUpcoming, 200);
+  });
+  // SW pede pra navegar pra uma aba (acionado quando usuario tocou na notificacao).
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'NAV' && e.data.tab) location.hash = `#/${e.data.tab}`;
+    });
+  }
 };
 
 if (lockEnabled() && lockSupported()) {
