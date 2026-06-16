@@ -197,6 +197,8 @@ let state = (function load() {
 const persist = () => {
   profileStore.saveState(activeProfileId, state);
   document.dispatchEvent(new CustomEvent('db:changed'));
+  // Dispara push (debounced) pra a Dropbox quando habilitado.
+  if (typeof schedulePushDebounced === 'function') schedulePushDebounced();
 };
 
 // Atualiza config do estado: salva no perfil ativo e tambem espelha chaves
@@ -985,6 +987,352 @@ const exportBackup = () => {
   state.lastBackupAt = todayISO();
   persist();
   toast('Backup exportado');
+};
+
+// --------------------------- Sync (Dropbox) --------------------------------
+// Sincronizacao via Dropbox App Folder. Cada perfil sincroniza num arquivo
+// proprio (profile-<id>.json), mais um meta.json com lista de perfis e config
+// device-wide. Tokens ficam num storage separado (financas:sync) — NAO entram
+// nem no state nem no backup JSON do usuario.
+//
+// Estrategia: last-write-wins por arquivo (timestamp server-side da Dropbox).
+// Push debounced (5s apos persist), pull no load e ao voltar pro foreground.
+// Antes de sobrescrever localmente, salva snapshot pra recuperacao manual.
+const DROPBOX_APP_KEY = '6qjr20ksp5d4n2p';
+const SYNC_STORAGE_KEY = 'financas:sync';
+const DBX_VERIFIER_KEY = 'financas:dbx-verifier';
+
+const loadSyncState = () => {
+  try { return JSON.parse(localStorage.getItem(SYNC_STORAGE_KEY)) || {}; }
+  catch { return {}; }
+};
+let syncState = loadSyncState();
+const persistSyncState = () => {
+  try { localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncState)); } catch {}
+};
+const reloadSyncState = () => { syncState = loadSyncState(); };
+const syncDisconnect = () => {
+  for (const k of Object.keys(syncState)) delete syncState[k];
+  persistSyncState();
+  try { localStorage.removeItem(DBX_VERIFIER_KEY); } catch {}
+};
+const dbxRedirectURI = () => location.origin + location.pathname;
+
+// PKCE: gera verifier aleatorio + challenge SHA-256 pro fluxo OAuth sem secret.
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+const randomVerifier = () => {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return b64url(arr);
+};
+const sha256B64 = async (str) => {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return b64url(buf);
+};
+
+// Gera URL de autorizacao do Dropbox (PKCE + offline pra ter refresh token).
+const dbxAuthURL = async () => {
+  const verifier = randomVerifier();
+  try { localStorage.setItem(DBX_VERIFIER_KEY, verifier); } catch {}
+  const challenge = await sha256B64(verifier);
+  const params = new URLSearchParams({
+    client_id: DROPBOX_APP_KEY,
+    response_type: 'code',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    token_access_type: 'offline',
+    redirect_uri: dbxRedirectURI(),
+  });
+  return `https://www.dropbox.com/oauth2/authorize?${params}`;
+};
+
+const dbxExchangeCode = async (code) => {
+  const verifier = localStorage.getItem(DBX_VERIFIER_KEY);
+  if (!verifier) throw new Error('verifier ausente');
+  const params = new URLSearchParams({
+    code, grant_type: 'authorization_code',
+    code_verifier: verifier, client_id: DROPBOX_APP_KEY,
+    redirect_uri: dbxRedirectURI(),
+  });
+  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!res.ok) throw new Error(`OAuth ${res.status}`);
+  try { localStorage.removeItem(DBX_VERIFIER_KEY); } catch {}
+  return res.json();
+};
+
+const dbxRefreshAccessToken = async () => {
+  if (!syncState.refreshToken) throw new Error('sem refresh token');
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: syncState.refreshToken,
+    client_id: DROPBOX_APP_KEY,
+  });
+  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (res.status === 400 || res.status === 401) {
+    // Refresh token invalido — usuario precisa reconectar.
+    syncDisconnect();
+    throw new Error('reconecte');
+  }
+  if (!res.ok) throw new Error(`refresh ${res.status}`);
+  const data = await res.json();
+  syncState.accessToken = data.access_token;
+  syncState.accessTokenExpiresAt = Date.now() + ((data.expires_in || 14400) - 60) * 1000;
+  persistSyncState();
+};
+
+const dbxEnsureToken = async () => {
+  if (syncState.accessToken && Date.now() < (syncState.accessTokenExpiresAt || 0) - 30000) {
+    return syncState.accessToken;
+  }
+  await dbxRefreshAccessToken();
+  return syncState.accessToken;
+};
+
+const dbxUpload = async (path, contentStr) => {
+  const token = await dbxEnsureToken();
+  const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false, mute: true }),
+      'Content-Type': 'application/octet-stream',
+    },
+    body: contentStr,
+  });
+  if (!res.ok) throw new Error(`upload ${res.status}`);
+  return res.json();
+};
+
+const dbxDownload = async (path) => {
+  const token = await dbxEnsureToken();
+  const res = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Dropbox-API-Arg': JSON.stringify({ path }),
+    },
+  });
+  if (res.status === 409) return null; // arquivo nao existe
+  if (!res.ok) throw new Error(`download ${res.status}`);
+  const meta = JSON.parse(res.headers.get('Dropbox-API-Result'));
+  const text = await res.text();
+  return { meta, text };
+};
+
+const dbxList = async () => {
+  const token = await dbxEnsureToken();
+  const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: '', recursive: false }),
+  });
+  if (res.status === 409) return { entries: [] }; // pasta nao existe
+  if (!res.ok) throw new Error(`list ${res.status}`);
+  return res.json();
+};
+
+const dbxAccount = async () => {
+  const token = await dbxEnsureToken();
+  const res = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`account ${res.status}`);
+  return res.json();
+};
+
+// Engine de sync ------------------------------------------------------------
+const profileFilePath = (id) => `/profile-${id}.json`;
+const META_FILE_PATH = '/meta.json';
+const deviceId = () => {
+  if (!syncState.deviceId) {
+    syncState.deviceId = `dev-${randomVerifier().slice(0, 10)}`;
+    persistSyncState();
+  }
+  return syncState.deviceId;
+};
+
+const wrapPayload = (payload) => JSON.stringify({
+  v: 1, ts: Date.now(), device: deviceId(), payload,
+});
+
+const buildProfileContent = (profileId) => {
+  const profileState = profileStore.loadState(profileId);
+  return wrapPayload(profileState);
+};
+const buildMetaContent = () => wrapPayload({
+  meta: profileStore.meta(),
+  deviceConfig: deviceConfigGet(),
+});
+
+// Backup local antes de sobrescrever via pull — ajuda se algo der ruim.
+const backupBeforePull = (key, contentStr) => {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    localStorage.setItem(`financas:sync-backup-${key}-${stamp}`, contentStr);
+  } catch {}
+};
+
+const applyPulledProfile = (profileId, payload) => {
+  const localRaw = localStorage.getItem(`financas:profile:${profileId}`);
+  if (localRaw) backupBeforePull(`profile-${profileId}`, localRaw);
+  profileStore.saveState(profileId, payload);
+};
+const applyPulledMeta = (payload) => {
+  if (payload?.meta) {
+    const localMeta = localStorage.getItem('financas:profiles');
+    if (localMeta) backupBeforePull('meta', localMeta);
+    profileStore.setMeta(payload.meta);
+  }
+  if (payload?.deviceConfig) {
+    try {
+      const localDC = localStorage.getItem(DEVICE_CONFIG_KEY);
+      if (localDC) backupBeforePull('device-config', localDC);
+      localStorage.setItem(DEVICE_CONFIG_KEY, JSON.stringify(payload.deviceConfig));
+    } catch {}
+  }
+};
+
+// Baixa arquivos cuja versao remota é mais nova que a sincronizada por aqui.
+// Retorna { pulled: N, affectedActiveProfile: bool } pra a UI decidir re-render.
+const syncPull = async () => {
+  if (!syncState.provider) return { pulled: 0, affectedActiveProfile: false };
+  const list = await dbxList();
+  let pulled = 0;
+  let affectedActiveProfile = false;
+  let affectedMeta = false;
+  for (const entry of list.entries || []) {
+    if (entry['.tag'] !== 'file') continue;
+    const localTs = syncState.filesSyncedAt?.[entry.name] || 0;
+    const remoteTs = new Date(entry.server_modified).getTime();
+    if (remoteTs <= localTs) continue;
+    const downloaded = await dbxDownload(entry.path_lower);
+    if (!downloaded) continue;
+    let envelope;
+    try { envelope = JSON.parse(downloaded.text); } catch { continue; }
+    if (envelope.device === deviceId()) {
+      // Push proprio voltando — apenas atualiza o timestamp local.
+    } else if (entry.name === 'meta.json') {
+      applyPulledMeta(envelope.payload);
+      affectedMeta = true;
+    } else if (entry.name.startsWith('profile-') && entry.name.endsWith('.json')) {
+      const profileId = entry.name.replace(/^profile-/, '').replace(/\.json$/, '');
+      applyPulledProfile(profileId, envelope.payload);
+      if (profileId === activeProfileId) affectedActiveProfile = true;
+    }
+    syncState.filesSyncedAt = { ...(syncState.filesSyncedAt || {}), [entry.name]: remoteTs };
+    pulled++;
+  }
+  syncState.lastSyncAt = Date.now();
+  persistSyncState();
+  return { pulled, affectedActiveProfile, affectedMeta };
+};
+
+const syncPushProfile = async (profileId) => {
+  if (!syncState.provider) return;
+  const content = buildProfileContent(profileId);
+  const result = await dbxUpload(profileFilePath(profileId), content);
+  const remoteTs = new Date(result.server_modified).getTime();
+  syncState.filesSyncedAt = {
+    ...(syncState.filesSyncedAt || {}),
+    [`profile-${profileId}.json`]: remoteTs,
+  };
+  syncState.lastSyncAt = Date.now();
+  persistSyncState();
+};
+
+const syncPushMeta = async () => {
+  if (!syncState.provider) return;
+  const content = buildMetaContent();
+  const result = await dbxUpload(META_FILE_PATH, content);
+  const remoteTs = new Date(result.server_modified).getTime();
+  syncState.filesSyncedAt = {
+    ...(syncState.filesSyncedAt || {}),
+    ['meta.json']: remoteTs,
+  };
+  syncState.lastSyncAt = Date.now();
+  persistSyncState();
+};
+
+let _syncPushTimer = null;
+const schedulePushDebounced = () => {
+  if (!syncState.provider || syncState.autoSync === false) return;
+  if (_syncPushTimer) clearTimeout(_syncPushTimer);
+  _syncPushTimer = setTimeout(async () => {
+    _syncPushTimer = null;
+    try {
+      await syncPushProfile(activeProfileId);
+      await syncPushMeta();
+    } catch (err) {
+      console.warn('[sync] push falhou:', err.message || err);
+    }
+  }, 5000);
+};
+
+// Detecta `?code=` na URL (volta do Dropbox), troca por tokens e armazena.
+// Funciona tanto no fluxo normal quanto via "bridge" do iOS PWA — o usuario
+// loga em Safari, a aba Safari processa o code, salva em localStorage e
+// pede pra voltar ao PWA, que carrega o token no proximo visibility change.
+const handleOAuthCallback = async () => {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if (!code) return false;
+  // Limpa a URL imediatamente pra nao re-disparar em reloads.
+  try { history.replaceState({}, '', location.pathname); } catch {}
+  try {
+    const tokens = await dbxExchangeCode(code);
+    syncState.provider = 'dropbox';
+    syncState.refreshToken = tokens.refresh_token;
+    syncState.accessToken = tokens.access_token;
+    syncState.accessTokenExpiresAt = Date.now() + ((tokens.expires_in || 14400) - 60) * 1000;
+    syncState.autoSync = true;
+    persistSyncState();
+    deviceId(); // gera deviceId se nao existir
+    try {
+      const account = await dbxAccount();
+      syncState.accountEmail = account.email;
+      persistSyncState();
+    } catch {}
+    toast('Conectado ao Dropbox');
+    // Pull inicial + garante meta + push do perfil ativo
+    try { await syncPull(); } catch {}
+    try { await syncPushMeta(); } catch {}
+    try { await syncPushProfile(activeProfileId); } catch {}
+    return true;
+  } catch (err) {
+    alert('Falha ao conectar: ' + (err.message || err));
+    return false;
+  }
+};
+
+// Reloda o state em memoria a partir do storage (apos pull que afetou o perfil
+// ativo) e dispara render. Usado depois de syncPull quando algo mudou.
+const reloadActiveProfileState = () => {
+  state = applyDeviceOverlay(profileStore.loadState(activeProfileId));
+  document.dispatchEvent(new CustomEvent('db:changed'));
+};
+
+const syncRelativeTime = (ts) => {
+  if (!ts) return '—';
+  const diff = Date.now() - ts;
+  if (diff < 0) return 'agora';
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'agora há pouco';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `há ${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `há ${hr} h`;
+  const days = Math.floor(hr / 24);
+  return `há ${days} ${days === 1 ? 'dia' : 'dias'}`;
 };
 
 // --------------------------- Lock (WebAuthn) -------------------------------
@@ -2986,6 +3334,36 @@ views.config = (root) => {
       `}
     </div>
 
+    <div class="card">
+      <h2>Sincronização</h2>
+      ${syncState.provider === 'dropbox' ? `
+        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 4px;">
+          Conectado: <strong>${escapeHTML(syncState.accountEmail || '—')}</strong>
+        </p>
+        <p style="color:var(--text-2);font-size:13px;margin:0 2px 12px;">
+          Última sincronização: ${syncRelativeTime(syncState.lastSyncAt)}.
+        </p>
+        <div class="checkbox-row">
+          <input id="f-sync-auto" type="checkbox" ${syncState.autoSync !== false ? 'checked' : ''}/>
+          <label for="f-sync-auto">Sincronização automática</label>
+        </div>
+        <p style="color:var(--text-2);font-size:12px;margin:4px 2px 10px;">
+          Mudanças sobem em até 5 s. O app baixa novidades ao abrir e ao voltar pro foreground.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="primary"   id="sync-now">Sincronizar agora</button>
+          <button class="secondary" id="sync-disconnect">Desconectar</button>
+        </div>
+      ` : `
+        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 12px;">
+          Conecte sua conta Dropbox para manter os dados em sincronia entre dispositivos.
+          Cada perfil sincroniza em um arquivo separado, dentro de uma pasta privada
+          (<code>/Apps/Financas/</code>) na sua Dropbox.
+        </p>
+        <button class="primary" id="sync-connect-dropbox">Conectar Dropbox</button>
+      `}
+    </div>
+
     ${(() => {
       // Controles de um grafico (categoria/tag) — 5 toggles + segmented de tipo.
       // prefix='Cat'/'Tag', idSuf='cat'/'tag' nos ids; cfg() le com fallback legacy.
@@ -3322,6 +3700,48 @@ views.config = (root) => {
     if (n > 14) n = 14;
     notifDaysEl.value = n;
     updateConfig({ notifDaysAhead: n });
+  });
+  // Card "Sincronização" (Dropbox)
+  const connectBtn = root.querySelector('#sync-connect-dropbox');
+  if (connectBtn) connectBtn.addEventListener('click', async () => {
+    try {
+      connectBtn.disabled = true;
+      const url = await dbxAuthURL();
+      location.href = url; // redireciona pra Dropbox; volta com ?code=
+    } catch (err) {
+      connectBtn.disabled = false;
+      alert('Falha ao iniciar conexão: ' + (err.message || err));
+    }
+  });
+  const syncNowBtn = root.querySelector('#sync-now');
+  if (syncNowBtn) syncNowBtn.addEventListener('click', async () => {
+    syncNowBtn.disabled = true;
+    syncNowBtn.textContent = 'Sincronizando…';
+    try {
+      const r = await syncPull();
+      await syncPushProfile(activeProfileId);
+      await syncPushMeta();
+      if (r?.affectedActiveProfile) reloadActiveProfileState();
+      if (r?.affectedMeta) applyProfileChip();
+      toast('Sincronizado');
+      render({ preserveScroll: true });
+    } catch (err) {
+      alert('Falha ao sincronizar: ' + (err.message || err));
+      syncNowBtn.disabled = false;
+      syncNowBtn.textContent = 'Sincronizar agora';
+    }
+  });
+  const syncAutoEl = root.querySelector('#f-sync-auto');
+  if (syncAutoEl) syncAutoEl.addEventListener('change', () => {
+    syncState.autoSync = syncAutoEl.checked;
+    persistSyncState();
+  });
+  const disconnectBtn = root.querySelector('#sync-disconnect');
+  if (disconnectBtn) disconnectBtn.addEventListener('click', () => {
+    if (!confirm('Desconectar do Dropbox? Os dados locais ficam intactos; só o vínculo com a nuvem é removido.')) return;
+    syncDisconnect();
+    toast('Desconectado');
+    render({ preserveScroll: true });
   });
   const notifTestBtn = root.querySelector('#notif-test');
   if (notifTestBtn) notifTestBtn.addEventListener('click', async () => {
@@ -4523,8 +4943,30 @@ const initApp = () => {
   // Check vencimentos pra notificacao do sistema; tambem quando voltar ao foreground.
   setTimeout(checkAndNotifyUpcoming, 800);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') setTimeout(checkAndNotifyUpcoming, 200);
+    if (document.visibilityState === 'visible') {
+      setTimeout(checkAndNotifyUpcoming, 200);
+      // Reloda syncState (caso aba Safari tenha conectado o Dropbox) e re-pull.
+      reloadSyncState();
+      if (syncState.provider) {
+        syncPull().then(r => { if (r?.affectedActiveProfile) { reloadActiveProfileState(); render(); } else if (r?.affectedMeta) { applyProfileChip(); render(); } }).catch(() => {});
+      }
+    }
   });
+  // Sync: trata callback OAuth (?code=) e roda pull inicial em background.
+  (async () => {
+    try {
+      const handled = await handleOAuthCallback();
+      if (handled) {
+        reloadActiveProfileState();
+        applyProfileChip();
+        render();
+      } else if (syncState.provider) {
+        const r = await syncPull();
+        if (r?.affectedActiveProfile) { reloadActiveProfileState(); render(); }
+        else if (r?.affectedMeta) { applyProfileChip(); render(); }
+      }
+    } catch (err) { console.warn('[sync] inicial falhou:', err.message || err); }
+  })();
   // SW pede pra navegar pra uma aba (acionado quando usuario tocou na notificacao).
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (e) => {
