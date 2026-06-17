@@ -147,6 +147,7 @@ const isoToDate = (iso) => {
   return new Date(y, m - 1, d);
 };
 const yyyyMmFromDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+const yyyyMmDdFromDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 // Migracao do pago/pendente: rodada na carga do state. Despesas existentes
 // nao tem o campo `pago` (nao-recorrentes) nem `pagasEm` (recorrentes/parc).
@@ -335,31 +336,72 @@ const formatCentsDisplay = (cents) => {
   return `${reais.toLocaleString('pt-BR')},${c2}`;
 };
 
+// Detecta se a string parece uma expressão matemática (tem operador entre
+// operandos). "-5" sozinho NÃO é expressão; "10 - 5" sim. Permite +, *, /,
+// parênteses e o sinal de menos só depois de um dígito ou fecha-parêntese.
+const looksLikeExpression = (s) => /[+*/()]/.test(s) || /[\d)]\s*-/.test(s);
+
+// Avalia expressão tipo "48,90 + 12 + 7,50" → 6840 centavos.
+// Normaliza ponto/vírgula (BR), valida com whitelist e usa Function (sem eval)
+// na string já segura — só dígitos, operadores, ponto, parênteses e espaços.
+const evaluateExpression = (raw) => {
+  // Remove espaços, troca vírgula por ponto. Ponto como milhar é raro em
+  // expressões digitadas; se aparecer ambíguo (e.g. "1.234,56"), priorizamos
+  // remover ponto antes da vírgula → "1234.56". Sem vírgula, ponto é decimal.
+  let s = String(raw).replace(/\s+/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(/,/g, '.');
+  if (!/^[\d+\-*/().]+$/.test(s)) return 0;
+  try {
+    const result = Function(`"use strict"; return (${s})`)();
+    if (typeof result !== 'number' || !Number.isFinite(result)) return 0;
+    return Math.max(0, Math.round(result * 100));
+  } catch { return 0; }
+};
+
 // Faz o input se comportar como campo de moeda (estilo Nubank): cada dígito
 // digitado entra pela direita como centavo, separadores são re-aplicados.
+// Suporta também expressões: ao digitar +, -, *, / ou ( ele entra em "modo
+// calculadora" — não formata enquanto edita e avalia no blur/save.
 const bindCurrencyInput = (input) => {
-  const reformat = () => {
+  const formatCurrency = () => {
     const digits = input.value.replace(/\D/g, '').replace(/^0+/, '');
     if (!digits) { input.value = ''; return; }
     input.value = formatCentsDisplay(parseInt(digits, 10));
-    // cursor sempre no fim para o padrão "digitar da direita p/ esquerda"
     requestAnimationFrame(() => {
       const end = input.value.length;
       try { input.setSelectionRange(end, end); } catch {}
     });
   };
-  input.addEventListener('input', reformat);
-  // Bloqueia teclas que não façam sentido (deixa só dígitos, backspace, navegação)
+  input.addEventListener('input', () => {
+    if (looksLikeExpression(input.value)) return; // modo calculadora — sem formatar
+    formatCurrency();
+  });
+  input.addEventListener('blur', () => {
+    if (looksLikeExpression(input.value)) {
+      const cents = evaluateExpression(input.value);
+      if (cents > 0) input.value = formatCentsDisplay(cents);
+    }
+  });
+  // Aceita dígitos, operadores e teclas de navegação.
   input.addEventListener('keydown', (e) => {
-    const ok = /^[0-9]$/.test(e.key) || ['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Home','End'].includes(e.key) || e.metaKey || e.ctrlKey;
+    const ok = /^[0-9+\-*/().,]$/.test(e.key)
+      || ['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Home','End','Enter'].includes(e.key)
+      || e.metaKey || e.ctrlKey;
     if (!ok) e.preventDefault();
+    if (e.key === 'Enter' && looksLikeExpression(input.value)) {
+      e.preventDefault();
+      const cents = evaluateExpression(input.value);
+      if (cents > 0) input.value = formatCentsDisplay(cents);
+    }
   });
 };
 
-// "1.234,56" / "1234,56" / "1234.56" / "1234" -> integer cents
+// "1.234,56" / "1234,56" / "1234.56" / "1234" -> integer cents.
+// Também aceita expressões com +, -, *, / e parênteses: "48,90+12+7,50" → 6840.
 const parseAmount = (s) => {
   if (s == null || s === '') return 0;
   let str = String(s).trim().replace(/\s/g, '');
+  if (looksLikeExpression(str)) return evaluateExpression(str);
   if (str.includes(',')) {
     // Convenção pt-BR: vírgula é decimal, ponto é separador de milhar
     str = str.replace(/\./g, '').replace(',', '.');
@@ -395,6 +437,9 @@ const partsOf = (iso) => {
 };
 
 const periodMatches = (iso, period) => {
+  if (period.type === 'custom') {
+    return iso >= period.from && iso <= period.to;
+  }
   const { y, m, q, s } = partsOf(iso);
   if (period.year !== y) return false;
   if (period.type === 'year') return true;
@@ -438,6 +483,8 @@ const expandWithRecurring = (items, period) => {
       const projectedDay = clampDay(y, m, day);
       const yyyyMm = `${y}-${String(m).padStart(2,'0')}`;
       const iso = `${yyyyMm}-${String(projectedDay).padStart(2,'0')}`;
+      // Em períodos custom (intervalo livre), checa dia-a-dia.
+      if (period.type === 'custom' && (iso < period.from || iso > period.to)) continue;
       const isOriginal = (y === start.y && m === start.m);
       const occ = { ...it, data: iso, _virtual: !isOriginal, _pago: pagasEm.includes(yyyyMm) };
       if (isInstallment) {
@@ -451,6 +498,18 @@ const expandWithRecurring = (items, period) => {
 };
 
 const monthsInPeriod = (period) => {
+  if (period.type === 'custom') {
+    const months = [];
+    const start = isoToDate(period.from);
+    const end = isoToDate(period.to);
+    let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+    const limit = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cur <= limit) {
+      months.push({ y: cur.getFullYear(), m: cur.getMonth() + 1 });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+    return months;
+  }
   const y = period.year;
   if (period.type === 'year') return Array.from({length:12}, (_,i)=>({y, m:i+1}));
   if (period.type === 'month') return [{ y, m: period.value }];
@@ -825,6 +884,121 @@ const applyAlertBadge = () => {
   const count = activeAlerts().length;
   if (badge) badge.hidden = count === 0;
   btn.setAttribute('aria-label', count > 0 ? `${count} notificações` : 'Notificações');
+};
+
+// --------------------------- Insights automaticos --------------------------
+// Sheet que aparece no abrir do app (no maximo 1x/dia) com mudancas que
+// merecem atencao: categoria com gasto/economia atipica, objetivo concluido
+// ou perto de bater. Comparacao: mes corrente vs media de 3 meses anteriores.
+const computeInsights = () => {
+  const insights = [];
+  const now = new Date();
+  const curMonthPeriod = { type: 'month', year: now.getFullYear(), value: now.getMonth() + 1 };
+  const poupancaIds = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
+
+  // Gasto deste mes por categoria (despesas; exclui investimento).
+  const curByCat = new Map();
+  for (const d of expandWithRecurring(state.despesas, curMonthPeriod)) {
+    if (poupancaIds.has(d.categoriaId)) continue;
+    const id = d.categoriaId || '_sem';
+    curByCat.set(id, (curByCat.get(id) || 0) + (d.valor || 0));
+  }
+  // Media dos 3 meses anteriores por categoria.
+  const prevByCat = new Map();
+  for (let i = 1; i <= 3; i++) {
+    const dm = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    for (const d of expandWithRecurring(state.despesas, { type: 'month', year: dm.getFullYear(), value: dm.getMonth() + 1 })) {
+      if (poupancaIds.has(d.categoriaId)) continue;
+      const id = d.categoriaId || '_sem';
+      prevByCat.set(id, (prevByCat.get(id) || 0) + (d.valor || 0));
+    }
+  }
+  for (const [k, v] of prevByCat) prevByCat.set(k, Math.round(v / 3));
+
+  // Lista de variacoes; filtra ruido (diferenca absoluta minima R$50).
+  const changes = [];
+  for (const id of new Set([...curByCat.keys(), ...prevByCat.keys()])) {
+    const cur = curByCat.get(id) || 0;
+    const prev = prevByCat.get(id) || 0;
+    const diff = cur - prev;
+    const pct = prev > 0 ? (diff / prev) * 100 : null;
+    if (Math.abs(diff) < 5000) continue;
+    changes.push({ id, cur, prev, diff, pct });
+  }
+  changes.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  // Top categoria com aumento >= 30% (ou nova categoria com gasto > R$50).
+  const up = changes.find(c => c.diff > 0 && (c.pct === null || c.pct >= 30));
+  if (up) {
+    const cat = state.categorias.find(x => x.id === up.id);
+    const nome = cat ? cat.nome : 'Sem categoria';
+    insights.push({
+      icon: 'trending', severity: 'warn',
+      title: `Gasto maior em ${nome}`,
+      body: up.prev > 0
+        ? `${fmtBRL(up.cur)} este mês — ${Math.round(up.pct)}% acima da média de 3 meses (${fmtBRL(up.prev)}).`
+        : `${fmtBRL(up.cur)} este mês — categoria que normalmente não aparece nos seus gastos.`,
+    });
+  }
+  // Top categoria com queda >= 30%.
+  const down = changes.find(c => c.diff < 0 && c.pct !== null && c.pct <= -30 && c.prev > 0);
+  if (down) {
+    const cat = state.categorias.find(x => x.id === down.id);
+    const nome = cat ? cat.nome : 'Sem categoria';
+    insights.push({
+      icon: 'sparkles', severity: 'good',
+      title: `Economia em ${nome}`,
+      body: `${fmtBRL(down.cur)} este mês — ${Math.round(Math.abs(down.pct))}% abaixo da média de 3 meses (${fmtBRL(down.prev)}).`,
+    });
+  }
+
+  // Objetivos concluidos ou perto de bater.
+  for (const obj of state.objetivos || []) {
+    const atual = objetivoAtual(obj);
+    if (!obj.alvo || obj.alvo <= 0) continue;
+    const ratio = atual / obj.alvo;
+    if (ratio >= 1) {
+      insights.push({
+        icon: 'target', severity: 'good',
+        title: `Objetivo concluído: ${obj.nome}`,
+        body: `Você acumulou ${fmtBRL(atual)} de ${fmtBRL(obj.alvo)}. Parabéns!`,
+      });
+    } else if (ratio >= 0.9) {
+      insights.push({
+        icon: 'target', severity: 'good',
+        title: `Falta pouco: ${obj.nome}`,
+        body: `${Math.round(ratio * 100)}% concluído — faltam ${fmtBRL(obj.alvo - atual)} pra bater a meta.`,
+      });
+    }
+  }
+
+  return insights.slice(0, 4);
+};
+
+const sheetInsights = () => {
+  const insights = computeInsights();
+  if (insights.length === 0) return false;
+  openSheet('Insights', () => `
+    <p style="color:var(--text-2);font-size:14px;margin:0 2px 14px;">
+      Coisas que merecem sua atenção desde a última vez.
+    </p>
+    <ul class="insights-list">
+      ${insights.map(i => `
+        <li class="insight-item ${i.severity}">
+          <span class="insight-icon">${icon(i.icon, 22)}</span>
+          <div class="grow">
+            <div class="insight-title">${escapeHTML(i.title)}</div>
+            <div class="insight-body">${escapeHTML(i.body)}</div>
+          </div>
+        </li>`).join('')}
+    </ul>
+    <div class="actions">
+      <button class="primary" id="insights-close">Fechar</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#insights-close').addEventListener('click', closeSheet);
+  });
+  return true;
 };
 
 // --------------------------- Notificacoes nativas --------------------------
@@ -1470,6 +1644,7 @@ const period = {
 };
 
 const periodLabel = () => {
+  if (period.type === 'custom') return labelOfPeriod(period);
   const { type, year, value } = period;
   if (type === 'year')     return String(year);
   if (type === 'month')    return `${monthName(value)} ${year}`;
@@ -2596,6 +2771,15 @@ const sheetFilters = () => {
 
 // Período imediatamente anterior, mantendo o mesmo "tipo" (mês/tri/sem/ano).
 const previousPeriod = (p) => {
+  if (p.type === 'custom') {
+    // Range de mesma duração imediatamente antes do `from`.
+    const start = isoToDate(p.from);
+    const end = isoToDate(p.to);
+    const days = Math.round((end - start) / 86400000) + 1;
+    const newEnd = new Date(start); newEnd.setDate(newEnd.getDate() - 1);
+    const newStart = new Date(newEnd); newStart.setDate(newStart.getDate() - days + 1);
+    return { type: 'custom', from: yyyyMmDdFromDate(newStart), to: yyyyMmDdFromDate(newEnd), shortcut: p.shortcut };
+  }
   const np = { ...p };
   if (p.type === 'year') { np.year--; return np; }
   const wrap = p.type === 'month' ? 12 : (p.type === 'quarter' ? 4 : 2);
@@ -2604,6 +2788,13 @@ const previousPeriod = (p) => {
 };
 
 const labelOfPeriod = (p) => {
+  if (p.type === 'custom') {
+    if (p.shortcut === 'today') return 'Hoje';
+    if (p.shortcut === 'week')  return 'Últimos 7 dias';
+    if (p.shortcut === 'month30') return 'Últimos 30 dias';
+    if (p.shortcut === 'mtd')   return 'Mês corrido';
+    return `${fmtDate(p.from)} — ${fmtDate(p.to)}`;
+  }
   if (p.type === 'year')     return String(p.year);
   if (p.type === 'month')    return `${monthName(p.value)} ${p.year}`;
   if (p.type === 'quarter')  return `${p.value}º Tri ${p.year}`;
@@ -2718,6 +2909,7 @@ views.despesas = (root) => {
       <div class="select-bar">
         <span class="count">${selectedIds.size} selecionada${selectedIds.size === 1 ? '' : 's'}</span>
         <button class="link" id="cancel-select">Cancelar</button>
+        <button class="primary" id="bulk-edit" style="padding:8px 14px;" ${selectedIds.size === 0 ? 'disabled' : ''}>Editar</button>
         <button class="danger" id="delete-select" style="padding:8px 14px;" ${selectedIds.size === 0 ? 'disabled' : ''}>Apagar</button>
       </div>
     ` : `<button class="fab" id="fab-desp" aria-label="Adicionar despesa">+</button>`}
@@ -2753,6 +2945,11 @@ views.despesas = (root) => {
       selectionMode = false; selectedIds.clear();
       toast(`${n} despesa${n === 1 ? '' : 's'} excluída${n === 1 ? '' : 's'}`);
       render();
+    });
+    const bulkEditBtn = root.querySelector('#bulk-edit');
+    if (bulkEditBtn) bulkEditBtn.addEventListener('click', () => {
+      if (selectedIds.size === 0) return;
+      sheetBulkEdit([...selectedIds]);
     });
   } else {
     bindSwipe(root);
@@ -3917,27 +4114,62 @@ views.config = (root) => {
 //   - Stepper de ano sutil logo abaixo (pula pro ano anterior/proximo)
 //   - Segmented com tipo (Mes/Tri/Sem/Ano)
 //   - Chips horizontais com o valor do periodo (Jan/Fev/... ou 1Tri/2Tri/...)
-const periodHeader = () => `
-  <div class="period-head">
-    <div class="period-title">${periodLabel()}</div>
-    <div class="period-year-stepper">
-      <button class="link" id="prev-year">‹ ${period.year - 1}</button>
-      <button class="link" id="next-year">${period.year + 1} ›</button>
+// Aplica um período custom a partir de um atalho ("today", "week", "month30", "mtd").
+const applyPeriodShortcut = (key) => {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayISO_ = yyyyMmDdFromDate(today);
+  if (key === 'today') {
+    Object.assign(period, { type: 'custom', from: todayISO_, to: todayISO_, shortcut: 'today' });
+  } else if (key === 'week') {
+    const start = new Date(today); start.setDate(today.getDate() - 6);
+    Object.assign(period, { type: 'custom', from: yyyyMmDdFromDate(start), to: todayISO_, shortcut: 'week' });
+  } else if (key === 'month30') {
+    const start = new Date(today); start.setDate(today.getDate() - 29);
+    Object.assign(period, { type: 'custom', from: yyyyMmDdFromDate(start), to: todayISO_, shortcut: 'month30' });
+  } else if (key === 'mtd') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    Object.assign(period, { type: 'custom', from: yyyyMmDdFromDate(start), to: todayISO_, shortcut: 'mtd' });
+  }
+};
+
+const periodHeader = () => {
+  const isCustom = period.type === 'custom';
+  return `
+    <div class="period-head">
+      <div class="period-title">${periodLabel()}</div>
+      ${!isCustom ? `
+        <div class="period-year-stepper">
+          <button class="link" id="prev-year">‹ ${period.year - 1}</button>
+          <button class="link" id="next-year">${period.year + 1} ›</button>
+        </div>
+      ` : ''}
     </div>
-  </div>
-  <div class="segmented period-type" id="filter-type">
-    <button data-type="month"    class="${period.type==='month'?'active':''}">Mês</button>
-    <button data-type="quarter"  class="${period.type==='quarter'?'active':''}">Trimestre</button>
-    <button data-type="semester" class="${period.type==='semester'?'active':''}">Semestre</button>
-    <button data-type="year"     class="${period.type==='year'?'active':''}">Ano</button>
-  </div>
-  <div class="filter-bar" id="filter-value">${valueChips()}</div>
-`;
+    <div class="filter-bar period-shortcuts" id="period-shortcuts">
+      <button class="chip ${period.shortcut==='today' ?'active':''}" data-shortcut="today">Hoje</button>
+      <button class="chip ${period.shortcut==='week'  ?'active':''}" data-shortcut="week">7 dias</button>
+      <button class="chip ${period.shortcut==='month30'?'active':''}" data-shortcut="month30">30 dias</button>
+      <button class="chip ${period.shortcut==='mtd'   ?'active':''}" data-shortcut="mtd">Mês corrido</button>
+    </div>
+    <div class="segmented period-type" id="filter-type">
+      <button data-type="month"    class="${period.type==='month'?'active':''}">Mês</button>
+      <button data-type="quarter"  class="${period.type==='quarter'?'active':''}">Trimestre</button>
+      <button data-type="semester" class="${period.type==='semester'?'active':''}">Semestre</button>
+      <button data-type="year"     class="${period.type==='year'?'active':''}">Ano</button>
+    </div>
+    ${!isCustom ? `<div class="filter-bar" id="filter-value">${valueChips()}</div>` : ''}
+  `;
+};
 const bindPeriodHeader = (root) => {
+  root.querySelectorAll('#period-shortcuts .chip').forEach(b => {
+    b.addEventListener('click', () => { applyPeriodShortcut(b.dataset.shortcut); render(); });
+  });
   root.querySelectorAll('#filter-type button').forEach(b => {
     b.addEventListener('click', () => {
-      period.type = b.dataset.type;
+      // Sai de "custom" e volta pro modo escolhido com o valor do mês/tri/sem corrente.
       const today = new Date();
+      period.type = b.dataset.type;
+      period.year = today.getFullYear();
+      delete period.shortcut; delete period.from; delete period.to;
       if (period.type === 'month')    period.value = today.getMonth() + 1;
       if (period.type === 'quarter')  period.value = Math.floor(today.getMonth()/3) + 1;
       if (period.type === 'semester') period.value = today.getMonth() <= 5 ? 1 : 2;
@@ -4552,6 +4784,97 @@ const sheetRenameProfile = (id) => {
 // registro original quanto uma ocorrencia projetada (recorrente/parcelada),
 // mas Editar/Excluir afetam sempre o registro base.
 // Antecipar parcelas: o usuário informa quantas parcelas quitou adiantado e o
+// Edicao em lote das despesas selecionadas. Aplica UMA acao por vez (mudar
+// categoria, adicionar/remover tag, marcar paga/pendente). Ocorrencias
+// virtuais nao aparecem em selectedIds — sempre opera sobre a despesa base.
+const sheetBulkEdit = (ids) => {
+  const n = ids.length;
+  if (n === 0) return;
+  const despesasCats = state.categorias.filter(c => !c.poupanca);
+  const investCats   = state.categorias.filter(c => c.poupanca);
+  openSheet(`Editar ${n} ${n === 1 ? 'despesa' : 'despesas'}`, () => `
+    <p style="color:var(--text-2);font-size:13px;margin:0 2px 14px;">
+      A ação selecionada é aplicada a todas as ${n} ${n === 1 ? 'despesa' : 'despesas'} selecionadas.
+    </p>
+    <label class="field"><span>Mudar categoria</span>
+      <select id="bulk-cat">
+        <option value="__none">— manter atual —</option>
+        <option value="">Sem categoria</option>
+        <optgroup label="Despesa">
+          ${despesasCats.map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+        </optgroup>
+        ${investCats.length > 0 ? `
+          <optgroup label="Investimento">
+            ${investCats.map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+          </optgroup>
+        ` : ''}
+      </select>
+    </label>
+    <label class="field"><span>Adicionar tag</span>
+      <input id="bulk-tag-add" type="text" placeholder="Ex.: viagem" autocapitalize="none" autocorrect="off" />
+      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Se já existir naquela despesa, ignora.</small>
+    </label>
+    <label class="field"><span>Remover tag</span>
+      <input id="bulk-tag-rem" type="text" placeholder="Ex.: provisória" autocapitalize="none" autocorrect="off" />
+    </label>
+    <label class="field" style="margin-bottom:6px;"><span>Status de pagamento</span>
+      <select id="bulk-status">
+        <option value="__none">— manter atual —</option>
+        <option value="paga">Marcar como paga</option>
+        <option value="pendente">Marcar como pendente</option>
+      </select>
+    </label>
+    <div class="actions">
+      <button class="secondary" id="cancel">Cancelar</button>
+      <button class="primary"   id="apply">Aplicar</button>
+    </div>
+  `, (body) => {
+    body.querySelector('#cancel').addEventListener('click', closeSheet);
+    body.querySelector('#apply').addEventListener('click', () => {
+      const catChoice = body.querySelector('#bulk-cat').value;
+      const tagAdd = body.querySelector('#bulk-tag-add').value.trim();
+      const tagRem = body.querySelector('#bulk-tag-rem').value.trim().toLowerCase();
+      const status = body.querySelector('#bulk-status').value;
+      let changes = 0;
+      for (const id of ids) {
+        const d = state.despesas.find(x => x.id === id);
+        if (!d) continue;
+        const patch = {};
+        if (catChoice !== '__none') {
+          patch.categoriaId = catChoice === '' ? null : catChoice;
+        }
+        if (tagAdd) {
+          const cur = d.tags || [];
+          if (!cur.some(t => t.toLowerCase() === tagAdd.toLowerCase())) {
+            patch.tags = [...cur, tagAdd];
+          }
+        }
+        if (tagRem) {
+          const cur = patch.tags || d.tags || [];
+          const next = cur.filter(t => t.toLowerCase() !== tagRem);
+          if (next.length !== cur.length) patch.tags = next;
+        }
+        if (Object.keys(patch).length > 0) {
+          db.updateDespesa(id, patch);
+          changes++;
+        }
+        if (status !== '__none') {
+          const wantPaga = status === 'paga';
+          const occ = { ...d, _virtual: false, _pago: d.pago === true };
+          if (wantPaga !== occ._pago) {
+            toggleDespesaPago(occ);
+            changes++;
+          }
+        }
+      }
+      selectionMode = false; selectedIds.clear();
+      closeSheet();
+      toast(changes > 0 ? `${changes} aplicada${changes === 1 ? '' : 's'}` : 'Nenhuma alteração');
+      render();
+    });
+  });
+};
+
 // total de parcelas diminui (as últimas saem da projeção). Não deixa reduzir
 // abaixo da parcela atual nem das já marcadas como pagas, pra não apagar
 // parcelas que já aconteceram.
@@ -4940,6 +5263,14 @@ const initApp = () => {
   if (!location.hash) location.hash = '#/dashboard';
   setTab(initial);
   if (!state.config.onboardingDone) showOnboarding();
+  // Insights: 1x por dia (apos onboarding completo). Espera ~1.5s pra nao
+  // atropelar a primeira render e respeitar o lock screen.
+  setTimeout(() => {
+    if (!state.config.onboardingDone) return;
+    const today = todayISO();
+    if (state.config.insightsShownDate === today) return;
+    if (sheetInsights()) updateConfig({ insightsShownDate: today });
+  }, 1500);
   // Check vencimentos pra notificacao do sistema; tambem quando voltar ao foreground.
   setTimeout(checkAndNotifyUpcoming, 800);
   document.addEventListener('visibilitychange', () => {
