@@ -609,9 +609,6 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .hl-val.good { color: var(--green); }
 .hl-val.bad  { color: var(--red); }
 
-/* Atalhos de período (Hoje, 7d, 30d, Mês corrido) acima do segmented. */
-.period-shortcuts { margin-bottom: 4px; }
-
 /* Lista de insights — items com ícone colorido + título + corpo. */
 .insights-list { list-style: none; margin: 0; padding: 0; }
 .insights-list li {

@@ -114,19 +114,6 @@ describe('expandWithRecurring — parcelada', () => {
   });
 });
 
-describe('expandWithRecurring — period custom', () => {
-  it('inclui ocorrência cuja data cai dentro do range', () => {
-    const items = [{ id: 'a', data: '2025-05-10', valor: 100, recorrente: true }];
-    const p = { type: 'custom', from: '2025-05-01', to: '2025-05-31' };
-    expect(expandWithRecurring(items, p)).toHaveLength(1);
-  });
-  it('exclui ocorrência cuja data cai fora do range mesmo no mesmo mês', () => {
-    const items = [{ id: 'a', data: '2025-05-20', valor: 100, recorrente: true }];
-    const p = { type: 'custom', from: '2025-05-01', to: '2025-05-15' };
-    expect(expandWithRecurring(items, p)).toEqual([]);
-  });
-});
-
 describe('computeTogglePagoPatch', () => {
   it('null se base ausente', () => {
     expect(computeTogglePagoPatch(null, { data: '2025-05-10' })).toBe(null);

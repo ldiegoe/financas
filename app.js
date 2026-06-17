@@ -6,7 +6,7 @@
 // Módulos extraídos pra organização e testes (Vitest sob `npm test`).
 import {
   fmtBRL as fmtBRLPure, formatCentsDisplay, fmtDate, monthName,
-  yyyyMmFromDate, yyyyMmDdFromDate,
+  yyyyMmFromDate,
 } from './src/helpers/format.js';
 import {
   looksLikeExpression, evaluateExpression, parseAmount, parseTags,
@@ -981,15 +981,7 @@ const period = {
   value: new Date().getMonth() + 1,
 };
 
-const periodLabel = () => {
-  if (period.type === 'custom') return labelOfPeriod(period);
-  const { type, year, value } = period;
-  if (type === 'year')     return String(year);
-  if (type === 'month')    return `${monthName(value)} ${year}`;
-  if (type === 'quarter')  return `${value}º Tri ${year}`;
-  if (type === 'semester') return `${value}º Sem ${year}`;
-  return '';
-};
+const periodLabel = () => labelOfPeriod(period);
 
 // --------------------------- Sheet/Modal -----------------------------------
 // Sheet/modal: usa o factory de ./src/ui/dom.js sobre o #modal-root.
@@ -3388,62 +3380,28 @@ views.config = (root) => {
 //   - Stepper de ano sutil logo abaixo (pula pro ano anterior/proximo)
 //   - Segmented com tipo (Mes/Tri/Sem/Ano)
 //   - Chips horizontais com o valor do periodo (Jan/Fev/... ou 1Tri/2Tri/...)
-// Aplica um período custom a partir de um atalho ("today", "week", "month30", "mtd").
-const applyPeriodShortcut = (key) => {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const todayISO_ = yyyyMmDdFromDate(today);
-  if (key === 'today') {
-    Object.assign(period, { type: 'custom', from: todayISO_, to: todayISO_, shortcut: 'today' });
-  } else if (key === 'week') {
-    const start = new Date(today); start.setDate(today.getDate() - 6);
-    Object.assign(period, { type: 'custom', from: yyyyMmDdFromDate(start), to: todayISO_, shortcut: 'week' });
-  } else if (key === 'month30') {
-    const start = new Date(today); start.setDate(today.getDate() - 29);
-    Object.assign(period, { type: 'custom', from: yyyyMmDdFromDate(start), to: todayISO_, shortcut: 'month30' });
-  } else if (key === 'mtd') {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    Object.assign(period, { type: 'custom', from: yyyyMmDdFromDate(start), to: todayISO_, shortcut: 'mtd' });
-  }
-};
-
-const periodHeader = () => {
-  const isCustom = period.type === 'custom';
-  return `
-    <div class="period-head">
-      <div class="period-title">${periodLabel()}</div>
-      ${!isCustom ? `
-        <div class="period-year-stepper">
-          <button class="link" id="prev-year">‹ ${period.year - 1}</button>
-          <button class="link" id="next-year">${period.year + 1} ›</button>
-        </div>
-      ` : ''}
+const periodHeader = () => `
+  <div class="period-head">
+    <div class="period-title">${periodLabel()}</div>
+    <div class="period-year-stepper">
+      <button class="link" id="prev-year">‹ ${period.year - 1}</button>
+      <button class="link" id="next-year">${period.year + 1} ›</button>
     </div>
-    <div class="filter-bar period-shortcuts" id="period-shortcuts">
-      <button class="chip ${period.shortcut==='today' ?'active':''}" data-shortcut="today">Hoje</button>
-      <button class="chip ${period.shortcut==='week'  ?'active':''}" data-shortcut="week">7 dias</button>
-      <button class="chip ${period.shortcut==='month30'?'active':''}" data-shortcut="month30">30 dias</button>
-      <button class="chip ${period.shortcut==='mtd'   ?'active':''}" data-shortcut="mtd">Mês corrido</button>
-    </div>
-    <div class="segmented period-type" id="filter-type">
-      <button data-type="month"    class="${period.type==='month'?'active':''}">Mês</button>
-      <button data-type="quarter"  class="${period.type==='quarter'?'active':''}">Trimestre</button>
-      <button data-type="semester" class="${period.type==='semester'?'active':''}">Semestre</button>
-      <button data-type="year"     class="${period.type==='year'?'active':''}">Ano</button>
-    </div>
-    ${!isCustom ? `<div class="filter-bar" id="filter-value">${valueChips()}</div>` : ''}
-  `;
-};
+  </div>
+  <div class="segmented period-type" id="filter-type">
+    <button data-type="month"    class="${period.type==='month'?'active':''}">Mês</button>
+    <button data-type="quarter"  class="${period.type==='quarter'?'active':''}">Trimestre</button>
+    <button data-type="semester" class="${period.type==='semester'?'active':''}">Semestre</button>
+    <button data-type="year"     class="${period.type==='year'?'active':''}">Ano</button>
+  </div>
+  <div class="filter-bar" id="filter-value">${valueChips()}</div>
+`;
 const bindPeriodHeader = (root) => {
-  root.querySelectorAll('#period-shortcuts .chip').forEach(b => {
-    b.addEventListener('click', () => { applyPeriodShortcut(b.dataset.shortcut); render(); });
-  });
   root.querySelectorAll('#filter-type button').forEach(b => {
     b.addEventListener('click', () => {
-      // Sai de "custom" e volta pro modo escolhido com o valor do mês/tri/sem corrente.
       const today = new Date();
       period.type = b.dataset.type;
       period.year = today.getFullYear();
-      delete period.shortcut; delete period.from; delete period.to;
       if (period.type === 'month')    period.value = today.getMonth() + 1;
       if (period.type === 'quarter')  period.value = Math.floor(today.getMonth()/3) + 1;
       if (period.type === 'semester') period.value = today.getMonth() <= 5 ? 1 : 2;

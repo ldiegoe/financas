@@ -67,14 +67,6 @@ describe('periodMatches', () => {
     expect(periodMatches('2025-12-31', p)).toBe(true);
     expect(periodMatches('2026-01-01', p)).toBe(false);
   });
-  it('custom: dia-a-dia inclusivo', () => {
-    const p = { type: 'custom', from: '2025-05-10', to: '2025-05-20' };
-    expect(periodMatches('2025-05-10', p)).toBe(true);
-    expect(periodMatches('2025-05-15', p)).toBe(true);
-    expect(periodMatches('2025-05-20', p)).toBe(true);
-    expect(periodMatches('2025-05-09', p)).toBe(false);
-    expect(periodMatches('2025-05-21', p)).toBe(false);
-  });
 });
 
 describe('monthsInPeriod', () => {
@@ -95,14 +87,6 @@ describe('monthsInPeriod', () => {
   it('year: 12 meses', () => {
     expect(monthsInPeriod({ type: 'year', year: 2025 })).toHaveLength(12);
   });
-  it('custom: meses cobertos pelo range', () => {
-    const months = monthsInPeriod({ type: 'custom', from: '2025-11-15', to: '2026-01-10' });
-    expect(months).toEqual([
-      { y: 2025, m: 11 },
-      { y: 2025, m: 12 },
-      { y: 2026, m: 1 },
-    ]);
-  });
 });
 
 describe('previousPeriod', () => {
@@ -122,14 +106,6 @@ describe('previousPeriod', () => {
     expect(previousPeriod({ type: 'year', year: 2025 }))
       .toEqual({ type: 'year', year: 2024 });
   });
-  it('custom → range de mesma duração imediatamente antes', () => {
-    const prev = previousPeriod({ type: 'custom', from: '2025-05-10', to: '2025-05-20' });
-    expect(prev).toMatchObject({
-      type: 'custom',
-      from: '2025-04-29',
-      to: '2025-05-09',
-    });
-  });
 });
 
 describe('labelOfPeriod', () => {
@@ -144,15 +120,5 @@ describe('labelOfPeriod', () => {
   });
   it('year', () => {
     expect(labelOfPeriod({ type: 'year', year: 2025 })).toBe('2025');
-  });
-  it('custom com atalho', () => {
-    expect(labelOfPeriod({ type: 'custom', shortcut: 'today', from: '2025-05-15', to: '2025-05-15' })).toBe('Hoje');
-    expect(labelOfPeriod({ type: 'custom', shortcut: 'week', from: '2025-05-09', to: '2025-05-15' })).toBe('Últimos 7 dias');
-    expect(labelOfPeriod({ type: 'custom', shortcut: 'month30', from: '2025-04-16', to: '2025-05-15' })).toBe('Últimos 30 dias');
-    expect(labelOfPeriod({ type: 'custom', shortcut: 'mtd', from: '2025-05-01', to: '2025-05-15' })).toBe('Mês corrido');
-  });
-  it('custom sem atalho mostra range', () => {
-    expect(labelOfPeriod({ type: 'custom', from: '2025-05-10', to: '2025-05-20' }))
-      .toBe('10/05/2025 — 20/05/2025');
   });
 });
