@@ -3,6 +3,59 @@
 // Stack: vanilla JS + localStorage + Chart.js (CDN)
 // ===========================================================================
 
+// Módulos extraídos pra organização e testes (Vitest sob `npm test`).
+import {
+  fmtBRL as fmtBRLPure, formatCentsDisplay, fmtDate, monthName,
+  yyyyMmFromDate, yyyyMmDdFromDate,
+} from './src/helpers/format.js';
+import {
+  looksLikeExpression, evaluateExpression, parseAmount, parseTags,
+  isoToDate, todayISO,
+} from './src/helpers/parse.js';
+import {
+  partsOf, clampDay, periodMatches, monthsInPeriod,
+  previousPeriod, labelOfPeriod,
+} from './src/domain/period.js';
+import {
+  sumAmount, hasOccurrences, expandWithRecurring,
+  computeTogglePagoPatch, setOcorrenciaPagaPatch,
+} from './src/domain/despesa.js';
+import {
+  sumCategoriasAteHoje as sumCategoriasAteHojePure,
+  objetivoAtual as objetivoAtualPure,
+} from './src/domain/objetivo.js';
+import {
+  HEALTH_META_DEFAULTS,
+  healthMetas as healthMetasPure,
+  scoreOf,
+  colorClass,
+} from './src/domain/health.js';
+import {
+  computeInsights as computeInsightsPure,
+} from './src/domain/insights.js';
+import {
+  upcomingItems as upcomingItemsPure,
+} from './src/domain/upcoming.js';
+import {
+  computeAlerts as computeAlertsPure,
+} from './src/domain/alerts.js';
+import { createProfileStore, initialMeta } from './src/storage/profile-store.js';
+import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
+import { createSyncStateStore } from './src/storage/sync-state.js';
+import {
+  randomVerifier as randomVerifierPure,
+  createDropboxClient,
+} from './src/sync/dropbox-client.js';
+import {
+  META_FILE_PATH,
+  profileFilePath,
+  createSyncEngine,
+  syncRelativeTime as syncRelativeTimePure,
+} from './src/sync/engine.js';
+import { escapeHTML, escapeAttr } from './src/ui/escape.js';
+import { ICONS, icon } from './src/ui/icons.js';
+import { createToast, createSheet } from './src/ui/dom.js';
+
 // --------------------------- DB --------------------------------------------
 const PROFILES_KEY     = 'financas:profiles';
 const PROFILE_PREFIX   = 'financas:profile:';
@@ -32,26 +85,16 @@ const defaultState = () => ({
   config: { moeda: 'BRL' },
 });
 
-// Cada perfil tem dados/categorias proprios em storage separado. O bloqueio
+// Cada perfil tem dados/categorias próprios em storage separado. O bloqueio
 // continua device-wide (em lockStore). Configs visuais (tema, textSize,
-// dashboard prefs) tambem ficam device-wide via DEVICE_CONFIG_KEY pra
-// trocar de perfil nao bagunçar a aparencia.
-const profileStore = {
-  meta() {
-    try { return JSON.parse(localStorage.getItem(PROFILES_KEY)) || null; }
-    catch { return null; }
-  },
-  setMeta(m) { localStorage.setItem(PROFILES_KEY, JSON.stringify(m)); },
-  loadState(id) {
-    try {
-      const raw = localStorage.getItem(`${PROFILE_PREFIX}${id}`);
-      if (!raw) return defaultState();
-      return { ...defaultState(), ...JSON.parse(raw) };
-    } catch { return defaultState(); }
-  },
-  saveState(id, s) { localStorage.setItem(`${PROFILE_PREFIX}${id}`, JSON.stringify(s)); },
-  removeState(id) { localStorage.removeItem(`${PROFILE_PREFIX}${id}`); },
-};
+// dashboard prefs) também ficam device-wide via DEVICE_CONFIG_KEY pra
+// trocar de perfil não bagunçar a aparência.
+const profileStore = createProfileStore({
+  storage: localStorage,
+  profilesKey: PROFILES_KEY,
+  profilePrefix: PROFILE_PREFIX,
+  defaultState,
+});
 
 // Migracao: usuarios antigos tem state em LEGACY_KEY. Vira o perfil "Pessoal"
 // automaticamente sem perder nada. LEGACY_KEY fica como salvaguarda (pode ser
@@ -75,24 +118,8 @@ const initProfiles = () => {
 const _profilesMeta = initProfiles();
 let activeProfileId = _profilesMeta.current;
 
-// Chaves de config que valem pro dispositivo todo (compartilhadas entre
-// perfis). Demais chaves de config (ex.: lastBackupAt) ficam por perfil.
-const DEVICE_CONFIG_KEYS = [
-  'tema','textSize','valuesHidden','backupReminderDays',
-  // Notificacoes de vencimento (ligar/desligar e quantos dias antes avisar)
-  'notifEnabled','notifDaysAhead',
-  'dashCompareShow','dashBarsShow','dashTagShow','dashUpcomingShow','dashGoalsShow','dashHealthShow','dashCollapsed','dashOrder',
-  // Por grafico (investimentos) — card proprio no dashboard
-  'dashInvestShow','dashInvestDonutShow','dashInvestDonutType','dashInvestDonutInnerPct','dashInvestListShow','dashInvestListPct',
-  'onboardingDone','showCategoryIcons',
-  // Legacy (fallback): aplicado quando ainda nao existem as chaves namespaced
-  'dashDonutShow','dashDonutType','dashDonutInnerPct','dashListShow','dashListPct',
-  // Por grafico (categoria)
-  'dashCatDonutShow','dashCatDonutType','dashCatDonutInnerPct','dashCatListShow','dashCatListPct',
-  // Por grafico (tag) — inclui o modo de contagem multi-tag
-  'dashTagDonutShow','dashTagDonutType','dashTagDonutInnerPct','dashTagListShow','dashTagListPct',
-  'dashTagSplit',
-];
+// DEVICE_CONFIG_KEYS é importado de ./src/storage/device-config.js — a lista
+// de chaves "device-wide" (espelhadas em todos os perfis) fica naquele módulo.
 
 // Cards reordenáveis do dashboard (o card de saldo fica fixo no topo, fora
 // desta lista). DASH_CARD_KEYS é a ordem padrão; o usuário reordena em Ajustes
@@ -124,30 +151,13 @@ const cfg = (suffix, prefix) => {
   if (ns !== undefined) return ns;
   return state.config[`dash${suffix}`];
 };
-const deviceConfigGet = () => {
-  try { return JSON.parse(localStorage.getItem(DEVICE_CONFIG_KEY)) || {}; }
-  catch { return {}; }
-};
-const deviceConfigUpdate = (patch) => {
-  localStorage.setItem(DEVICE_CONFIG_KEY, JSON.stringify({ ...deviceConfigGet(), ...patch }));
-};
+// Instância única do device-config. As funções abaixo continuam expostas
+// com os mesmos nomes pra não impactar o resto do app.
+const deviceConfig = createDeviceConfig({ storage: localStorage, key: DEVICE_CONFIG_KEY });
+const deviceConfigGet    = ()      => deviceConfig.get();
+const deviceConfigUpdate = (patch) => deviceConfig.update(patch);
+const applyDeviceOverlay = (s)     => deviceConfig.applyOverlay(s);
 
-// Sobrepoe config device-wide sobre a config-do-perfil pra manter aparencia
-// consistente ao trocar de perfil/resetar/importar.
-const applyDeviceOverlay = (s) => {
-  const dev = deviceConfigGet();
-  for (const k of DEVICE_CONFIG_KEYS) {
-    if (dev[k] !== undefined) s.config[k] = dev[k];
-  }
-  return s;
-};
-
-const isoToDate = (iso) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
-const yyyyMmFromDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-const yyyyMmDdFromDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 // Migracao do pago/pendente: rodada na carga do state. Despesas existentes
 // nao tem o campo `pago` (nao-recorrentes) nem `pagasEm` (recorrentes/parc).
@@ -321,43 +331,14 @@ const db = {
 // --------------------------- Utils -----------------------------------------
 const APP_VERSION = '1.5';
 
-// Quando o usuario ativa "Ocultar valores", todo R$ que aparece via fmtBRL
-// vira mascara — facilita compartilhar a tela sem revelar saldo.
+// Wrapper de fmtBRL: respeita "Ocultar valores" antes de delegar ao helper puro.
+// Mantém o helper testável (sem dep de state) e centraliza a regra de mascarar.
 const fmtBRL = (cents) => {
   if (state && state.config && state.config.valuesHidden) return 'R$ ••••';
-  return ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
-
-// "12345" centavos -> "123,45"  |  "1234567" -> "12.345,67"
-const formatCentsDisplay = (cents) => {
-  if (!cents) return '';
-  const reais = Math.floor(cents / 100);
-  const c2    = String(cents % 100).padStart(2, '0');
-  return `${reais.toLocaleString('pt-BR')},${c2}`;
+  return fmtBRLPure(cents);
 };
 
 // Detecta se a string parece uma expressão matemática (tem operador entre
-// operandos). "-5" sozinho NÃO é expressão; "10 - 5" sim. Permite +, *, /,
-// parênteses e o sinal de menos só depois de um dígito ou fecha-parêntese.
-const looksLikeExpression = (s) => /[+*/()]/.test(s) || /[\d)]\s*-/.test(s);
-
-// Avalia expressão tipo "48,90 + 12 + 7,50" → 6840 centavos.
-// Normaliza ponto/vírgula (BR), valida com whitelist e usa Function (sem eval)
-// na string já segura — só dígitos, operadores, ponto, parênteses e espaços.
-const evaluateExpression = (raw) => {
-  // Remove espaços, troca vírgula por ponto. Ponto como milhar é raro em
-  // expressões digitadas; se aparecer ambíguo (e.g. "1.234,56"), priorizamos
-  // remover ponto antes da vírgula → "1234.56". Sem vírgula, ponto é decimal.
-  let s = String(raw).replace(/\s+/g, '');
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(/,/g, '.');
-  if (!/^[\d+\-*/().]+$/.test(s)) return 0;
-  try {
-    const result = Function(`"use strict"; return (${s})`)();
-    if (typeof result !== 'number' || !Number.isFinite(result)) return 0;
-    return Math.max(0, Math.round(result * 100));
-  } catch { return 0; }
-};
-
 // Faz o input se comportar como campo de moeda (estilo Nubank): cada dígito
 // digitado entra pela direita como centavo, separadores são re-aplicados.
 // Suporta também expressões: ao digitar +, -, *, / ou ( ele entra em "modo
@@ -396,232 +377,23 @@ const bindCurrencyInput = (input) => {
   });
 };
 
-// "1.234,56" / "1234,56" / "1234.56" / "1234" -> integer cents.
-// Também aceita expressões com +, -, *, / e parênteses: "48,90+12+7,50" → 6840.
-const parseAmount = (s) => {
-  if (s == null || s === '') return 0;
-  let str = String(s).trim().replace(/\s/g, '');
-  if (looksLikeExpression(str)) return evaluateExpression(str);
-  if (str.includes(',')) {
-    // Convenção pt-BR: vírgula é decimal, ponto é separador de milhar
-    str = str.replace(/\./g, '').replace(',', '.');
-  }
-  // Sem vírgula: ponto vira decimal natural ("123.45")
-  const n = parseFloat(str);
-  if (Number.isNaN(n)) return 0;
-  return Math.round(n * 100);
-};
 
-const todayISO = () => {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+// Wrappers que injetam state nos cálculos puros do domínio.
+const healthMetas = () => healthMetasPure(state.config);
+const sumCategoriasAteHoje = (idSet, desde) =>
+  sumCategoriasAteHojePure(state.despesas, idSet, desde, todayISO());
+const objetivoAtual = (o) => objetivoAtualPure(o, state.despesas, todayISO());
 
-const fmtDate = (iso) => {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
-};
-
-const monthName = (m, short = false) => {
-  const names = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const sht   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  return (short ? sht : names)[m - 1];
-};
-
-// Period filter helpers
-const partsOf = (iso) => {
-  const [y, m] = iso.split('-').map(Number);
-  return { y, m, q: Math.floor((m - 1) / 3) + 1, s: m <= 6 ? 1 : 2 };
-};
-
-const periodMatches = (iso, period) => {
-  if (period.type === 'custom') {
-    return iso >= period.from && iso <= period.to;
-  }
-  const { y, m, q, s } = partsOf(iso);
-  if (period.year !== y) return false;
-  if (period.type === 'year') return true;
-  if (period.type === 'month') return m === period.value;
-  if (period.type === 'quarter') return q === period.value;
-  if (period.type === 'semester') return s === period.value;
-  return true;
-};
-
-// Expande lançamentos para o período pedido considerando:
-//  - recorrentes (recorrente=true): repete todo mês indefinidamente a partir da data
-//  - parcelados (parcelas>1): repete por N meses consecutivos e encerra
-//  - únicos: aparecem só na data exata
-// Ocorrências projetadas (não a original) ganham _virtual=true para a UI.
-const expandWithRecurring = (items, period) => {
-  const out = [];
-  for (const it of items) {
-    const parcelas = it.parcelas && it.parcelas > 1 ? it.parcelas : 0;
-    const isRecurring = !!it.recorrente;
-    const isInstallment = parcelas > 1;
-    // Rendas temporárias: recorrente com duração definida (ex.: seguro-desemprego
-    // por 4 meses). Encerra após `duracaoMeses` ocorrências a partir da data.
-    const recDur = (isRecurring && it.duracaoMeses && it.duracaoMeses > 0) ? it.duracaoMeses : 0;
-
-    if (!isRecurring && !isInstallment) {
-      if (periodMatches(it.data, period)) out.push({ ...it, _virtual: false, _pago: it.pago === true });
-      continue;
-    }
-
-    const start = partsOf(it.data);
-    const day = parseInt(it.data.split('-')[2], 10);
-    const months = monthsInPeriod(period);
-    const pagasEm = it.pagasEm || [];
-
-    for (const { y, m } of months) {
-      const monthsFromStart = (y - start.y) * 12 + (m - start.m);
-      if (monthsFromStart < 0) continue;
-      if (isInstallment && monthsFromStart >= parcelas) continue;
-      if (recDur && monthsFromStart >= recDur) continue;
-
-      const projectedDay = clampDay(y, m, day);
-      const yyyyMm = `${y}-${String(m).padStart(2,'0')}`;
-      const iso = `${yyyyMm}-${String(projectedDay).padStart(2,'0')}`;
-      // Em períodos custom (intervalo livre), checa dia-a-dia.
-      if (period.type === 'custom' && (iso < period.from || iso > period.to)) continue;
-      const isOriginal = (y === start.y && m === start.m);
-      const occ = { ...it, data: iso, _virtual: !isOriginal, _pago: pagasEm.includes(yyyyMm) };
-      if (isInstallment) {
-        occ._parcelaNum = monthsFromStart + 1;
-        occ._parcelaTotal = parcelas;
-      }
-      out.push(occ);
-    }
-  }
-  return out;
-};
-
-const monthsInPeriod = (period) => {
-  if (period.type === 'custom') {
-    const months = [];
-    const start = isoToDate(period.from);
-    const end = isoToDate(period.to);
-    let cur = new Date(start.getFullYear(), start.getMonth(), 1);
-    const limit = new Date(end.getFullYear(), end.getMonth(), 1);
-    while (cur <= limit) {
-      months.push({ y: cur.getFullYear(), m: cur.getMonth() + 1 });
-      cur.setMonth(cur.getMonth() + 1);
-    }
-    return months;
-  }
-  const y = period.year;
-  if (period.type === 'year') return Array.from({length:12}, (_,i)=>({y, m:i+1}));
-  if (period.type === 'month') return [{ y, m: period.value }];
-  if (period.type === 'quarter') {
-    const start = (period.value - 1) * 3 + 1;
-    return [start, start+1, start+2].map(m => ({ y, m }));
-  }
-  if (period.type === 'semester') {
-    const start = period.value === 1 ? 1 : 7;
-    return Array.from({length: 6}, (_,i) => ({ y, m: start + i }));
-  }
-  return [];
-};
-
-const clampDay = (y, m, d) => {
-  const last = new Date(y, m, 0).getDate();
-  return Math.min(d, last);
-};
-
-const sumAmount = (arr) => arr.reduce((acc, x) => acc + (x.valor || 0), 0);
-
-// Metas configuráveis do painel de saúde financeira (Ajustes). Os defaults
-// reproduzem os valores fixos originais. Clamp evita limiares quebrados.
-const HEALTH_META_DEFAULTS = { invest: 20, gastos: 70, fixo: 50, reserva: 6 };
-const healthMetas = () => {
-  const cfg = state.config || {};
-  const pick = (v, d, max) => {
-    const n = Number(v);
-    return (Number.isFinite(n) && n > 0) ? Math.min(n, max) : d;
-  };
-  return {
-    invest:  pick(cfg.healthMetaInvest,  HEALTH_META_DEFAULTS.invest,  100),
-    gastos:  pick(cfg.healthMetaGastos,  HEALTH_META_DEFAULTS.gastos,  100),
-    fixo:    pick(cfg.healthMetaFixo,    HEALTH_META_DEFAULTS.fixo,    100),
-    reserva: pick(cfg.healthMetaReserva, HEALTH_META_DEFAULTS.reserva, 60),
-  };
-};
-
-// --------------------------- Objetivos (calculos) --------------------------
-// Soma de despesas (expandindo recorrentes/parceladas) nas categorias do
-// idSet, com data <= hoje e >= `desde` se definido. Itera ano a ano da
-// despesa mais antiga relevante ate o ano corrente. Base do progresso de
-// objetivos e do "reserva acumulada" no painel de saude.
-const sumCategoriasAteHoje = (idSet, desde) => {
-  if (idSet.size === 0) return 0;
-  const relevantes = state.despesas.filter(d => idSet.has(d.categoriaId));
-  if (relevantes.length === 0) return 0;
-  const today = todayISO();
-  const startYear = Math.min(...relevantes.map(d => parseInt(d.data.slice(0, 4), 10)));
-  const endYear = new Date().getFullYear();
-  let total = 0;
-  for (let y = startYear; y <= endYear; y++) {
-    for (const d of expandWithRecurring(state.despesas, { type: 'year', year: y })) {
-      if (!idSet.has(d.categoriaId)) continue;
-      if (d.data > today) continue;
-      if (desde && d.data < desde) continue;
-      total += d.valor || 0;
-    }
-  }
-  return total;
-};
-
-// Quanto ja foi acumulado nas categorias linkadas a um objetivo.
-const objetivoAtual = (o) => sumCategoriasAteHoje(new Set(o.categoriaIds || []), o.desde);
-
-// Ocorrencias pendentes pro card Vencimentos: proximos 14 dias + atrasadas ate
-// 30 dias. Atrasadas primeiro (recente->antiga), depois proximas (cedo->tarde).
-// Cada item ganha _overdue. Compartilhado entre render e handlers de selecao.
-const upcomingItems = () => {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const horizon = new Date(today); horizon.setDate(today.getDate() + 14);
-  const overdueLimit = new Date(today); overdueLimit.setDate(today.getDate() - 30);
-  const pv = new Date(today); pv.setMonth(pv.getMonth() - 1);
-  const nx = new Date(today); nx.setMonth(nx.getMonth() + 1);
-  const periods = [
-    { type: 'month', year: pv.getFullYear(),    value: pv.getMonth() + 1 },
-    { type: 'month', year: today.getFullYear(), value: today.getMonth() + 1 },
-    { type: 'month', year: nx.getFullYear(),    value: nx.getMonth() + 1 },
-  ];
-  return periods.flatMap(p => expandWithRecurring(state.despesas, p))
-    .filter(d => !d._pago)
-    .filter(d => {
-      const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
-      return dt >= overdueLimit && dt <= horizon;
-    })
-    .map(d => {
-      const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
-      return { ...d, _overdue: dt < today };
-    })
-    .sort((a, b) => {
-      if (a._overdue !== b._overdue) return a._overdue ? -1 : 1;
-      return a._overdue ? b.data.localeCompare(a.data) : a.data.localeCompare(b.data);
-    })
-    .slice(0, 12);
-};
+const upcomingItems = () => upcomingItemsPure(state.despesas, new Date());
 
 // Marca uma lista de ocorrencias como pagas (recorrente/parcelada: adiciona o
 // YYYY-MM em pagasEm; unica: pago=true). Usado pela selecao em lote do card.
 const marcarOcorrenciasPagas = (occs) => {
   for (const occ of occs) {
     const base = state.despesas.find(x => x.id === occ.id);
-    if (!base) continue;
-    const isRecurring = !!base.recorrente;
-    const isInstallment = (base.parcelas || 0) > 1;
-    if (!isRecurring && !isInstallment) {
-      db.updateDespesa(occ.id, { pago: true });
-    } else {
-      const yyyyMm = occ.data.slice(0, 7);
-      const pagasEm = [...(base.pagasEm || [])];
-      if (!pagasEm.includes(yyyyMm)) pagasEm.push(yyyyMm);
-      db.updateDespesa(occ.id, { pagasEm });
-    }
+    const yyyyMm = occ.data.slice(0, 7);
+    const patch = setOcorrenciaPagaPatch(base, yyyyMm, true);
+    if (patch) db.updateDespesa(occ.id, patch);
   }
 };
 
@@ -657,20 +429,6 @@ const monthsUntil = (iso) => {
   return Math.max(0, (t.getFullYear() - now.getFullYear()) * 12 + (t.getMonth() - now.getMonth()));
 };
 
-// Normaliza string de tags vinda do form: "Mercado, viagem, viagem" -> ["Mercado","viagem"]
-const parseTags = (str) => {
-  if (!str) return [];
-  const seen = new Set();
-  return String(str)
-    .split(',')
-    .map(t => t.trim())
-    .filter(t => t.length > 0)
-    .filter(t => {
-      const k = t.toLowerCase();
-      if (seen.has(k)) return false;
-      seen.add(k); return true;
-    });
-};
 
 // Lista única de tags já usadas no banco (para datalist + filtro)
 const allTags = () => {
@@ -731,29 +489,7 @@ const assignTagColors = (sortedTags) => {
   });
 };
 
-// Biblioteca de icones SVG estilo Lucide (linha fina, currentColor). Centraliza
-// pra manter consistencia visual em vez de mistura de emojis com SVG inline.
-const ICONS = {
-  // Tabbar
-  dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
-  wallet:    '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
-  card:      '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
-  tag:       '<path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
-  settings:  '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
-  // Empty states e diversos
-  inbox:     '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
-  sparkles:  '<path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/>',
-  lock:      '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-  shield:    '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
-  download:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
-  target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-  clock:     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-  trending:  '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
-  filter:    '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
-};
-
-const icon = (name, size = 22) =>
-  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+// ICONS e icon() vêm de ./src/ui/icons.js (importados acima).
 
 // Se os emojis das categorias devem ser exibidos (toggle em Ajustes > Aparencia).
 // Default true. Quando false, mostra so a cor (swatch) em todo lugar.
@@ -774,98 +510,14 @@ const applyTheme = (tema) => {
 };
 
 // --------------------------- Alertas / Notificacoes ------------------------
-// Computa alertas ativos sobre o estado atual:
-//   - Meta de categoria perto (>=80%) ou estourada (>=100%)
-//   - Saldo do mes baixo (<10% da renda) ou negativo
-//   - Lancamentos previstos pros proximos 7 dias
-// Cada alerta tem um id estavel — quando o usuario dispensa, o id vai pro
-// state.dismissedAlerts e nao reaparece. Se a condicao mudar de severidade
-// (ex: warn → over), o id muda e um novo alerta surge.
-const computeAlerts = () => {
-  const alerts = [];
-  const now = new Date();
-  const cur = { type: 'month', year: now.getFullYear(), value: now.getMonth() + 1 };
-  const periodKey = `${cur.year}-${String(cur.value).padStart(2,'0')}`;
-
-  const monthDespesas = expandWithRecurring(state.despesas, cur);
-  const monthRendas   = expandWithRecurring(state.rendas, cur);
-  const totalDesp  = sumAmount(monthDespesas);
-  const totalRenda = sumAmount(monthRendas);
-
-  // Meta de categoria
-  const gastoPorCat = new Map();
-  for (const d of monthDespesas) {
-    if (!d.categoriaId) continue;
-    gastoPorCat.set(d.categoriaId, (gastoPorCat.get(d.categoriaId) || 0) + (d.valor || 0));
-  }
-  for (const c of state.categorias) {
-    if (!c.meta || c.poupanca) continue; // poupanca: estourar a meta de guardar eh bom, nao alerta
-    const gasto = gastoPorCat.get(c.id) || 0;
-    const pct = (gasto / c.meta) * 100;
-    if (pct >= 100) {
-      alerts.push({
-        id: `meta:${c.id}:${periodKey}:over`, severity: 'red',
-        title: `${c.nome} estourou a meta`,
-        message: `${fmtBRL(gasto)} de ${fmtBRL(c.meta)} (${Math.round(pct)}%)`,
-        tab: 'despesas',
-      });
-    } else if (pct >= 80) {
-      alerts.push({
-        id: `meta:${c.id}:${periodKey}:warn`, severity: 'orange',
-        title: `${c.nome} perto da meta`,
-        message: `${fmtBRL(gasto)} de ${fmtBRL(c.meta)} (${Math.round(pct)}%)`,
-        tab: 'despesas',
-      });
-    }
-  }
-
-  // Saldo do mes
-  const saldo = totalRenda - totalDesp;
-  if (saldo < 0) {
-    alerts.push({
-      id: `saldo:${periodKey}:negative`, severity: 'red',
-      title: 'Saldo do mês ficou negativo',
-      message: `Saldo atual: ${fmtBRL(saldo)}`,
-      tab: 'dashboard',
-    });
-  } else if (totalRenda > 0 && saldo < totalRenda * 0.1) {
-    alerts.push({
-      id: `saldo:${periodKey}:low`, severity: 'orange',
-      title: 'Saldo do mês está baixo',
-      message: `Saldo atual: ${fmtBRL(saldo)}`,
-      tab: 'dashboard',
-    });
-  }
-
-  // Lancamentos pendentes vencendo nos proximos 7 dias — escaneia mes corrente
-  // + proximo (cobre virada), filtra na janela e considera so pendentes.
-  const today = new Date(now); today.setHours(0,0,0,0);
-  const limit = new Date(today); limit.setDate(today.getDate() + 7);
-  const nextMonthDate = new Date(today); nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
-  const nextPeriod = { type: 'month', year: nextMonthDate.getFullYear(), value: nextMonthDate.getMonth() + 1 };
-  const allUpcoming = [...monthDespesas, ...expandWithRecurring(state.despesas, nextPeriod)];
-  let upcomingCount = 0, upcomingTotal = 0;
-  for (const d of allUpcoming) {
-    if (d._pago) continue;
-    const dt = isoToDate(d.data); dt.setHours(0,0,0,0);
-    if (dt >= today && dt <= limit) {
-      upcomingCount++;
-      upcomingTotal += d.valor || 0;
-    }
-  }
-  if (upcomingCount > 0) {
-    alerts.push({
-      id: `upcoming:${todayISO()}`, severity: 'blue',
-      title: `${upcomingCount} pendente${upcomingCount > 1 ? 's' : ''} nos próximos 7 dias`,
-      message: `Total a pagar: ${fmtBRL(upcomingTotal)}`,
-      tab: 'despesas',
-    });
-  }
-
-  const order = { red: 0, orange: 1, blue: 2 };
-  alerts.sort((a, b) => order[a.severity] - order[b.severity]);
-  return alerts;
-};
+const computeAlerts = () => computeAlertsPure({
+  despesas:   state.despesas,
+  rendas:     state.rendas,
+  categorias: state.categorias,
+  now:        new Date(),
+  today:      todayISO(),
+  fmtMoney:   fmtBRL,
+});
 
 const activeAlerts = () => {
   const dismissed = state.dismissedAlerts || {};
@@ -890,90 +542,14 @@ const applyAlertBadge = () => {
 // Sheet que aparece no abrir do app (no maximo 1x/dia) com mudancas que
 // merecem atencao: categoria com gasto/economia atipica, objetivo concluido
 // ou perto de bater. Comparacao: mes corrente vs media de 3 meses anteriores.
-const computeInsights = () => {
-  const insights = [];
-  const now = new Date();
-  const curMonthPeriod = { type: 'month', year: now.getFullYear(), value: now.getMonth() + 1 };
-  const poupancaIds = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
-
-  // Gasto deste mes por categoria (despesas; exclui investimento).
-  const curByCat = new Map();
-  for (const d of expandWithRecurring(state.despesas, curMonthPeriod)) {
-    if (poupancaIds.has(d.categoriaId)) continue;
-    const id = d.categoriaId || '_sem';
-    curByCat.set(id, (curByCat.get(id) || 0) + (d.valor || 0));
-  }
-  // Media dos 3 meses anteriores por categoria.
-  const prevByCat = new Map();
-  for (let i = 1; i <= 3; i++) {
-    const dm = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    for (const d of expandWithRecurring(state.despesas, { type: 'month', year: dm.getFullYear(), value: dm.getMonth() + 1 })) {
-      if (poupancaIds.has(d.categoriaId)) continue;
-      const id = d.categoriaId || '_sem';
-      prevByCat.set(id, (prevByCat.get(id) || 0) + (d.valor || 0));
-    }
-  }
-  for (const [k, v] of prevByCat) prevByCat.set(k, Math.round(v / 3));
-
-  // Lista de variacoes; filtra ruido (diferenca absoluta minima R$50).
-  const changes = [];
-  for (const id of new Set([...curByCat.keys(), ...prevByCat.keys()])) {
-    const cur = curByCat.get(id) || 0;
-    const prev = prevByCat.get(id) || 0;
-    const diff = cur - prev;
-    const pct = prev > 0 ? (diff / prev) * 100 : null;
-    if (Math.abs(diff) < 5000) continue;
-    changes.push({ id, cur, prev, diff, pct });
-  }
-  changes.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-
-  // Top categoria com aumento >= 30% (ou nova categoria com gasto > R$50).
-  const up = changes.find(c => c.diff > 0 && (c.pct === null || c.pct >= 30));
-  if (up) {
-    const cat = state.categorias.find(x => x.id === up.id);
-    const nome = cat ? cat.nome : 'Sem categoria';
-    insights.push({
-      icon: 'trending', severity: 'warn',
-      title: `Gasto maior em ${nome}`,
-      body: up.prev > 0
-        ? `${fmtBRL(up.cur)} este mês — ${Math.round(up.pct)}% acima da média de 3 meses (${fmtBRL(up.prev)}).`
-        : `${fmtBRL(up.cur)} este mês — categoria que normalmente não aparece nos seus gastos.`,
-    });
-  }
-  // Top categoria com queda >= 30%.
-  const down = changes.find(c => c.diff < 0 && c.pct !== null && c.pct <= -30 && c.prev > 0);
-  if (down) {
-    const cat = state.categorias.find(x => x.id === down.id);
-    const nome = cat ? cat.nome : 'Sem categoria';
-    insights.push({
-      icon: 'sparkles', severity: 'good',
-      title: `Economia em ${nome}`,
-      body: `${fmtBRL(down.cur)} este mês — ${Math.round(Math.abs(down.pct))}% abaixo da média de 3 meses (${fmtBRL(down.prev)}).`,
-    });
-  }
-
-  // Objetivos concluidos ou perto de bater.
-  for (const obj of state.objetivos || []) {
-    const atual = objetivoAtual(obj);
-    if (!obj.alvo || obj.alvo <= 0) continue;
-    const ratio = atual / obj.alvo;
-    if (ratio >= 1) {
-      insights.push({
-        icon: 'target', severity: 'good',
-        title: `Objetivo concluído: ${obj.nome}`,
-        body: `Você acumulou ${fmtBRL(atual)} de ${fmtBRL(obj.alvo)}. Parabéns!`,
-      });
-    } else if (ratio >= 0.9) {
-      insights.push({
-        icon: 'target', severity: 'good',
-        title: `Falta pouco: ${obj.nome}`,
-        body: `${Math.round(ratio * 100)}% concluído — faltam ${fmtBRL(obj.alvo - atual)} pra bater a meta.`,
-      });
-    }
-  }
-
-  return insights.slice(0, 4);
-};
+const computeInsights = () => computeInsightsPure({
+  despesas:   state.despesas,
+  categorias: state.categorias,
+  objetivos:  state.objetivos || [],
+  now:        new Date(),
+  today:      todayISO(),
+  fmtMoney:   fmtBRL,
+});
 
 const sheetInsights = () => {
   const insights = computeInsights();
@@ -1106,13 +682,8 @@ const forceRefresh = async () => {
   location.reload();
 };
 
-const toast = (msg) => {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove('show'), 2000);
-};
+// Toast: usa o factory de ./src/ui/dom.js sobre o #toast do DOM.
+const toast = createToast(document.getElementById('toast'));
 
 // Dias inteiros entre uma data ISO (yyyy-mm-dd) e hoje. null se iso for falsy.
 const daysSince = (iso) => {
@@ -1129,19 +700,8 @@ const daysSince = (iso) => {
 // permitindo status independente por mes.
 const toggleDespesaPago = (item) => {
   const base = state.despesas.find(x => x.id === item.id);
-  if (!base) return;
-  const isRecurring = !!base.recorrente;
-  const isInstallment = (base.parcelas || 0) > 1;
-  if (!isRecurring && !isInstallment) {
-    db.updateDespesa(item.id, { pago: !base.pago });
-  } else {
-    const yyyyMm = item.data.slice(0, 7);
-    const pagasEm = [...(base.pagasEm || [])];
-    const idx = pagasEm.indexOf(yyyyMm);
-    if (idx >= 0) pagasEm.splice(idx, 1);
-    else pagasEm.push(yyyyMm);
-    db.updateDespesa(item.id, { pagasEm });
-  }
+  const patch = computeTogglePagoPatch(base, item);
+  if (patch) db.updateDespesa(item.id, patch);
 };
 
 // Dispara o download do JSON e marca a data do ultimo backup. Compartilhado
@@ -1176,177 +736,44 @@ const DROPBOX_APP_KEY = '6qjr20ksp5d4n2p';
 const SYNC_STORAGE_KEY = 'financas:sync';
 const DBX_VERIFIER_KEY = 'financas:dbx-verifier';
 
-const loadSyncState = () => {
-  try { return JSON.parse(localStorage.getItem(SYNC_STORAGE_KEY)) || {}; }
-  catch { return {}; }
-};
+const syncStateStore = createSyncStateStore({ storage: localStorage, key: SYNC_STORAGE_KEY });
+const loadSyncState = () => syncStateStore.load();
 let syncState = loadSyncState();
-const persistSyncState = () => {
-  try { localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncState)); } catch {}
-};
+const persistSyncState = () => syncStateStore.save(syncState);
 const reloadSyncState = () => { syncState = loadSyncState(); };
 const syncDisconnect = () => {
-  for (const k of Object.keys(syncState)) delete syncState[k];
-  persistSyncState();
+  syncStateStore.clear(syncState);
   try { localStorage.removeItem(DBX_VERIFIER_KEY); } catch {}
 };
-const dbxRedirectURI = () => location.origin + location.pathname;
-
-// PKCE: gera verifier aleatorio + challenge SHA-256 pro fluxo OAuth sem secret.
-const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
-  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-const randomVerifier = () => {
-  const arr = new Uint8Array(32);
-  crypto.getRandomValues(arr);
-  return b64url(arr);
-};
-const sha256B64 = async (str) => {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return b64url(buf);
-};
-
-// Gera URL de autorizacao do Dropbox (PKCE + offline pra ter refresh token).
-const dbxAuthURL = async () => {
-  const verifier = randomVerifier();
-  try { localStorage.setItem(DBX_VERIFIER_KEY, verifier); } catch {}
-  const challenge = await sha256B64(verifier);
-  const params = new URLSearchParams({
-    client_id: DROPBOX_APP_KEY,
-    response_type: 'code',
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    token_access_type: 'offline',
-    redirect_uri: dbxRedirectURI(),
-  });
-  return `https://www.dropbox.com/oauth2/authorize?${params}`;
-};
-
-const dbxExchangeCode = async (code) => {
-  const verifier = localStorage.getItem(DBX_VERIFIER_KEY);
-  if (!verifier) throw new Error('verifier ausente');
-  const params = new URLSearchParams({
-    code, grant_type: 'authorization_code',
-    code_verifier: verifier, client_id: DROPBOX_APP_KEY,
-    redirect_uri: dbxRedirectURI(),
-  });
-  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (!res.ok) throw new Error(`OAuth ${res.status}`);
-  try { localStorage.removeItem(DBX_VERIFIER_KEY); } catch {}
-  return res.json();
-};
-
-const dbxRefreshAccessToken = async () => {
-  if (!syncState.refreshToken) throw new Error('sem refresh token');
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: syncState.refreshToken,
-    client_id: DROPBOX_APP_KEY,
-  });
-  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (res.status === 400 || res.status === 401) {
-    // Refresh token invalido — usuario precisa reconectar.
-    syncDisconnect();
-    throw new Error('reconecte');
-  }
-  if (!res.ok) throw new Error(`refresh ${res.status}`);
-  const data = await res.json();
-  syncState.accessToken = data.access_token;
-  syncState.accessTokenExpiresAt = Date.now() + ((data.expires_in || 14400) - 60) * 1000;
-  persistSyncState();
-};
-
-const dbxEnsureToken = async () => {
-  if (syncState.accessToken && Date.now() < (syncState.accessTokenExpiresAt || 0) - 30000) {
-    return syncState.accessToken;
-  }
-  await dbxRefreshAccessToken();
-  return syncState.accessToken;
-};
-
-const dbxUpload = async (path, contentStr) => {
-  const token = await dbxEnsureToken();
-  const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false, mute: true }),
-      'Content-Type': 'application/octet-stream',
-    },
-    body: contentStr,
-  });
-  if (!res.ok) throw new Error(`upload ${res.status}`);
-  return res.json();
-};
-
-const dbxDownload = async (path) => {
-  const token = await dbxEnsureToken();
-  const res = await fetch('https://content.dropboxapi.com/2/files/download', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Dropbox-API-Arg': JSON.stringify({ path }),
-    },
-  });
-  if (res.status === 409) return null; // arquivo nao existe
-  if (!res.ok) throw new Error(`download ${res.status}`);
-  const meta = JSON.parse(res.headers.get('Dropbox-API-Result'));
-  const text = await res.text();
-  return { meta, text };
-};
-
-const dbxList = async () => {
-  const token = await dbxEnsureToken();
-  const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: '', recursive: false }),
-  });
-  if (res.status === 409) return { entries: [] }; // pasta nao existe
-  if (!res.ok) throw new Error(`list ${res.status}`);
-  return res.json();
-};
-
-const dbxAccount = async () => {
-  const token = await dbxEnsureToken();
-  const res = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`account ${res.status}`);
-  return res.json();
-};
+// Instância do client Dropbox: encapsula PKCE + chamadas REST. Recebe
+// callbacks pra acessar/atualizar o syncState (mutável) e pra persistir.
+const dbxClient = createDropboxClient({
+  appKey: DROPBOX_APP_KEY,
+  getRedirectUri: () => location.origin + location.pathname,
+  getSyncState: () => syncState,
+  persistSyncState: () => persistSyncState(),
+  onRefreshFailed: () => syncDisconnect(),
+  getVerifier: () => { try { return localStorage.getItem(DBX_VERIFIER_KEY); } catch { return null; } },
+  setVerifier: (v) => {
+    try {
+      if (v == null || v === '') localStorage.removeItem(DBX_VERIFIER_KEY);
+      else localStorage.setItem(DBX_VERIFIER_KEY, v);
+    } catch {}
+  },
+});
+const dbxAuthURL      = ()         => dbxClient.authURL();
+const dbxExchangeCode = (code)     => dbxClient.exchangeCode(code);
+const dbxAccount      = ()         => dbxClient.account();
 
 // Engine de sync ------------------------------------------------------------
-const profileFilePath = (id) => `/profile-${id}.json`;
-const META_FILE_PATH = '/meta.json';
+// Gera/persiste um deviceId estável por dispositivo (vive no syncState).
 const deviceId = () => {
   if (!syncState.deviceId) {
-    syncState.deviceId = `dev-${randomVerifier().slice(0, 10)}`;
+    syncState.deviceId = `dev-${randomVerifierPure().slice(0, 10)}`;
     persistSyncState();
   }
   return syncState.deviceId;
 };
-
-const wrapPayload = (payload) => JSON.stringify({
-  v: 1, ts: Date.now(), device: deviceId(), payload,
-});
-
-const buildProfileContent = (profileId) => {
-  const profileState = profileStore.loadState(profileId);
-  return wrapPayload(profileState);
-};
-const buildMetaContent = () => wrapPayload({
-  meta: profileStore.meta(),
-  deviceConfig: deviceConfigGet(),
-});
 
 // Backup local antes de sobrescrever via pull — ajuda se algo der ruim.
 const backupBeforePull = (key, contentStr) => {
@@ -1356,101 +783,23 @@ const backupBeforePull = (key, contentStr) => {
   } catch {}
 };
 
-const applyPulledProfile = (profileId, payload) => {
-  const localRaw = localStorage.getItem(`financas:profile:${profileId}`);
-  if (localRaw) backupBeforePull(`profile-${profileId}`, localRaw);
-  profileStore.saveState(profileId, payload);
-};
-const applyPulledMeta = (payload) => {
-  if (payload?.meta) {
-    const localMeta = localStorage.getItem('financas:profiles');
-    if (localMeta) backupBeforePull('meta', localMeta);
-    profileStore.setMeta(payload.meta);
-  }
-  if (payload?.deviceConfig) {
-    try {
-      const localDC = localStorage.getItem(DEVICE_CONFIG_KEY);
-      if (localDC) backupBeforePull('device-config', localDC);
-      localStorage.setItem(DEVICE_CONFIG_KEY, JSON.stringify(payload.deviceConfig));
-    } catch {}
-  }
-};
+// Instância da engine: orquestra pull/push contra o client Dropbox.
+const syncEngine = createSyncEngine({
+  client: dbxClient,
+  profileStore,
+  deviceConfig,
+  getSyncState: () => syncState,
+  persistSyncState: () => persistSyncState(),
+  getActiveProfileId: () => activeProfileId,
+  getDeviceId: deviceId,
+  backupBeforePull,
+});
 
-// Baixa arquivos cuja versao remota é mais nova que a sincronizada por aqui.
-// Retorna { pulled: N, affectedActiveProfile: bool } pra a UI decidir re-render.
-const syncPull = async () => {
-  if (!syncState.provider) return { pulled: 0, affectedActiveProfile: false };
-  const list = await dbxList();
-  let pulled = 0;
-  let affectedActiveProfile = false;
-  let affectedMeta = false;
-  for (const entry of list.entries || []) {
-    if (entry['.tag'] !== 'file') continue;
-    const localTs = syncState.filesSyncedAt?.[entry.name] || 0;
-    const remoteTs = new Date(entry.server_modified).getTime();
-    if (remoteTs <= localTs) continue;
-    const downloaded = await dbxDownload(entry.path_lower);
-    if (!downloaded) continue;
-    let envelope;
-    try { envelope = JSON.parse(downloaded.text); } catch { continue; }
-    if (envelope.device === deviceId()) {
-      // Push proprio voltando — apenas atualiza o timestamp local.
-    } else if (entry.name === 'meta.json') {
-      applyPulledMeta(envelope.payload);
-      affectedMeta = true;
-    } else if (entry.name.startsWith('profile-') && entry.name.endsWith('.json')) {
-      const profileId = entry.name.replace(/^profile-/, '').replace(/\.json$/, '');
-      applyPulledProfile(profileId, envelope.payload);
-      if (profileId === activeProfileId) affectedActiveProfile = true;
-    }
-    syncState.filesSyncedAt = { ...(syncState.filesSyncedAt || {}), [entry.name]: remoteTs };
-    pulled++;
-  }
-  syncState.lastSyncAt = Date.now();
-  persistSyncState();
-  return { pulled, affectedActiveProfile, affectedMeta };
-};
-
-const syncPushProfile = async (profileId) => {
-  if (!syncState.provider) return;
-  const content = buildProfileContent(profileId);
-  const result = await dbxUpload(profileFilePath(profileId), content);
-  const remoteTs = new Date(result.server_modified).getTime();
-  syncState.filesSyncedAt = {
-    ...(syncState.filesSyncedAt || {}),
-    [`profile-${profileId}.json`]: remoteTs,
-  };
-  syncState.lastSyncAt = Date.now();
-  persistSyncState();
-};
-
-const syncPushMeta = async () => {
-  if (!syncState.provider) return;
-  const content = buildMetaContent();
-  const result = await dbxUpload(META_FILE_PATH, content);
-  const remoteTs = new Date(result.server_modified).getTime();
-  syncState.filesSyncedAt = {
-    ...(syncState.filesSyncedAt || {}),
-    ['meta.json']: remoteTs,
-  };
-  syncState.lastSyncAt = Date.now();
-  persistSyncState();
-};
-
-let _syncPushTimer = null;
-const schedulePushDebounced = () => {
-  if (!syncState.provider || syncState.autoSync === false) return;
-  if (_syncPushTimer) clearTimeout(_syncPushTimer);
-  _syncPushTimer = setTimeout(async () => {
-    _syncPushTimer = null;
-    try {
-      await syncPushProfile(activeProfileId);
-      await syncPushMeta();
-    } catch (err) {
-      console.warn('[sync] push falhou:', err.message || err);
-    }
-  }, 5000);
-};
+const syncPull          = ()           => syncEngine.pull();
+const syncPushProfile   = (profileId)  => syncEngine.pushProfile(profileId);
+const syncPushMeta      = ()           => syncEngine.pushMeta();
+const schedulePushDebounced = () =>
+  syncEngine.schedulePushDebounced((err) => console.warn('[sync] push falhou:', err.message || err));
 
 // Detecta `?code=` na URL (volta do Dropbox), troca por tokens e armazena.
 // Funciona tanto no fluxo normal quanto via "bridge" do iOS PWA — o usuario
@@ -1495,19 +844,8 @@ const reloadActiveProfileState = () => {
   document.dispatchEvent(new CustomEvent('db:changed'));
 };
 
-const syncRelativeTime = (ts) => {
-  if (!ts) return '—';
-  const diff = Date.now() - ts;
-  if (diff < 0) return 'agora';
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return 'agora há pouco';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `há ${min} min`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `há ${hr} h`;
-  const days = Math.floor(hr / 24);
-  return `há ${days} ${days === 1 ? 'dia' : 'dias'}`;
-};
+// Wrapper sobre o helper puro (injeta Date.now()).
+const syncRelativeTime = (ts) => syncRelativeTimePure(ts);
 
 // --------------------------- Lock (WebAuthn) -------------------------------
 // Bloqueio de tela usando o desbloqueio nativo do dispositivo (Face ID, Touch
@@ -1654,26 +992,10 @@ const periodLabel = () => {
 };
 
 // --------------------------- Sheet/Modal -----------------------------------
-const openSheet = (title, contentFn, onMount) => {
-  const root = document.getElementById('modal-root');
-  root.innerHTML = `
-    <div class="sheet-backdrop" data-close>
-      <div class="sheet" role="dialog" aria-modal="true">
-        <h3>${title}</h3>
-        <div class="sheet-body"></div>
-      </div>
-    </div>`;
-  const body = root.querySelector('.sheet-body');
-  body.innerHTML = contentFn();
-  root.querySelector('[data-close]').addEventListener('click', (e) => {
-    if (e.target.dataset.close !== undefined) closeSheet();
-  });
-  if (onMount) onMount(body);
-
-
-  
-};
-const closeSheet = () => { document.getElementById('modal-root').innerHTML = ''; };
+// Sheet/modal: usa o factory de ./src/ui/dom.js sobre o #modal-root.
+const _sheet = createSheet(document.getElementById('modal-root'), { escapeHTML });
+const openSheet  = (title, contentFn, onMount) => _sheet.open(title, contentFn, onMount);
+const closeSheet = () => _sheet.close();
 
 // --------------------------- Views -----------------------------------------
 const views = {};
@@ -2123,25 +1445,9 @@ views.dashboard = (root) => {
         .filter(d => d.recorrente && !poupancaIds.has(d.categoriaId))
         .reduce((s, d) => s + (d.valor || 0), 0);
       const mesesReserva = (reservaIds.size > 0 && custoFixoMensal > 0) ? reservaSaldo / custoFixoMensal : null;
-      // c: classe de cor (good/''/bad). higher=true → maior é melhor.
-      const c = (v, good, warn, higher) => higher
-        ? (v >= good ? 'good' : (v >= warn ? '' : 'bad'))
-        : (v <= good ? 'good' : (v <= warn ? '' : 'bad'));
-      // sub-score 0–100 por indicador (p/ a barrinha e o índice geral). 60 = limite
-      // de "atenção" (warn), 100 = "bom" (good); decai linearmente fora disso.
-      const scoreOf = (v, good, warn, higher) => {
-        let s;
-        if (higher) {
-          if (v >= good) s = 100;
-          else if (v >= warn) s = 60 + 40 * (v - warn) / (good - warn);
-          else s = warn > 0 ? 60 * (v / warn) : 0;
-        } else {
-          if (v <= good) s = 100;
-          else if (v <= warn) s = 60 + 40 * (warn - v) / (warn - good);
-          else { const cap = warn + (warn - good); s = v >= cap ? 0 : 60 * (cap - v) / (cap - warn); }
-        }
-        return Math.max(0, Math.min(100, s));
-      };
+      // scoreOf e colorClass vêm do domain/health.js — `cc` é alias local
+      // pra colorClass pra manter as chamadas curtas abaixo.
+      const cc = colorClass;
       // tendência: valor atual vs média dos 3 meses. higher define o que é melhorar.
       const trendOf = (cur, prev, higher) => {
         if (prev == null) return null;
@@ -2162,7 +1468,7 @@ views.dashboard = (root) => {
         const wR = Math.max(1, Math.round(m.reserva * 0.5));
         rows.push({ label: 'Reserva de emergência', val: mesesReserva, fmt: `${mesesReserva.toFixed(1)} ${mesesReserva === 1 ? 'mês' : 'meses'}`, good: m.reserva, warn: wR, higher: true, hint: `de custo fixo coberto (~${fmtBRL(custoFixoMensal)}/mês) · mire ${m.reserva} meses`, trend: null });
       }
-      rows.forEach(r => { r.cl = c(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
+      rows.forEach(r => { r.cl = cc(r.val, r.good, r.warn, r.higher); r.score = scoreOf(r.val, r.good, r.warn, r.higher); });
       // Índice geral: média ponderada dos sub-scores dos indicadores.
       const weights = { 'Taxa de investimento': 0.3, 'Renda comprometida': 0.25, 'Renda presa em contas fixas': 0.2, 'Reserva de emergência': 0.25 };
       let wsum = 0, acc = 0;
@@ -2769,38 +2075,6 @@ const sheetFilters = () => {
   });
 };
 
-// Período imediatamente anterior, mantendo o mesmo "tipo" (mês/tri/sem/ano).
-const previousPeriod = (p) => {
-  if (p.type === 'custom') {
-    // Range de mesma duração imediatamente antes do `from`.
-    const start = isoToDate(p.from);
-    const end = isoToDate(p.to);
-    const days = Math.round((end - start) / 86400000) + 1;
-    const newEnd = new Date(start); newEnd.setDate(newEnd.getDate() - 1);
-    const newStart = new Date(newEnd); newStart.setDate(newStart.getDate() - days + 1);
-    return { type: 'custom', from: yyyyMmDdFromDate(newStart), to: yyyyMmDdFromDate(newEnd), shortcut: p.shortcut };
-  }
-  const np = { ...p };
-  if (p.type === 'year') { np.year--; return np; }
-  const wrap = p.type === 'month' ? 12 : (p.type === 'quarter' ? 4 : 2);
-  if (p.value === 1) { np.year--; np.value = wrap; } else { np.value--; }
-  return np;
-};
-
-const labelOfPeriod = (p) => {
-  if (p.type === 'custom') {
-    if (p.shortcut === 'today') return 'Hoje';
-    if (p.shortcut === 'week')  return 'Últimos 7 dias';
-    if (p.shortcut === 'month30') return 'Últimos 30 dias';
-    if (p.shortcut === 'mtd')   return 'Mês corrido';
-    return `${fmtDate(p.from)} — ${fmtDate(p.to)}`;
-  }
-  if (p.type === 'year')     return String(p.year);
-  if (p.type === 'month')    return `${monthName(p.value)} ${p.year}`;
-  if (p.type === 'quarter')  return `${p.value}º Tri ${p.year}`;
-  if (p.type === 'semester') return `${p.value}º Sem ${p.year}`;
-  return '';
-};
 
 views.despesas = (root) => {
   // Investimentos têm aba própria — a aba Despesas ignora as categorias de
@@ -5101,10 +4375,7 @@ function bindSwipe(root) {
   });
 }
 
-// --------------------------- Helpers ---------------------------------------
-const escapeHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-const escapeAttr = (s) => escapeHTML(s);
+// escapeHTML/escapeAttr vêm de ./src/ui/escape.js (importados acima).
 
 // --------------------------- Router & init ---------------------------------
 const tabs = ['dashboard','carteira','despesas','investimentos','categorias','config'];

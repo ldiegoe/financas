@@ -1,10 +1,27 @@
 // Service Worker — cache offline + auto-update no celular
-const CACHE = 'financas-v81';
+const CACHE = 'financas-v88';
 const ASSETS = [
   './',
   './index.html',
   './app.css',
   './app.js',
+  './src/helpers/format.js',
+  './src/helpers/parse.js',
+  './src/domain/period.js',
+  './src/domain/despesa.js',
+  './src/domain/objetivo.js',
+  './src/domain/health.js',
+  './src/domain/insights.js',
+  './src/domain/upcoming.js',
+  './src/domain/alerts.js',
+  './src/storage/profile-store.js',
+  './src/storage/device-config.js',
+  './src/storage/sync-state.js',
+  './src/sync/dropbox-client.js',
+  './src/sync/engine.js',
+  './src/ui/escape.js',
+  './src/ui/icons.js',
+  './src/ui/dom.js',
   './icon.svg',
   './manifest.webmanifest',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
@@ -48,7 +65,7 @@ self.addEventListener('notificationclick', (e) => {
 // (com fallback no cache se estiver offline). Demais assets vão direto do
 // cache para velocidade. Isso garante que mudanças em código apareçam logo
 // na próxima abertura, mesmo com a PWA fixada na tela inicial.
-const NETWORK_FIRST = /\/(index\.html|app\.js|app\.css|manifest\.webmanifest|sw\.js)$|\/$/;
+const NETWORK_FIRST = /\/(index\.html|app\.js|app\.css|manifest\.webmanifest|sw\.js)$|\/$|\/src\/.+\.js$/;
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
