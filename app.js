@@ -3816,17 +3816,25 @@ const sheetImportarBoletos = (despesaBase) => {
   let progresso = '';
   let despesaId = despesaBase ? despesaBase.id : null;
 
-  // Ranking de despesas pra sugestao — melhor palpite primeiro.
-  const ranking = () => {
-    const cats = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
-    return state.despesas
-      .filter(d => !cats.has(d.categoriaId))
-      .map(d => ({
-        d,
-        score: scoreDespesa(d, encontrados,
-          encontrados.filter(b => cobreMes(d, b.mesRef)).map(b => b.mesRef)),
-      }))
-      .sort((a, b) => b.score - a.score || b.d.data.localeCompare(a.d.data));
+  // Ranking de despesas pra sugestao — melhor palpite primeiro. Inclui as de
+  // investimento de proposito: financiamento de lote/imovel e consorcio sao
+  // justamente o tipo de coisa que vem em carne e que o usuario categoriza
+  // como investimento.
+  const ranking = () => state.despesas
+    .map(d => ({
+      d,
+      score: scoreDespesa(d, encontrados,
+        encontrados.filter(b => cobreMes(d, b.mesRef)).map(b => b.mesRef)),
+    }))
+    .sort((a, b) => b.score - a.score || b.d.data.localeCompare(a.d.data));
+
+  // Rotulo da opcao: descricao + valor + tipo, pra dar pra distinguir duas
+  // despesas parecidas sem sair da tela.
+  const rotuloDespesa = (d) => {
+    const tipo = (d.parcelas || 0) > 1
+      ? `${d.parcelas}x desde ${fmtDate(d.data).slice(3)}`
+      : (d.recorrente ? 'mensal' : fmtDate(d.data));
+    return `${d.descricao || 'Despesa'} — ${fmtBRL(d.valor)} · ${tipo}`;
   };
 
   const conteudo = () => {
@@ -3838,8 +3846,14 @@ const sheetImportarBoletos = (despesaBase) => {
 
     if (etapa === 'revisar') {
       const r = resumoBoletos(encontrados);
-      const despesa = state.despesas.find(x => x.id === despesaId);
       const opcoes = ranking();
+      // O <select> exibe a 1a opcao quando nenhuma casa com o valor
+      // selecionado — o que faria a tela mostrar uma despesa e o import ir
+      // pra outra. Alinhamos o estado ao que esta visivel antes de renderizar.
+      if (opcoes.length > 0 && !opcoes.some(o => o.d.id === despesaId)) {
+        despesaId = opcoes[0].d.id;
+      }
+      const despesa = state.despesas.find(x => x.id === despesaId);
       if (opcoes.length === 0) {
         return `
           <p class="boleto-aviso">Achei ${r.total} boleto${r.total === 1 ? '' : 's'},
@@ -3870,7 +3884,7 @@ const sheetImportarBoletos = (despesaBase) => {
           <select id="f-despesa">
             ${opcoes.map(({ d, score }) => `
               <option value="${d.id}" ${d.id === despesaId ? 'selected' : ''}>
-                ${escapeHTML(d.descricao || 'Despesa')} — ${fmtBRL(d.valor)}${score >= 200 ? ' ✓' : ''}
+                ${escapeHTML(rotuloDespesa(d))}${score >= 200 ? ' ✓' : ''}
               </option>`).join('')}
           </select>
           <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
