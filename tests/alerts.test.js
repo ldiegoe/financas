@@ -132,3 +132,78 @@ describe('computeAlerts — ordenação por severidade', () => {
     expect(sevs.lastIndexOf('blue')).toBeGreaterThan(sevs.lastIndexOf('orange'));
   });
 });
+
+describe('computeAlerts — carnê acabando', () => {
+  // Parcelada longa (como um carnê de lote): 179 parcelas desde 04/2024.
+  const lote = { id: 'lote', descricao: 'Lote Golden Ville', data: '2024-04-10', valor: 28909, parcelas: 179 };
+  const boleto = (mesRef) => ({ id: `b${mesRef}`, despesaId: 'lote', mesRef, vencimento: `${mesRef}-10`, valor: 28909 });
+  const acabando = (r) => r.find(a => a.id.startsWith('boletos:'));
+
+  it('NÃO alerta quando ainda há boletos de sobra', () => {
+    const r = run({
+      despesas: [lote],
+      boletos: ['2025-05', '2025-06', '2025-07', '2025-08'].map(boleto),
+    });
+    expect(acabando(r)).toBeUndefined();
+  });
+
+  it('alerta quando restam 2 ou menos daqui pra frente', () => {
+    const r = run({
+      despesas: [lote],
+      boletos: ['2025-03', '2025-04', '2025-05', '2025-06'].map(boleto),
+    });
+    // Só 05 e 06 são >= mês atual (05/2025); 03 e 04 já passaram.
+    expect(acabando(r)).toMatchObject({ severity: 'blue', tab: 'despesas' });
+    expect(acabando(r).title).toContain('2 boletos restantes');
+  });
+
+  it('alerta em laranja quando não sobrou nenhum', () => {
+    const r = run({ despesas: [lote], boletos: ['2025-02', '2025-03'].map(boleto) });
+    expect(acabando(r)).toMatchObject({ severity: 'orange' });
+    expect(acabando(r).title).toContain('Acabaram os boletos');
+  });
+
+  it('NÃO alerta se a despesa acaba junto com o último boleto', () => {
+    const curta = { id: 'lote', descricao: 'Curta', data: '2025-04-10', valor: 100, parcelas: 2 };
+    const r = run({ despesas: [curta], boletos: ['2025-04', '2025-05'].map(boleto) });
+    expect(acabando(r)).toBeUndefined();
+  });
+
+  it('NÃO alerta para despesa que já não existe mais', () => {
+    const r = run({ despesas: [], boletos: ['2025-05'].map(boleto) });
+    expect(acabando(r)).toBeUndefined();
+  });
+
+  it('o id muda ao importar a remessa nova, então o aviso volta', () => {
+    const antes = acabando(run({ despesas: [lote], boletos: ['2025-05'].map(boleto) }));
+    const depois = acabando(run({
+      despesas: [lote],
+      boletos: ['2025-05', '2025-06', '2025-07'].map(boleto),
+    }));
+    // Com 3 boletos à frente não há aviso; e o id do aviso antigo não se repete.
+    expect(depois).toBeUndefined();
+    const maisTarde = acabando(run({
+      despesas: [lote],
+      boletos: ['2025-05', '2025-06'].map(boleto),
+    }));
+    expect(maisTarde.id).not.toBe(antes.id);
+  });
+
+  it('sem boletos, nenhum alerta desse tipo', () => {
+    expect(acabando(run({ despesas: [lote] }))).toBeUndefined();
+  });
+
+  it('alerta por despesa, sem misturar carnês diferentes', () => {
+    const outro = { id: 'carro', descricao: 'Carro', data: '2024-04-10', valor: 50000, parcelas: 60 };
+    const r = run({
+      despesas: [lote, outro],
+      boletos: [
+        boleto('2025-05'),
+        { id: 'c1', despesaId: 'carro', mesRef: '2025-05', vencimento: '2025-05-10', valor: 50000 },
+      ],
+    });
+    const todos = r.filter(a => a.id.startsWith('boletos:'));
+    expect(todos).toHaveLength(2);
+    expect(todos.map(a => a.title).join()).toContain('Carro');
+  });
+});

@@ -19,6 +19,7 @@ import {
 import {
   sumAmount, hasOccurrences, expandWithRecurring,
   computeTogglePagoPatch, setOcorrenciaPagaPatch,
+  cobreMes, parcelaDoMes,
 } from './src/domain/despesa.js';
 import {
   sumCategoriasAteHoje as sumCategoriasAteHojePure,
@@ -39,6 +40,13 @@ import {
 import {
   computeAlerts as computeAlertsPure,
 } from './src/domain/alerts.js';
+import {
+  extractBoletos,
+  resumoBoletos,
+  scoreDespesa,
+  mergeBoletos,
+  formatLinha,
+} from './src/domain/boleto.js';
 import { createProfileStore, initialMeta } from './src/storage/profile-store.js';
 import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
 import { createSyncStateStore } from './src/storage/sync-state.js';
@@ -82,6 +90,11 @@ const defaultState = () => ({
   categorias: defaultCategorias(),
   objetivos: [],
   templates: [],
+  // Boletos importados de carnê em PDF, vinculados a uma despesa pelo mês de
+  // referência ('YYYY-MM' — mesma chave que o `pagasEm` usa). Guardamos só a
+  // linha digitável, não o arquivo: são ~60 bytes por parcela, então cabe
+  // tranquilo no localStorage e no payload de sync.
+  boletos: [],
   config: { moeda: 'BRL' },
 });
 
@@ -280,7 +293,19 @@ const db = {
     const i = state.despesas.findIndex(x => x.id === id);
     if (i >= 0) { state.despesas[i] = { ...state.despesas[i], ...patch }; persist(); }
   },
-  removeDespesa(id) { state.despesas = state.despesas.filter(x => x.id !== id); persist(); },
+  removeDespesa(id) {
+    state.despesas = state.despesas.filter(x => x.id !== id);
+    // Boletos existem só em função da despesa — some junto pra não virar órfão.
+    state.boletos = (state.boletos || []).filter(b => b.despesaId !== id);
+    persist();
+  },
+
+  setBoletos(lista)  { state.boletos = lista; persist(); },
+  removeBoleto(id)   { state.boletos = (state.boletos || []).filter(b => b.id !== id); persist(); },
+  removeBoletosDaDespesa(despesaId) {
+    state.boletos = (state.boletos || []).filter(b => b.despesaId !== despesaId);
+    persist();
+  },
 
   addCategoria(c) { state.categorias.push({ id: uid(), meta: null, ...c }); persist(); },
   updateCategoria(id, patch) {
@@ -385,6 +410,39 @@ const sumCategoriasAteHoje = (idSet, desde) =>
 const objetivoAtual = (o) => objetivoAtualPure(o, state.despesas, todayISO());
 
 const upcomingItems = () => upcomingItemsPure(state.despesas, new Date());
+
+// --------------------------- Boletos ---------------------------------------
+// Boleto de uma ocorrencia especifica (despesa + mes). Uma parcelada de 179x
+// pode ter so alguns meses importados — o resto retorna undefined.
+const boletoDaOcorrencia = (occ) =>
+  (state.boletos || []).find(b => b.despesaId === occ.id && b.mesRef === occ.data.slice(0, 7));
+
+const boletosDaDespesa = (despesaId) =>
+  (state.boletos || []).filter(b => b.despesaId === despesaId)
+    .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+
+// Copia texto pro clipboard. O fallback com <textarea> cobre navegador antigo
+// e contexto nao-seguro; precisa rodar dentro do gesto do usuario (o clique).
+const copyToClipboard = async (texto) => {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(texto);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch { return false; }
+};
 
 // Marca uma lista de ocorrencias como pagas (recorrente/parcelada: adiciona o
 // YYYY-MM em pagasEm; unica: pago=true). Usado pela selecao em lote do card.
@@ -514,6 +572,7 @@ const computeAlerts = () => computeAlertsPure({
   despesas:   state.despesas,
   rendas:     state.rendas,
   categorias: state.categorias,
+  boletos:    state.boletos || [],
   now:        new Date(),
   today:      todayISO(),
   fmtMoney:   fmtBRL,
@@ -1550,6 +1609,9 @@ views.dashboard = (root) => {
                       <div class="s">${fmtDate(d.data)}${meta ? ' · ' + meta : ''}</div>
                     </div>
                     <div class="amount neg">${fmtBRL(d.valor)}</div>
+                    ${!vencSelMode && boletoDaOcorrencia(d) ? `
+                      <button class="boleto-quick" data-action="copy-boleto"
+                              aria-label="Copiar código do boleto">${icon('barcode', 18)}</button>` : ''}
                   </li>`;
               }).join('')}
             </ul>
@@ -1632,9 +1694,18 @@ views.dashboard = (root) => {
   // Card Vencimentos: fora do modo selecao, tap abre os detalhes da despesa.
   // No modo selecao, tap alterna a marca da ocorrencia.
   root.querySelectorAll('.upcoming-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', async (e) => {
       const id = row.dataset.id;
       const data = row.dataset.data;
+      // Atalho do boleto: copia o codigo sem abrir os detalhes.
+      if (e.target.closest('[data-action="copy-boleto"]')) {
+        e.stopPropagation();
+        const b = boletoDaOcorrencia({ id, data });
+        if (!b) return;
+        const ok = await copyToClipboard(b.linha);
+        toast(ok ? 'Código copiado' : 'Não consegui copiar');
+        return;
+      }
       if (vencSelMode) {
         const key = `${id}|${data}`;
         if (vencSel.has(key)) vencSel.delete(key); else vencSel.add(key);
@@ -2148,6 +2219,7 @@ views.despesas = (root) => {
                 ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
                 ${d._parcelaTotal ? `<span class="tag installment">${d._parcelaNum}/${d._parcelaTotal}</span>` : ''}
                 ${d._pago ? '' : '<span class="tag pendente">Pendente</span>'}
+                ${boletoDaOcorrencia(d) ? `<span class="tag boleto" title="Boleto disponível">${icon('barcode', 11)}</span>` : ''}
               </div>
               <div class="s">${fmtDate(d.data)} · ${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</div>
               ${dTags.length > 0 ? `
@@ -3731,6 +3803,196 @@ const sheetDespesa = (desp, opts = {}) => {
   });
 };
 
+// --------------------------- Sheets (boletos) -------------------------------
+
+// Importacao de carne em PDF: le o arquivo, extrai as linhas digitaveis e
+// vincula a uma despesa existente casando cada boleto com o mes da parcela.
+// `despesaBase` vem pre-selecionada quando o fluxo comeca pelos detalhes.
+const sheetImportarBoletos = (despesaBase) => {
+  let etapa = 'escolher';     // escolher → lendo → revisar
+  let encontrados = [];
+  let nomeArquivo = '';
+  let erro = '';
+  let progresso = '';
+  let despesaId = despesaBase ? despesaBase.id : null;
+
+  // Ranking de despesas pra sugestao — melhor palpite primeiro.
+  const ranking = () => {
+    const cats = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
+    return state.despesas
+      .filter(d => !cats.has(d.categoriaId))
+      .map(d => ({
+        d,
+        score: scoreDespesa(d, encontrados,
+          encontrados.filter(b => cobreMes(d, b.mesRef)).map(b => b.mesRef)),
+      }))
+      .sort((a, b) => b.score - a.score || b.d.data.localeCompare(a.d.data));
+  };
+
+  const conteudo = () => {
+    if (etapa === 'lendo') {
+      return `<p style="text-align:center;padding:24px 0;color:var(--text-2);">
+                Lendo o PDF…<br/><small>${escapeHTML(progresso)}</small>
+              </p>`;
+    }
+
+    if (etapa === 'revisar') {
+      const r = resumoBoletos(encontrados);
+      const despesa = state.despesas.find(x => x.id === despesaId);
+      const opcoes = ranking();
+      if (opcoes.length === 0) {
+        return `
+          <p class="boleto-aviso">Achei ${r.total} boleto${r.total === 1 ? '' : 's'},
+            mas não há despesa cadastrada pra vincular. Cadastre a despesa
+            (parcelada, ${r.valor !== null ? fmtBRL(r.valor) : 'valor variável'},
+            vencendo em ${fmtDate(r.de)}) e importe de novo.</p>
+          <div class="actions">
+            <button class="secondary" id="cancel">Fechar</button>
+          </div>`;
+      }
+      const foraDoPeriodo = despesa
+        ? encontrados.filter(b => !cobreMes(despesa, b.mesRef)).length : 0;
+      const valorDiverge = despesa && r.valor !== null && r.valor !== despesa.valor;
+      const jaExistem = despesa
+        ? encontrados.filter(b => boletosDaDespesa(despesa.id)
+            .some(x => x.mesRef === b.mesRef && x.linha === b.linha)).length : 0;
+
+      return `
+        <div class="boleto-resumo">
+          <strong>${r.total} boleto${r.total === 1 ? '' : 's'}</strong> em
+          ${escapeHTML(nomeArquivo)}
+          <div class="s">${fmtDate(r.de)} a ${fmtDate(r.ate)} ·
+            ${r.valor !== null ? fmtBRL(r.valor) + ' cada'
+                               : `${fmtBRL(r.valorMin)} a ${fmtBRL(r.valorMax)}`}</div>
+        </div>
+
+        <label class="field"><span>Vincular à despesa</span>
+          <select id="f-despesa">
+            ${opcoes.map(({ d, score }) => `
+              <option value="${d.id}" ${d.id === despesaId ? 'selected' : ''}>
+                ${escapeHTML(d.descricao || 'Despesa')} — ${fmtBRL(d.valor)}${score >= 200 ? ' ✓' : ''}
+              </option>`).join('')}
+          </select>
+          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
+            Cada boleto entra no mês do seu vencimento. Reimportar o mesmo carnê
+            não duplica nada.
+          </small>
+        </label>
+
+        ${valorDiverge ? `
+          <p class="boleto-aviso">O boleto é de ${fmtBRL(r.valor)} e a despesa está
+            cadastrada como ${fmtBRL(despesa.valor)}. Dá pra importar mesmo assim —
+            só confira se é a despesa certa.</p>` : ''}
+        ${foraDoPeriodo > 0 ? `
+          <p class="boleto-aviso">${foraDoPeriodo} boleto${foraDoPeriodo === 1 ? '' : 's'}
+            ${foraDoPeriodo === 1 ? 'cai' : 'caem'} em ${foraDoPeriodo === 1 ? 'mês' : 'meses'}
+            sem parcela nesta despesa. ${foraDoPeriodo === 1 ? 'Ele será guardado' : 'Eles serão guardados'}
+            mesmo assim, mas talvez a despesa não seja essa.</p>` : ''}
+        ${jaExistem > 0 ? `
+          <p style="color:var(--text-2);font-size:13px;margin:12px 2px;">
+            ${jaExistem} já ${jaExistem === 1 ? 'está importado' : 'estão importados'} nesta despesa.
+          </p>` : ''}
+
+        <ul class="details-list boleto-preview">
+          ${encontrados.map(b => {
+            const n = despesa ? parcelaDoMes(despesa, b.mesRef) : null;
+            return `<li>
+              <span>${fmtDate(b.vencimento)}${n ? ` · parcela ${n}` : ''}</span>
+              <span>${fmtBRL(b.valor)}</span>
+            </li>`;
+          }).join('')}
+        </ul>
+
+        <div class="actions">
+          <button class="secondary" id="cancel">Cancelar</button>
+          <button class="primary"   id="confirm" ${despesaId ? '' : 'disabled'}>Importar</button>
+        </div>`;
+    }
+
+    // etapa 'escolher'
+    return `
+      <p style="color:var(--text-2);font-size:14px;margin:0 2px 16px;line-height:1.5;">
+        Escolha o PDF do carnê. O app lê os códigos de barras, descobre o
+        vencimento e o valor de cada parcela e guarda só os códigos —
+        o arquivo não é armazenado.
+      </p>
+      ${erro ? `<p class="boleto-aviso">${escapeHTML(erro)}</p>` : ''}
+      <input id="f-pdf" type="file" accept="application/pdf,.pdf" hidden />
+      <button class="primary" id="pick" style="width:100%;">Escolher PDF</button>
+      <div class="actions">
+        <button class="secondary" id="cancel">Cancelar</button>
+      </div>`;
+  };
+
+  const abrir = () => openSheet('Importar boletos', conteudo, (body) => {
+    const cancel = body.querySelector('#cancel');
+    if (cancel) cancel.addEventListener('click', closeSheet);
+
+    const pick = body.querySelector('#pick');
+    if (pick) {
+      const input = body.querySelector('#f-pdf');
+      pick.addEventListener('click', () => input.click());
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        nomeArquivo = file.name;
+        erro = '';
+        progresso = '';
+        etapa = 'lendo';
+        abrir();
+        try {
+          const { extractPdfText } = await import('./src/ui/pdf-text.js');
+          const texto = await extractPdfText(file, (p, total) => {
+            progresso = `página ${p} de ${total}`;
+            const alvo = document.querySelector('.sheet-body small');
+            if (alvo) alvo.textContent = progresso;
+          });
+          encontrados = extractBoletos(texto, new Date());
+          if (encontrados.length === 0) {
+            erro = 'Nenhum boleto encontrado neste PDF. Se ele for uma imagem '
+                 + '(digitalizada), o código não pode ser lido automaticamente.';
+            etapa = 'escolher';
+          } else {
+            // Sem despesa pre-selecionada, adota o melhor palpite.
+            if (!despesaId) despesaId = (ranking()[0] || {}).d?.id || null;
+            etapa = 'revisar';
+          }
+        } catch (e) {
+          erro = navigator.onLine
+            ? 'Não consegui ler este PDF. Ele pode estar protegido por senha ou corrompido.'
+            : 'Sem conexão — a primeira leitura de PDF precisa baixar o leitor. '
+            + 'Conecte-se uma vez e depois funciona offline.';
+          etapa = 'escolher';
+        }
+        abrir();
+      });
+    }
+
+    const sel = body.querySelector('#f-despesa');
+    if (sel) sel.addEventListener('change', () => { despesaId = sel.value; abrir(); });
+
+    const confirmBtn = body.querySelector('#confirm');
+    if (confirmBtn) confirmBtn.addEventListener('click', () => {
+      const r = mergeBoletos(state.boletos || [], encontrados, {
+        despesaId,
+        origem: nomeArquivo,
+        importadoEm: todayISO(),
+        uid,
+      });
+      db.setBoletos(r.boletos);
+      closeSheet();
+      const partes = [];
+      if (r.adicionados)  partes.push(`${r.adicionados} importado${r.adicionados === 1 ? '' : 's'}`);
+      if (r.atualizados)  partes.push(`${r.atualizados} atualizado${r.atualizados === 1 ? '' : 's'}`);
+      if (r.iguais && !r.adicionados && !r.atualizados) partes.push('nada novo');
+      toast(partes.join(', ') || 'Boletos importados');
+      render();
+    });
+  });
+
+  abrir();
+};
+
 const palette = [
   '#FF6B6B','#FF9F0A','#FFD60A','#30D158','#4ECDC4','#0A84FF','#5E5CE6',
   '#BF5AF2','#FF375F','#A8E6CF','#FFD93D','#95E1D3','#C9C9C9',
@@ -4180,6 +4442,13 @@ const sheetDespesaDetalhes = (d) => {
     : (d._parcelaTotal ? `Parcelada (${d._parcelaNum}/${d._parcelaTotal})` : 'Apenas neste mês');
   const tags = d.tags || [];
 
+  // Boleto do mes desta ocorrencia (se o carne ja foi importado).
+  const boleto = boletoDaOcorrencia(d);
+  const totalBoletos = boletosDaDespesa(d.id).length;
+  const diasDesdeVencimento = boleto ? daysSince(boleto.vencimento) : 0;
+  const boletoVencido = !!boleto && !d._pago && diasDesdeVencimento > 0;
+  const boletoValorDiverge = !!boleto && boleto.valor !== d.valor;
+
   openSheet('Detalhes da despesa', () => `
     <div style="margin-bottom:12px;">
       <div style="font-size:18px;font-weight:600;word-break:break-word;line-height:1.3;">
@@ -4212,6 +4481,37 @@ const sheetDespesaDetalhes = (d) => {
       </p>
     ` : ''}
 
+    ${boleto ? `
+      <div class="boleto-box">
+        <div class="boleto-head">
+          ${icon('barcode', 18)}
+          <span>Boleto · vence ${fmtDate(boleto.vencimento)}</span>
+        </div>
+        <div class="boleto-linha" id="boleto-linha">${formatLinha(boleto.linha)}</div>
+        <button class="primary boleto-copy" id="copy-boleto">
+          ${icon('copy', 16)} Copiar código
+        </button>
+        ${boletoValorDiverge ? `
+          <p class="boleto-aviso">O boleto é de ${fmtBRL(boleto.valor)}, diferente
+            do valor cadastrado (${fmtBRL(d.valor)}).</p>` : ''}
+        ${boletoVencido ? `
+          <p class="boleto-aviso">Vencido há ${diasDesdeVencimento}
+            ${diasDesdeVencimento === 1 ? 'dia' : 'dias'} — o banco pode recusar este
+            código ou cobrar multa e juros por fora.</p>` : ''}
+        <div class="boleto-meta">
+          ${escapeHTML(boleto.origem || 'importado')}${totalBoletos > 1
+            ? ` · ${totalBoletos} boletos nesta despesa` : ''}
+          <button class="link" id="del-boleto">Remover</button>
+        </div>
+      </div>
+    ` : `
+      <button id="add-boleto" class="secondary boleto-add">
+        ${icon('barcode', 16)} ${totalBoletos > 0
+          ? 'Sem boleto para este mês — importar outro PDF'
+          : 'Anexar carnê (PDF)'}
+      </button>
+    `}
+
     <button id="toggle-pago" class="primary" style="width:100%;margin-top:14px;">
       ${d._pago ? 'Marcar como pendente' : 'Marcar como paga'}
     </button>
@@ -4227,6 +4527,25 @@ const sheetDespesaDetalhes = (d) => {
     </div>
   `, (body) => {
     body.querySelector('#close').addEventListener('click', closeSheet);
+
+    const copyBtn = body.querySelector('#copy-boleto');
+    if (copyBtn) copyBtn.addEventListener('click', async () => {
+      const ok = await copyToClipboard(boleto.linha);
+      toast(ok ? 'Código copiado' : 'Não consegui copiar — toque e segure no código');
+    });
+    const addBoleto = body.querySelector('#add-boleto');
+    if (addBoleto) addBoleto.addEventListener('click', () => {
+      sheetImportarBoletos(state.despesas.find(x => x.id === d.id));
+    });
+    const delBoleto = body.querySelector('#del-boleto');
+    if (delBoleto) delBoleto.addEventListener('click', () => {
+      if (!confirm(`Remover o boleto de ${fmtDate(boleto.vencimento)}?`)) return;
+      db.removeBoleto(boleto.id);
+      closeSheet();
+      toast('Boleto removido');
+      render();
+    });
+
     const antBtn = body.querySelector('#antecipar');
     if (antBtn) antBtn.addEventListener('click', () => {
       closeSheet();

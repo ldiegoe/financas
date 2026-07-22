@@ -2,21 +2,23 @@
 //   - meta de categoria perto (≥80%) ou estourada (≥100%)
 //   - saldo do mês negativo ou baixo (<10% da renda)
 //   - lançamentos pendentes vencendo nos próximos 7 dias
+//   - carnê acabando (boletos importados no fim, mas ainda há parcelas)
 // Cada alerta tem `id` estável — se o usuário dispensar, o id vai pro
 // dismissedAlerts e não reaparece. Se a severidade mudar (warn → over) o
 // id muda e um novo alerta surge.
 // Puro: recebe inputs como argumentos.
 
-import { expandWithRecurring, sumAmount } from './despesa.js';
+import { expandWithRecurring, sumAmount, cobreMes } from './despesa.js';
 import { isoToDate } from '../helpers/parse.js';
 
 const UPCOMING_HORIZON_DAYS = 7;
+const BOLETOS_LOW = 2;              // ≤2 boletos restantes → hora de pedir mais
 const LOW_SALDO_RATIO = 0.1;        // saldo < 10% da renda → baixo
 const META_WARN_PCT = 80;
 const META_OVER_PCT = 100;
 const SEVERITY_ORDER = { red: 0, orange: 1, blue: 2 };
 
-export const computeAlerts = ({ despesas, rendas, categorias, now, today, fmtMoney }) => {
+export const computeAlerts = ({ despesas, rendas, categorias, boletos = [], now, today, fmtMoney }) => {
   const alerts = [];
   const cur = { type: 'month', year: now.getFullYear(), value: now.getMonth() + 1 };
   const periodKey = `${cur.year}-${String(cur.value).padStart(2, '0')}`;
@@ -96,6 +98,60 @@ export const computeAlerts = ({ despesas, rendas, categorias, now, today, fmtMon
     });
   }
 
+  // Carnê acabando: quando os boletos importados de uma despesa estão no fim
+  // mas ainda faltam parcelas, é hora de pedir/importar a próxima remessa.
+  // Boletos de meses já passados não contam — o que importa é quantos ainda
+  // dão pra pagar daqui pra frente.
+  for (const alerta of boletosAcabandoAlerts(despesas, boletos, periodKey)) {
+    alerts.push(alerta);
+  }
+
   alerts.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
   return alerts;
+};
+
+// Mês seguinte a um 'YYYY-MM'.
+const proximoMes = (mesRef) => {
+  const [y, m] = mesRef.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+};
+
+const boletosAcabandoAlerts = (despesas, boletos, mesAtual) => {
+  const out = [];
+  if (!boletos || boletos.length === 0) return out;
+
+  const porDespesa = new Map();
+  for (const b of boletos) {
+    if (!porDespesa.has(b.despesaId)) porDespesa.set(b.despesaId, []);
+    porDespesa.get(b.despesaId).push(b);
+  }
+
+  for (const [despesaId, lista] of porDespesa) {
+    const despesa = despesas.find(d => d.id === despesaId);
+    if (!despesa) continue;
+
+    const ultimo = lista.map(b => b.mesRef).sort().pop();
+    // Se a despesa não tem parcela depois do último boleto, o carnê acabou
+    // junto com ela — não há próxima remessa pra pedir.
+    if (!cobreMes(despesa, proximoMes(ultimo))) continue;
+
+    const restantes = lista.filter(b => b.mesRef >= mesAtual).length;
+    if (restantes > BOLETOS_LOW) continue;
+
+    const nome = despesa.descricao || 'despesa';
+    out.push({
+      // O id inclui o último mês importado: ao importar a remessa nova o id
+      // muda, então dispensar hoje não silencia o aviso da próxima vez.
+      id: `boletos:${despesaId}:${ultimo}:${restantes}`,
+      severity: restantes === 0 ? 'orange' : 'blue',
+      title: restantes === 0
+        ? `Acabaram os boletos de ${nome}`
+        : `${restantes} boleto${restantes > 1 ? 's' : ''} restante${restantes > 1 ? 's' : ''} de ${nome}`,
+      message: restantes === 0
+        ? 'A despesa continua, mas não há mais código importado. Importe a próxima remessa do carnê.'
+        : 'A despesa continua depois disso — peça/importe a próxima remessa do carnê.',
+      tab: 'despesas',
+    });
+  }
+  return out;
 };

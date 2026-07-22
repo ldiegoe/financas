@@ -5,7 +5,52 @@ import {
   expandWithRecurring,
   computeTogglePagoPatch,
   setOcorrenciaPagaPatch,
+  cobreMes,
+  parcelaDoMes,
 } from '../src/domain/despesa.js';
+
+describe('cobreMes', () => {
+  const unica      = { data: '2026-05-10' };
+  const parcelada  = { data: '2026-05-10', parcelas: 11 };
+  const mensal     = { data: '2026-05-10', recorrente: true };
+  const temporaria = { data: '2026-05-10', recorrente: true, duracaoMeses: 4 };
+
+  it('única cobre só o próprio mês', () => {
+    expect(cobreMes(unica, '2026-05')).toBe(true);
+    expect(cobreMes(unica, '2026-06')).toBe(false);
+  });
+  it('parcelada cobre da 1ª à última parcela, virando o ano', () => {
+    expect(cobreMes(parcelada, '2026-05')).toBe(true);   // parcela 1
+    expect(cobreMes(parcelada, '2027-03')).toBe(true);   // parcela 11
+    expect(cobreMes(parcelada, '2027-04')).toBe(false);  // passou
+    expect(cobreMes(parcelada, '2026-04')).toBe(false);  // antes do início
+  });
+  it('mensal sem fim cobre qualquer mês a partir do início', () => {
+    expect(cobreMes(mensal, '2026-04')).toBe(false);
+    expect(cobreMes(mensal, '2040-12')).toBe(true);
+  });
+  it('mensal com duração encerra no prazo', () => {
+    expect(cobreMes(temporaria, '2026-08')).toBe(true);
+    expect(cobreMes(temporaria, '2026-09')).toBe(false);
+  });
+});
+
+describe('parcelaDoMes', () => {
+  const parcelada = { data: '2026-05-10', parcelas: 11 };
+  it('numera a partir de 1 e atravessa a virada de ano', () => {
+    expect(parcelaDoMes(parcelada, '2026-05')).toBe(1);
+    expect(parcelaDoMes(parcelada, '2027-01')).toBe(9);
+    expect(parcelaDoMes(parcelada, '2027-03')).toBe(11);
+  });
+  it('fora do intervalo retorna null', () => {
+    expect(parcelaDoMes(parcelada, '2026-04')).toBe(null);
+    expect(parcelaDoMes(parcelada, '2027-04')).toBe(null);
+  });
+  it('despesa não parcelada retorna null', () => {
+    expect(parcelaDoMes({ data: '2026-05-10' }, '2026-05')).toBe(null);
+    expect(parcelaDoMes({ data: '2026-05-10', recorrente: true }, '2026-06')).toBe(null);
+  });
+});
 
 describe('sumAmount', () => {
   it('soma vazia é 0', () => {

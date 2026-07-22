@@ -12,6 +12,33 @@ export const sumAmount = (arr) => arr.reduce((acc, x) => acc + (x.valor || 0), 0
 export const hasOccurrences = (despesa) =>
   !!despesa.recorrente || (despesa.parcelas || 0) > 1;
 
+// Meses decorridos entre o mês de início da despesa e um 'YYYY-MM'.
+const monthDelta = (despesa, mesRef) => {
+  const [sy, sm] = despesa.data.slice(0, 7).split('-').map(Number);
+  const [y, m]   = String(mesRef).split('-').map(Number);
+  return (y - sy) * 12 + (m - sm);
+};
+
+// A despesa tem ocorrência neste mês? Mesma regra do expandWithRecurring, mas
+// respondendo pontualmente em vez de expandir um período inteiro — usado para
+// casar boletos importados com a parcela certa.
+export const cobreMes = (despesa, mesRef) => {
+  if (!hasOccurrences(despesa)) return despesa.data.slice(0, 7) === mesRef;
+  const delta = monthDelta(despesa, mesRef);
+  if (delta < 0) return false;
+  if ((despesa.parcelas || 0) > 1) return delta < despesa.parcelas;
+  if (despesa.duracaoMeses > 0) return delta < despesa.duracaoMeses;
+  return true; // recorrente sem fim
+};
+
+// Número da parcela (1-based) que cai neste mês, ou null se a despesa não for
+// parcelada ou o mês estiver fora do intervalo.
+export const parcelaDoMes = (despesa, mesRef) => {
+  if (!((despesa.parcelas || 0) > 1)) return null;
+  const delta = monthDelta(despesa, mesRef);
+  return (delta >= 0 && delta < despesa.parcelas) ? delta + 1 : null;
+};
+
 // Expande os items pro período pedido considerando:
 //  - recorrentes (recorrente=true): repete todo mês a partir da data (limitado
 //    por duracaoMeses se definido — rendas temporárias);
