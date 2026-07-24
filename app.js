@@ -3628,7 +3628,7 @@ const sheetDespesa = (desp, opts = {}) => {
     </label>
     ${!isEdit ? `
       <div class="checkbox-row">
-        <input id="f-pago" type="checkbox" ${d.data <= todayISO() ? 'checked' : ''}/>
+        <input id="f-pago" type="checkbox" />
         <label for="f-pago">Já paga</label>
       </div>
       <small id="pago-hint" style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 12px;"></small>
