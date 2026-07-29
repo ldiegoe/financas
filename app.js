@@ -47,6 +47,12 @@ import {
   mergeBoletos,
   formatLinha,
 } from './src/domain/boleto.js';
+import { parseOfx } from './src/domain/ofx.js';
+import {
+  annotateImport,
+  resumoRows,
+  rowsToDespesas,
+} from './src/domain/import-review.js';
 import { createProfileStore, initialMeta } from './src/storage/profile-store.js';
 import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
 import { createSyncStateStore } from './src/storage/sync-state.js';
@@ -298,6 +304,20 @@ const db = {
     // Boletos existem só em função da despesa — some junto pra não virar órfão.
     state.boletos = (state.boletos || []).filter(b => b.despesaId !== id);
     persist();
+  },
+
+  // Grava um lote de despesas importadas de uma vez (um persist só). Cada item
+  // ja vem com fitid/dedupKey/importId da camada de revisao.
+  addDespesasBatch(list) {
+    for (const d of list) state.despesas.push({ id: uid(), ...d });
+    persist();
+  },
+  // Desfaz uma importacao inteira pelo importId. Retorna quantas removeu.
+  removeImport(importId) {
+    const antes = state.despesas.length;
+    state.despesas = state.despesas.filter(d => d.importId !== importId);
+    persist();
+    return antes - state.despesas.length;
   },
 
   setBoletos(lista)  { state.boletos = lista; persist(); },
@@ -3060,6 +3080,17 @@ views.config = (root) => {
     })()}
 
     <div class="card">
+      <h2>Importar fatura</h2>
+      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
+        Traga a fatura do cartão em arquivo OFX. O app lê as transações, marca o
+        que já existe e deixa você conferir antes de gerar as despesas.
+      </p>
+      <button class="secondary" id="import-fatura" style="width:100%;">
+        ${icon('download', 16)} Importar fatura (OFX)
+      </button>
+    </div>
+
+    <div class="card">
       <h2>Dados e backup</h2>
       <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
         Os dados ficam apenas neste dispositivo. Faça backup regularmente
@@ -3411,6 +3442,8 @@ views.config = (root) => {
       }
     });
   }
+
+  root.querySelector('#import-fatura').addEventListener('click', () => sheetImportarFatura());
 
   root.querySelector('#export').addEventListener('click', () => {
     exportBackup();
@@ -4001,6 +4034,235 @@ const sheetImportarBoletos = (despesaBase) => {
       if (r.iguais && !r.adicionados && !r.atualizados) partes.push('nada novo');
       toast(partes.join(', ') || 'Boletos importados');
       render();
+    });
+  });
+
+  abrir();
+};
+
+// --------------------------- Sheets (importar fatura OFX) -------------------
+
+// Importa uma fatura/extrato em .ofx: le, parseia, anota (nova/duplicata/
+// credito/manual) e mostra uma tela de revisao onde o usuario confirma o que
+// entra e ajusta categorias. Nada eh gravado antes do "Importar".
+const MOTIVO_BADGE = {
+  duplicata:        '<span class="tag dup">já importado</span>',
+  'duplicata-lote': '<span class="tag dup">repetido no arquivo</span>',
+  credito:          '<span class="tag credito">crédito</span>',
+  manual:           '<span class="tag manual">confira</span>',
+  nova:             '',
+};
+
+const sheetImportarFatura = () => {
+  let etapa = 'escolher';   // escolher → lendo → revisar → feito
+  let rows = [];
+  let meta = null;          // { banco, arquivo, de, ate }
+  let erro = '';
+  let importId = null;
+  let removidas = 0;
+
+  const catsExpense = () => state.categorias.filter(c => !c.poupanca);
+
+  const catOptions = (selected) =>
+    `<option value="">— sem categoria —</option>` +
+    catsExpense().map(c =>
+      `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`
+    ).join('');
+
+  const rowHTML = (r, i) => {
+    const t = r.txn;
+    const parcela = t.parcelaTotal ? `<span class="tag installment">${t.parcelaNum}/${t.parcelaTotal}</span>` : '';
+    return `
+      <li class="imp-row ${r.incluir ? 'on' : ''}" data-i="${i}">
+        <span class="imp-check" aria-hidden="true">${r.incluir ? '✓' : ''}</span>
+        <div class="grow">
+          <div class="t">${escapeHTML(t.descricao)} ${parcela} ${MOTIVO_BADGE[r.motivo] || ''}</div>
+          <div class="s">${fmtDate(t.data)}</div>
+          <select class="imp-cat" data-i="${i}" ${r.txn.ehDespesa ? '' : 'disabled'}>${catOptions(r.categoriaId)}</select>
+        </div>
+        <div class="amount ${t.ehDespesa ? 'neg' : 'pos'}">${fmtBRL(t.valor)}</div>
+      </li>`;
+  };
+
+  const conteudo = () => {
+    if (etapa === 'lendo') {
+      return `<p style="text-align:center;padding:24px 0;color:var(--text-2);">Lendo o arquivo…</p>`;
+    }
+
+    if (etapa === 'feito') {
+      return `
+        <div class="boleto-resumo">
+          <strong>${removidas === 0 ? 'Importação concluída' : 'Importação desfeita'}</strong>
+          ${removidas === 0 ? `<div class="s">As despesas já estão na sua lista.</div>` : ''}
+        </div>
+        <div class="actions">
+          ${removidas === 0 ? `<button class="danger" id="undo">Desfazer importação</button>` : ''}
+          <button class="primary" id="done">Concluir</button>
+        </div>`;
+    }
+
+    if (etapa === 'revisar') {
+      const r = resumoRows(rows);
+      const avisos = [];
+      if (r.duplicatas) avisos.push(`${r.duplicatas} já ${r.duplicatas === 1 ? 'está' : 'estão'} no app`);
+      if (r.creditos)   avisos.push(`${r.creditos} crédito${r.creditos === 1 ? '' : 's'}/pagamento`);
+      if (r.manuais)    avisos.push(`${r.manuais} parece${r.manuais === 1 ? '' : 'm'} lançamento manual`);
+
+      return `
+        <div class="boleto-resumo">
+          <strong>${meta.banco || 'Fatura'}</strong> · ${escapeHTML(meta.arquivo)}
+          <div class="s">${fmtDate(meta.de)} a ${fmtDate(meta.ate)} · ${r.total} transações</div>
+          ${avisos.length ? `<div class="s" style="margin-top:6px;">${avisos.join(' · ')}</div>` : ''}
+        </div>
+
+        <div class="imp-bulk">
+          <button class="link" id="bulk-default">Padrão</button>
+          <button class="link" id="bulk-none">Desmarcar todas</button>
+          <label class="imp-bulk-cat">Categoria p/ marcadas:
+            <select id="bulk-cat"><option value="">—</option>${catsExpense().map(c => `<option value="${c.id}">${escapeHTML(c.nome)}</option>`).join('')}</select>
+          </label>
+        </div>
+
+        <ul class="imp-list">${rows.map(rowHTML).join('')}</ul>
+
+        <div class="imp-footer">
+          <button class="secondary" id="cancel">Cancelar</button>
+          <button class="primary" id="confirm" ${r.incluir === 0 ? 'disabled' : ''}>
+            Importar <span id="imp-count">${r.incluir}</span> · <span id="imp-soma">${fmtBRL(r.somaIncluir)}</span>
+          </button>
+        </div>`;
+    }
+
+    // etapa 'escolher'
+    return `
+      <p style="color:var(--text-2);font-size:14px;margin:0 2px 16px;line-height:1.5;">
+        Exporte a fatura do seu cartão em <strong>OFX</strong> (no Nubank:
+        fatura → “Exportar”). O app lê as transações, marca o que já existe e
+        deixa você conferir tudo antes de importar.
+      </p>
+      ${erro ? `<p class="boleto-aviso">${escapeHTML(erro)}</p>` : ''}
+      <input id="f-ofx" type="file" accept=".ofx,application/x-ofx,application/octet-stream" hidden />
+      <button class="primary" id="pick" style="width:100%;">Escolher arquivo OFX</button>
+      <div class="actions"><button class="secondary" id="cancel">Cancelar</button></div>`;
+  };
+
+  const abrir = () => openSheet('Importar fatura', conteudo, (body) => {
+    const cancel = body.querySelector('#cancel');
+    if (cancel) cancel.addEventListener('click', closeSheet);
+
+    // --- etapa escolher ---
+    const pick = body.querySelector('#pick');
+    if (pick) {
+      const input = body.querySelector('#f-ofx');
+      pick.addEventListener('click', () => input.click());
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        erro = '';
+        etapa = 'lendo';
+        abrir();
+        try {
+          const { readTextFile } = await import('./src/ui/read-file.js');
+          const texto = await readTextFile(file);
+          const parsed = parseOfx(texto);
+          if (parsed.transacoes.length === 0) {
+            erro = 'Nenhuma transação encontrada. Confirme que é um arquivo .ofx de extrato ou fatura.';
+            etapa = 'escolher';
+          } else {
+            const anot = annotateImport({
+              transacoes: parsed.transacoes,
+              despesas: state.despesas,
+              categorias: state.categorias,
+            });
+            rows = anot.rows;
+            meta = { banco: parsed.banco, arquivo: file.name, de: parsed.de, ate: parsed.ate };
+            etapa = 'revisar';
+          }
+        } catch (e) {
+          erro = 'Não consegui ler este arquivo. Ele precisa estar no formato OFX.';
+          etapa = 'escolher';
+        }
+        abrir();
+      });
+    }
+
+    // --- etapa revisar ---
+    const footerRefresh = () => {
+      const r = resumoRows(rows);
+      const cnt = body.querySelector('#imp-count');
+      const soma = body.querySelector('#imp-soma');
+      const btn = body.querySelector('#confirm');
+      if (cnt) cnt.textContent = r.incluir;
+      if (soma) soma.textContent = fmtBRL(r.somaIncluir);
+      if (btn) btn.disabled = r.incluir === 0;
+    };
+
+    const lista = body.querySelector('.imp-list');
+    if (lista) {
+      // Toggle da linha por delegação (preserva o scroll — não re-renderiza).
+      lista.addEventListener('click', (e) => {
+        if (e.target.closest('.imp-cat')) return; // clique no select não togla
+        const li = e.target.closest('.imp-row');
+        if (!li) return;
+        const i = Number(li.dataset.i);
+        rows[i].incluir = !rows[i].incluir;
+        li.classList.toggle('on', rows[i].incluir);
+        li.querySelector('.imp-check').textContent = rows[i].incluir ? '✓' : '';
+        footerRefresh();
+      });
+      lista.addEventListener('change', (e) => {
+        const sel = e.target.closest('.imp-cat');
+        if (!sel) return;
+        rows[Number(sel.dataset.i)].categoriaId = sel.value || null;
+      });
+    }
+
+    const bulkDefault = body.querySelector('#bulk-default');
+    if (bulkDefault) bulkDefault.addEventListener('click', () => {
+      rows.forEach(r => { r.incluir = (r.motivo === 'nova' || r.motivo === 'manual'); });
+      abrir();
+    });
+    const bulkNone = body.querySelector('#bulk-none');
+    if (bulkNone) bulkNone.addEventListener('click', () => {
+      rows.forEach(r => { r.incluir = false; });
+      abrir();
+    });
+    const bulkCat = body.querySelector('#bulk-cat');
+    if (bulkCat) bulkCat.addEventListener('change', () => {
+      const id = bulkCat.value || null;
+      if (!id) return;
+      rows.forEach(r => { if (r.incluir) r.categoriaId = id; });
+      abrir();
+    });
+
+    const confirm = body.querySelector('#confirm');
+    if (confirm) confirm.addEventListener('click', () => {
+      importId = uid();
+      const despesas = rowsToDespesas(rows, {
+        importId,
+        fonte: meta.arquivo,
+        importadoEm: todayISO(),
+      });
+      if (despesas.length === 0) return;
+      db.addDespesasBatch(despesas);
+      removidas = 0;
+      etapa = 'feito';
+      abrir();
+      render();
+    });
+
+    // --- etapa feito ---
+    const undo = body.querySelector('#undo');
+    if (undo) undo.addEventListener('click', () => {
+      removidas = db.removeImport(importId);
+      etapa = 'feito';
+      abrir();
+      render();
+    });
+    const done = body.querySelector('#done');
+    if (done) done.addEventListener('click', () => {
+      closeSheet();
+      toast(removidas === 0 ? 'Fatura importada' : 'Importação desfeita');
     });
   });
 
