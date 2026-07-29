@@ -334,6 +334,15 @@ main#view {
   color: var(--text-2);
   font-weight: 600;
 }
+/* Toggle de ordenação: parece o título, mas é tocável e mostra o modo atual. */
+.sort-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; cursor: pointer; padding: 0;
+  font: inherit; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--text-2); font-weight: 600;
+}
+.sort-toggle svg { color: var(--tint); }
+.sort-toggle:active { opacity: .6; }
 
 .empty {
   text-align: center;

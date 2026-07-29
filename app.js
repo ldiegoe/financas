@@ -2186,6 +2186,18 @@ views.despesas = (root) => {
   const despesasPeriod = filterDespesas(expanded);
   const total = sumAmount(despesasPeriod);
   const tags = allTags();
+
+  // Ordenação: 'cadastro' (padrão) usa a ordem de inserção — últimas
+  // adicionadas em cima, robusto a mesma data e a criadoEm editado; 'pagamento'
+  // usa a data do lançamento. Empate cai no outro critério.
+  const sortMode = state.config.despSort === 'pagamento' ? 'pagamento' : 'cadastro';
+  const orderIndex = new Map(state.despesas.map((d, i) => [d.id, i]));
+  const idxOf = (d) => orderIndex.has(d.id) ? orderIndex.get(d.id) : -1;
+  const sortedDespesas = despesasPeriod.slice().sort((a, b) =>
+    sortMode === 'pagamento'
+      ? (b.data.localeCompare(a.data) || (idxOf(b) - idxOf(a)))
+      : ((idxOf(b) - idxOf(a)) || b.data.localeCompare(a.data))
+  );
   const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null || typeFilter !== null || !!dateFromFilter || !!dateToFilter;
 
   root.innerHTML = `
@@ -2224,8 +2236,12 @@ views.despesas = (root) => {
       `;
     })()}
 
-    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
-      <span>Lançamentos</span>
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      ${(selectionMode || despesasPeriod.length === 0)
+        ? `<span>Lançamentos</span>`
+        : `<button class="sort-toggle" id="sort-toggle" type="button" aria-label="Alterar ordenação">
+             ${icon('sort', 14)}<span>${sortMode === 'cadastro' ? 'Últimas cadastradas' : 'Mais recentes'}</span>
+           </button>`}
       ${despesasPeriod.length === 0 ? '' : (selectionMode
         ? (() => {
             const realIds = despesasPeriod.filter(d => !d._virtual).map(d => d.id);
@@ -2239,7 +2255,7 @@ views.despesas = (root) => {
         <button class="primary" id="add-desp">Adicionar despesa</button></div>
     ` : `
       <ul class="list ${selectionMode ? 'selecting' : ''}">
-        ${despesasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(d => {
+        ${sortedDespesas.map(d => {
           const cat = state.categorias.find(c => c.id === d.categoriaId);
           const dTags = d.tags || [];
           const isReal = !d._virtual;
@@ -2364,6 +2380,11 @@ views.despesas = (root) => {
     const enterSelBtn = root.querySelector('#enter-select');
     if (enterSelBtn) enterSelBtn.addEventListener('click', () => { selectionMode = true; selectedIds.clear(); render({ preserveScroll: true }); });
   }
+  const sortToggle = root.querySelector('#sort-toggle');
+  if (sortToggle) sortToggle.addEventListener('click', () => {
+    updateConfig({ despSort: sortMode === 'cadastro' ? 'pagamento' : 'cadastro' });
+    render();
+  });
   // Botão "Filtros" abre o sheet com TODOS os controles. As pills mostram
   // os filtros ativos com × pra remover individualmente sem abrir o sheet.
   const openFiltersBtn = root.querySelector('#open-filters');

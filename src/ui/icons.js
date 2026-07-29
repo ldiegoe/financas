@@ -20,6 +20,7 @@ export const ICONS = {
   trending:  '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
   filter:    '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
   barcode:   '<path d="M3 5v14"/><path d="M7 5v14"/><path d="M11 5v9"/><path d="M15 5v14"/><path d="M19 5v9"/>',
+  sort:      '<polyline points="7 4 7 20"/><polyline points="4 8 7 4 10 8"/><polyline points="17 20 17 4"/><polyline points="14 16 17 20 20 16"/>',
   copy:      '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
 };
 
