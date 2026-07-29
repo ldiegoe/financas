@@ -4072,15 +4072,29 @@ const sheetImportarFatura = () => {
   const rowHTML = (r, i) => {
     const t = r.txn;
     const parcela = t.parcelaTotal ? `<span class="tag installment">${t.parcelaNum}/${t.parcelaTotal}</span>` : '';
+    const editavel = t.ehDespesa;
     return `
       <li class="imp-row ${r.incluir ? 'on' : ''}" data-i="${i}">
-        <span class="imp-check" aria-hidden="true">${r.incluir ? '✓' : ''}</span>
-        <div class="grow">
-          <div class="t">${escapeHTML(t.descricao)} ${parcela} ${MOTIVO_BADGE[r.motivo] || ''}</div>
-          <div class="s">${fmtDate(t.data)}</div>
-          <select class="imp-cat" data-i="${i}" ${r.txn.ehDespesa ? '' : 'disabled'}>${catOptions(r.categoriaId)}</select>
+        <button class="imp-check" type="button" aria-label="${r.incluir ? 'Não importar' : 'Importar'}">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </button>
+        <div class="imp-main">
+          <div class="imp-line1">
+            <input class="imp-name" data-i="${i}" value="${escapeAttr(r.descricao)}" ${editavel ? '' : 'readonly'} aria-label="Descrição" />
+            <span class="imp-amount ${editavel ? 'neg' : 'pos'}">${fmtBRL(t.valor)}</span>
+          </div>
+          <div class="imp-sub">
+            <span>${fmtDate(t.data)}</span>
+            ${parcela} ${MOTIVO_BADGE[r.motivo] || ''}
+          </div>
+          ${editavel ? `
+            <div class="imp-edit">
+              <select class="imp-cat" data-i="${i}">${catOptions(r.categoriaId)}</select>
+              <input class="imp-tags" data-i="${i}" value="${escapeAttr((r.tags || []).join(', '))}"
+                     placeholder="+ tags" autocapitalize="none" autocorrect="off" aria-label="Tags" />
+            </div>
+          ` : ''}
         </div>
-        <div class="amount ${t.ehDespesa ? 'neg' : 'pos'}">${fmtBRL(t.valor)}</div>
       </li>`;
   };
 
@@ -4093,7 +4107,7 @@ const sheetImportarFatura = () => {
       return `
         <div class="boleto-resumo">
           <strong>${removidas === 0 ? 'Importação concluída' : 'Importação desfeita'}</strong>
-          ${removidas === 0 ? `<div class="s">As despesas já estão na sua lista.</div>` : ''}
+          ${removidas === 0 ? `<div class="s">As despesas entraram como pendentes — marque cada uma como paga quando quitar a fatura.</div>` : ''}
         </div>
         <div class="actions">
           ${removidas === 0 ? `<button class="danger" id="undo">Desfazer importação</button>` : ''}
@@ -4103,24 +4117,32 @@ const sheetImportarFatura = () => {
 
     if (etapa === 'revisar') {
       const r = resumoRows(rows);
-      const avisos = [];
-      if (r.duplicatas) avisos.push(`${r.duplicatas} já ${r.duplicatas === 1 ? 'está' : 'estão'} no app`);
-      if (r.creditos)   avisos.push(`${r.creditos} crédito${r.creditos === 1 ? '' : 's'}/pagamento`);
-      if (r.manuais)    avisos.push(`${r.manuais} parece${r.manuais === 1 ? '' : 'm'} lançamento manual`);
+      const novas = r.novas + r.manuais;
+      const chips = [
+        novas       ? `<span class="imp-chip nova">${novas} nova${novas === 1 ? '' : 's'}</span>` : '',
+        r.duplicatas ? `<span class="imp-chip dup">${r.duplicatas} já no app</span>` : '',
+        r.creditos  ? `<span class="imp-chip credito">${r.creditos} crédito${r.creditos === 1 ? '' : 's'}</span>` : '',
+      ].filter(Boolean).join('');
 
       return `
-        <div class="boleto-resumo">
-          <strong>${meta.banco || 'Fatura'}</strong> · ${escapeHTML(meta.arquivo)}
-          <div class="s">${fmtDate(meta.de)} a ${fmtDate(meta.ate)} · ${r.total} transações</div>
-          ${avisos.length ? `<div class="s" style="margin-top:6px;">${avisos.join(' · ')}</div>` : ''}
+        <div class="imp-head">
+          <div class="imp-head-top">
+            <span class="imp-bank">${escapeHTML(meta.banco || 'Fatura')}</span>
+            <span class="imp-period">${fmtDate(meta.de)} – ${fmtDate(meta.ate)}</span>
+          </div>
+          <div class="imp-file">${escapeHTML(meta.arquivo)}</div>
+          <div class="imp-chips">${chips}</div>
         </div>
 
-        <div class="imp-bulk">
-          <button class="link" id="bulk-default">Padrão</button>
-          <button class="link" id="bulk-none">Desmarcar todas</button>
-          <label class="imp-bulk-cat">Categoria p/ marcadas:
-            <select id="bulk-cat"><option value="">—</option>${catsExpense().map(c => `<option value="${c.id}">${escapeHTML(c.nome)}</option>`).join('')}</select>
-          </label>
+        <div class="imp-toolbar">
+          <div class="imp-seg">
+            <button type="button" id="bulk-default">Só as novas</button>
+            <button type="button" id="bulk-none">Limpar</button>
+          </div>
+          <select id="bulk-cat" class="imp-bulkcat" aria-label="Categoria para as marcadas">
+            <option value="">Categoria em massa…</option>
+            ${catsExpense().map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+          </select>
         </div>
 
         <ul class="imp-list">${rows.map(rowHTML).join('')}</ul>
@@ -4199,21 +4221,28 @@ const sheetImportarFatura = () => {
 
     const lista = body.querySelector('.imp-list');
     if (lista) {
-      // Toggle da linha por delegação (preserva o scroll — não re-renderiza).
+      // Toggle por delegação (preserva o scroll — não re-renderiza). Clicar
+      // nos campos de edição (nome/tags/categoria) não alterna a inclusão.
       lista.addEventListener('click', (e) => {
-        if (e.target.closest('.imp-cat')) return; // clique no select não togla
+        if (e.target.closest('input, select, textarea')) return;
         const li = e.target.closest('.imp-row');
         if (!li) return;
         const i = Number(li.dataset.i);
         rows[i].incluir = !rows[i].incluir;
         li.classList.toggle('on', rows[i].incluir);
-        li.querySelector('.imp-check').textContent = rows[i].incluir ? '✓' : '';
+        li.querySelector('.imp-check').setAttribute('aria-label', rows[i].incluir ? 'Não importar' : 'Importar');
         footerRefresh();
+      });
+      // Edição inline: descrição, categoria e tags de cada linha.
+      lista.addEventListener('input', (e) => {
+        const el = e.target;
+        const i = Number(el.dataset.i);
+        if (el.classList.contains('imp-name')) rows[i].descricao = el.value;
+        else if (el.classList.contains('imp-tags')) rows[i].tags = parseTags(el.value);
       });
       lista.addEventListener('change', (e) => {
         const sel = e.target.closest('.imp-cat');
-        if (!sel) return;
-        rows[Number(sel.dataset.i)].categoriaId = sel.value || null;
+        if (sel) rows[Number(sel.dataset.i)].categoriaId = sel.value || null;
       });
     }
 

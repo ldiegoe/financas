@@ -1096,48 +1096,71 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .boleto-quick:active { background: rgba(10,132,255,.15); }
 
 /* ----- Importação de fatura (OFX) ----- */
-.imp-bulk {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin: 4px 0 8px; font-size: 13px;
+/* Cabeçalho: banco, arquivo e chips de resumo. */
+.imp-head {
+  padding: 14px; border-radius: 14px; margin-bottom: 12px;
+  background: var(--card, rgba(120,120,128,.10));
 }
-.imp-bulk .link { padding: 4px 0; }
-.imp-bulk-cat { margin-left: auto; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
-.imp-bulk-cat select { padding: 4px 6px; }
+.imp-head-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.imp-bank { font-weight: 700; font-size: 16px; }
+.imp-period { color: var(--text-2); font-size: 13px; white-space: nowrap; }
+.imp-file { color: var(--text-2); font-size: 12px; margin-top: 2px; word-break: break-all; }
+.imp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.imp-chip { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+.imp-chip.nova    { background: rgba(48,209,88,.16);   color: var(--green); }
+.imp-chip.dup     { background: rgba(10,132,255,.16);  color: var(--tint); }
+.imp-chip.credito { background: rgba(142,142,147,.20); color: var(--text-2); }
+
+/* Barra de ações em massa. */
+.imp-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.imp-seg { display: inline-flex; border: 1px solid var(--separator); border-radius: 10px; overflow: hidden; }
+.imp-seg button { background: none; border: 0; color: var(--tint); font-size: 13px; padding: 7px 12px; cursor: pointer; }
+.imp-seg button + button { border-left: 1px solid var(--separator); }
+.imp-bulkcat { margin-left: auto; max-width: 56%; padding: 7px 8px; font-size: 13px; }
 
 /* Lista rola por dentro; cabeçalho e rodapé ficam. */
 .imp-list {
   list-style: none; margin: 0 -18px; padding: 0;
-  max-height: 46vh; overflow-y: auto;
+  max-height: 52vh; overflow-y: auto;
   border-top: 1px solid var(--separator);
 }
 .imp-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 18px; border-bottom: 1px solid var(--separator);
-  cursor: pointer;
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px 18px; border-bottom: 1px solid var(--separator);
+  cursor: pointer; transition: opacity .15s;
 }
-/* Não-incluídas ficam esmaecidas pra separar visualmente do que vai entrar. */
-.imp-row:not(.on) { opacity: .5; }
+/* Não-incluídas ficam esmaecidas pra separar do que vai entrar. */
+.imp-row:not(.on) { opacity: .45; }
 .imp-check {
-  flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%;
-  border: 2px solid var(--separator); color: #fff;
+  flex: 0 0 24px; width: 24px; height: 24px; margin-top: 1px; padding: 0;
+  border-radius: 50%; border: 2px solid var(--separator);
+  background: transparent; color: transparent; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700;
 }
-.imp-row.on .imp-check { background: var(--green); border-color: var(--green); }
-.imp-row .grow { min-width: 0; }
-.imp-row .t {
-  font-size: 15px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+.imp-row.on .imp-check { background: var(--green); border-color: var(--green); color: #fff; }
+.imp-main { flex: 1; min-width: 0; }
+.imp-line1 { display: flex; align-items: center; gap: 10px; }
+/* Nome parece texto até receber foco — editável sem poluir visualmente. */
+.imp-name {
+  flex: 1; min-width: 0; font-size: 15px; font-weight: 500; color: var(--text);
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  padding: 4px 6px; margin: -4px -6px;
 }
-.imp-row .s { color: var(--text-2); font-size: 12px; margin-top: 2px; }
-.imp-cat { margin-top: 6px; max-width: 100%; padding: 4px 6px; font-size: 13px; }
-.imp-row .amount.pos { color: var(--green); }
+.imp-name:focus { border-color: var(--tint); background: var(--bg-elev); outline: none; }
+.imp-name[readonly] { color: var(--text-2); }
+.imp-amount { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.imp-amount.pos { color: var(--green); }
+.imp-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; color: var(--text-2); font-size: 12px; }
+.imp-edit { display: flex; gap: 8px; margin-top: 8px; }
+.imp-cat  { flex: 1 1 55%; min-width: 0; padding: 5px 6px; font-size: 13px; }
+.imp-tags { flex: 1 1 40%; min-width: 0; padding: 5px 8px; font-size: 13px; }
 .tag.dup     { background: rgba(10,132,255,.15);  color: var(--tint); }
 .tag.credito { background: rgba(48,209,88,.15);   color: var(--green); }
 .tag.manual  { background: rgba(255,159,10,.15);  color: var(--orange); }
 
 .imp-footer {
   position: sticky; bottom: calc(-1 * (20px + var(--safe-bottom)));
-  display: flex; gap: 10px; margin: 0 -18px;
+  display: flex; gap: 10px; margin: 12px -18px 0;
   padding: 12px 18px calc(12px + var(--safe-bottom));
   background: var(--bg-elev); border-top: 1px solid var(--separator);
 }

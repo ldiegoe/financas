@@ -53,7 +53,9 @@ export const annotateImport = ({ transacoes, despesas = [], categorias = [] }) =
     const sugestao = hints.get(normalizeDesc(txn.descricao));
     const categoriaId = (sugestao && catValidas.has(sugestao)) ? sugestao : null;
     const incluir = motivo === 'nova' || motivo === 'manual';
-    return { txn, dedupKey: key, motivo, categoriaId, incluir };
+    // `descricao` e `tags` sao editaveis na tela de revisao (o dedupKey fica
+    // congelado no dado original do banco, entao renomear nao afeta a dedup).
+    return { txn, dedupKey: key, motivo, categoriaId, incluir, descricao: txn.descricao, tags: [] };
   });
 
   return { rows, resumo: resumoRows(rows) };
@@ -73,19 +75,21 @@ export const resumoRows = (rows) => ({
 
 // Converte as linhas marcadas em objetos de despesa prontos pro db. Cada uma
 // carrega o vínculo de dedup (dedupKey/fitid) e o lote (importId) pra permitir
-// desfazer. `pago: true` porque a compra no cartão já aconteceu — é histórico,
-// não fica pendente nos vencimentos.
+// desfazer. `pago: false` — a despesa nasce pendente e o usuário marca como
+// paga quando quitar a fatura. Usa a descrição/tags editadas na revisão.
 export const rowsToDespesas = (rows, { importId, fonte, importadoEm }) =>
   rows.filter(r => r.incluir).map(r => ({
-    descricao: r.txn.descricao,
+    // Fallback pro texto do banco se o usuário apagou a descrição.
+    descricao: (r.descricao != null && String(r.descricao).trim())
+      ? String(r.descricao).trim() : r.txn.descricao,
     valor: r.txn.valor,
     data: r.txn.data,
     criadoEm: importadoEm,
     categoriaId: r.categoriaId || null,
     recorrente: false,
     parcelas: 1,
-    tags: [],
-    pago: true,
+    tags: r.tags || [],
+    pago: false,
     fitid: r.txn.fitid,
     dedupKey: r.dedupKey,
     importId,

@@ -123,8 +123,22 @@ describe('rowsToDespesas', () => {
 
   it('gera só as marcadas (45 débitos, sem o crédito)', () => {
     expect(out).toHaveLength(45);
-    expect(out.every(d => d.pago === true)).toBe(true);
     expect(out.every(d => d.importId === 'imp1' && d.fonte === 'nubank.ofx')).toBe(true);
+  });
+  it('despesas importadas nascem NÃO pagas (usuário marca ao quitar)', () => {
+    expect(out.every(d => d.pago === false)).toBe(true);
+  });
+  it('usa a descrição e as tags editadas na revisão', () => {
+    const { rows: edit } = annotateImport({ transacoes: parsed.transacoes, despesas: [], categorias: cats });
+    const alvo = edit.find(r => r.txn.descricao === 'Mercado Central');
+    alvo.descricao = 'Mercado do Zé';
+    alvo.tags = ['mercado', 'essencial'];
+    const gerado = rowsToDespesas(edit, { importId: 'i', fonte: 'f', importadoEm: '2026-07-28' })
+      .find(d => d.valor === alvo.txn.valor && d.data === alvo.txn.data);
+    expect(gerado.descricao).toBe('Mercado do Zé');
+    expect(gerado.tags).toEqual(['mercado', 'essencial']);
+    // renomear NÃO muda o dedupKey (continua o do dado original do banco)
+    expect(gerado.dedupKey).toBe(alvo.dedupKey);
   });
   it('cada despesa carrega fitid e dedupKey para dedup futura', () => {
     const merc = out.find(d => d.descricao === 'Mercado Central');
