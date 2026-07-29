@@ -108,6 +108,11 @@ export const parseOfx = (text) => {
     saldo: /<BALAMT>/i.test(t) ? parseOfxAmount(tagValue(t, 'BALAMT')) : null,
     de: datas[0] || null,
     ate: datas[datas.length - 1] || null,
+    // Período do extrato/fatura. Em fatura de cartão, `fechamento` (DTEND) é a
+    // data de corte — útil como base pro vencimento. O OFX NÃO traz o
+    // vencimento (data de pagamento da fatura), então isso o usuário informa.
+    abertura: parseOfxDate(tagValue(t, 'DTSTART')),
+    fechamento: parseOfxDate(tagValue(t, 'DTEND')),
     transacoes,
   };
 };

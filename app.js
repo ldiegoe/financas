@@ -4100,9 +4100,13 @@ const MOTIVO_BADGE = {
 const sheetImportarFatura = () => {
   let etapa = 'escolher';   // escolher → lendo → revisar → feito
   let rows = [];
-  let meta = null;          // { banco, arquivo, de, ate }
+  let meta = null;          // { banco, arquivo, de, ate, fechamento }
   let erro = '';
   let importId = null;
+  // Vencimento da fatura: quando ligado, todas as despesas entram nesta data
+  // (quando o dinheiro sai), não na data da compra. Default = fechamento.
+  let vencOn = true;
+  let vencDate = null;
   let removidas = 0;
 
   const catsExpense = () => state.categorias.filter(c => !c.poupanca);
@@ -4190,6 +4194,19 @@ const sheetImportarFatura = () => {
           </select>
         </div>
 
+        <div class="imp-venc">
+          <label class="imp-venc-row">
+            <input type="checkbox" id="venc-on" ${vencOn ? 'checked' : ''}/>
+            <span>Lançar tudo no vencimento da fatura</span>
+          </label>
+          <input type="date" id="venc-date" value="${vencDate || ''}" ${vencOn ? '' : 'disabled'}/>
+          <small>
+            ${meta.fechamento ? `A fatura fecha em <strong>${fmtDate(meta.fechamento)}</strong>. ` : ''}Ajuste
+            para o dia em que você paga. A data de cada compra fica guardada. Desligue
+            para manter a data de cada compra.
+          </small>
+        </div>
+
         <datalist id="imp-taglist">${allTags().map(t => `<option value="${escapeAttr(t)}"></option>`).join('')}</datalist>
         <ul class="imp-list">${rows.map(rowHTML).join('')}</ul>
 
@@ -4243,7 +4260,8 @@ const sheetImportarFatura = () => {
               categorias: state.categorias,
             });
             rows = anot.rows;
-            meta = { banco: parsed.banco, arquivo: file.name, de: parsed.de, ate: parsed.ate };
+            meta = { banco: parsed.banco, arquivo: file.name, de: parsed.de, ate: parsed.ate, fechamento: parsed.fechamento };
+            vencDate = parsed.fechamento || parsed.ate || todayISO();
             etapa = 'revisar';
           }
         } catch (e) {
@@ -4335,6 +4353,17 @@ const sheetImportarFatura = () => {
       });
     }
 
+    // Controle de vencimento da fatura.
+    const vencOnEl = body.querySelector('#venc-on');
+    const vencDateEl = body.querySelector('#venc-date');
+    if (vencOnEl) vencOnEl.addEventListener('change', () => {
+      vencOn = vencOnEl.checked;
+      if (vencDateEl) vencDateEl.disabled = !vencOn;
+    });
+    if (vencDateEl) vencDateEl.addEventListener('change', () => {
+      if (vencDateEl.value) vencDate = vencDateEl.value;
+    });
+
     const bulkDefault = body.querySelector('#bulk-default');
     if (bulkDefault) bulkDefault.addEventListener('click', () => {
       rows.forEach(r => { r.incluir = (r.motivo === 'nova' || r.motivo === 'manual'); });
@@ -4360,6 +4389,7 @@ const sheetImportarFatura = () => {
         importId,
         fonte: meta.arquivo,
         importadoEm: todayISO(),
+        vencimento: (vencOn && vencDate) ? vencDate : null,
       });
       if (despesas.length === 0) return;
       db.addDespesasBatch(despesas);

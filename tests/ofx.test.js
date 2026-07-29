@@ -108,6 +108,11 @@ describe('parseOfx — fatura real do Nubank', () => {
     expect(r.ate).toBe('2026-07-25');
   });
 
+  it('expõe abertura e fechamento da fatura (DTSTART/DTEND)', () => {
+    expect(r.abertura).toBe('2026-07-03');
+    expect(r.fechamento).toBe('2026-08-03');
+  });
+
   it('extrai a parcela das compras parceladas', () => {
     const ml = r.transacoes.find(t => t.descricao === 'Loja Online' && t.valor === 104990);
     expect(ml).toMatchObject({ parcelaNum: 1, parcelaTotal: 10 });

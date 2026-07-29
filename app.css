@@ -1128,6 +1128,17 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .imp-seg button + button { border-left: 1px solid var(--separator); }
 .imp-bulkcat { margin-left: auto; max-width: 56%; padding: 7px 8px; font-size: 13px; }
 
+/* Vencimento da fatura: data única onde caem todas as compras. */
+.imp-venc {
+  margin: 2px 0 10px; padding: 12px 14px;
+  border: 1px solid var(--separator); border-radius: 12px;
+}
+.imp-venc-row { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; }
+.imp-venc-row input { width: 20px; height: 20px; flex: 0 0 auto; }
+.imp-venc input[type="date"] { display: block; width: 100%; margin-top: 10px; padding: 7px 8px; font-size: 14px; }
+.imp-venc input[type="date"]:disabled { opacity: .45; }
+.imp-venc small { display: block; color: var(--text-2); font-size: 12px; line-height: 1.45; margin-top: 8px; }
+
 /* Lista rola por dentro; cabeçalho e rodapé ficam. */
 .imp-list {
   list-style: none; margin: 0 -18px; padding: 0;

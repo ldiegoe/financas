@@ -149,4 +149,22 @@ describe('rowsToDespesas', () => {
     const zerado = rows.map(r => ({ ...r, incluir: false }));
     expect(rowsToDespesas(zerado, { importId: 'x', fonte: 'y', importadoEm: 'z' })).toEqual([]);
   });
+
+  it('com vencimento, lança tudo na data da fatura e guarda a compra em criadoEm', () => {
+    const comVenc = rowsToDespesas(rows, {
+      importId: 'i', fonte: 'f', importadoEm: '2026-08-01', vencimento: '2026-08-10',
+    });
+    // Toda despesa vence em 10/08; a data da compra fica em criadoEm.
+    expect(comVenc.every(d => d.data === '2026-08-10')).toBe(true);
+    const merc = comVenc.find(d => d.descricao === 'Mercado Central');
+    expect(merc.criadoEm).toBe('2026-07-25');   // data original da compra
+    // dedupKey NÃO muda com a troca de data (segue o dado do banco).
+    expect(merc.dedupKey).toBe(dedupKey({ fitid: merc.fitid, valorSigned: -2448, descricao: 'Mercado Central' }));
+  });
+
+  it('sem vencimento, mantém a data da compra (comportamento padrão)', () => {
+    const merc = out.find(d => d.descricao === 'Mercado Central');
+    expect(merc.data).toBe('2026-07-25');
+    expect(merc.criadoEm).toBe('2026-07-28');   // importadoEm
+  });
 });

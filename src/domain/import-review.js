@@ -77,21 +77,29 @@ export const resumoRows = (rows) => ({
 // carrega o vínculo de dedup (dedupKey/fitid) e o lote (importId) pra permitir
 // desfazer. `pago: false` — a despesa nasce pendente e o usuário marca como
 // paga quando quitar a fatura. Usa a descrição/tags editadas na revisão.
-export const rowsToDespesas = (rows, { importId, fonte, importadoEm }) =>
-  rows.filter(r => r.incluir).map(r => ({
-    // Fallback pro texto do banco se o usuário apagou a descrição.
-    descricao: (r.descricao != null && String(r.descricao).trim())
-      ? String(r.descricao).trim() : r.txn.descricao,
-    valor: r.txn.valor,
-    data: r.txn.data,
-    criadoEm: importadoEm,
-    categoriaId: r.categoriaId || null,
-    recorrente: false,
-    parcelas: 1,
-    tags: r.tags || [],
-    pago: false,
-    fitid: r.txn.fitid,
-    dedupKey: r.dedupKey,
-    importId,
-    fonte,
-  }));
+//
+// `vencimento` (opcional): no cartão de crédito, o dinheiro só sai no
+// vencimento da fatura, não na data da compra. Quando informado, as despesas
+// (débitos) recebem `data = vencimento` e a data da compra é preservada em
+// `criadoEm`. Créditos/estornos, se incluídos, mantêm a própria data.
+export const rowsToDespesas = (rows, { importId, fonte, importadoEm, vencimento = null }) =>
+  rows.filter(r => r.incluir).map(r => {
+    const noVenc = !!vencimento && r.txn.ehDespesa;
+    return {
+      // Fallback pro texto do banco se o usuário apagou a descrição.
+      descricao: (r.descricao != null && String(r.descricao).trim())
+        ? String(r.descricao).trim() : r.txn.descricao,
+      valor: r.txn.valor,
+      data: noVenc ? vencimento : r.txn.data,
+      criadoEm: noVenc ? r.txn.data : importadoEm,
+      categoriaId: r.categoriaId || null,
+      recorrente: false,
+      parcelas: 1,
+      tags: r.tags || [],
+      pago: false,
+      fitid: r.txn.fitid,
+      dedupKey: r.dedupKey,
+      importId,
+      fonte,
+    };
+  });
