@@ -520,6 +520,24 @@ const allTags = () => {
   return [...set.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 };
 
+// Tags mais usadas primeiro (por frequencia de uso nas despesas). Serve pros
+// atalhos de "tap pra adicionar" sem precisar digitar.
+const topTags = (limit = 8) => {
+  const count = new Map(); // lower -> { label, n }
+  for (const d of state.despesas) {
+    for (const t of (d.tags || [])) {
+      const k = t.toLowerCase();
+      const e = count.get(k) || { label: t, n: 0 };
+      e.n++;
+      count.set(k, e);
+    }
+  }
+  return [...count.values()]
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label, 'pt-BR'))
+    .slice(0, limit)
+    .map(e => e.label);
+};
+
 // Cabecalho colapsavel pros cards do dashboard. Retorna o <h2> com chevron;
 // o body do card eh renderizado condicionalmente pelo caller via isCollapsed.
 const isCollapsed = (key) => !!(state.config.dashCollapsed || {})[key];
@@ -4093,9 +4111,10 @@ const sheetImportarFatura = () => {
             ${parcela} ${MOTIVO_BADGE[r.motivo] || ''}
           </div>
           ${editavel ? `
-            <div class="imp-edit">
-              <select class="imp-cat" data-i="${i}">${catOptions(r.categoriaId)}</select>
-              <input class="imp-tags" data-i="${i}" value="${escapeAttr((r.tags || []).join(', '))}"
+            <select class="imp-cat" data-i="${i}">${catOptions(r.categoriaId)}</select>
+            <div class="imp-tagwrap">
+              <input class="imp-tags" data-i="${i}" list="imp-taglist"
+                     value="${escapeAttr((r.tags || []).join(', '))}"
                      placeholder="+ tags" autocapitalize="none" autocorrect="off" aria-label="Tags" />
             </div>
           ` : ''}
@@ -4150,6 +4169,7 @@ const sheetImportarFatura = () => {
           </select>
         </div>
 
+        <datalist id="imp-taglist">${allTags().map(t => `<option value="${escapeAttr(t)}"></option>`).join('')}</datalist>
         <ul class="imp-list">${rows.map(rowHTML).join('')}</ul>
 
         <div class="imp-footer">
@@ -4226,10 +4246,53 @@ const sheetImportarFatura = () => {
 
     const lista = body.querySelector('.imp-list');
     if (lista) {
-      // Toggle por delegação (preserva o scroll — não re-renderiza). Clicar
-      // nos campos de edição (nome/tags/categoria) não alterna a inclusão.
+      // Chips de tags frequentes: aparecem sob o campo de tags que estiver em
+      // foco, e somem ao sair (com atraso pra o tap no chip acontecer antes).
+      let chipTimer = null;
+      const removeChips = () => lista.querySelector('.imp-tagchips')?.remove();
+      const showChips = (input) => {
+        const usadas = new Set(parseTags(input.value).map(t => t.toLowerCase()));
+        const sug = topTags(12).filter(t => !usadas.has(t.toLowerCase())).slice(0, 8);
+        const wrap = input.parentElement;
+        wrap.querySelector('.imp-tagchips')?.remove();
+        if (sug.length === 0) return;
+        const bar = document.createElement('div');
+        bar.className = 'imp-tagchips';
+        bar.innerHTML = sug.map(t =>
+          `<button type="button" class="imp-tagchip" data-tag="${escapeAttr(t)}">#${escapeHTML(t)}</button>`
+        ).join('');
+        wrap.appendChild(bar);
+      };
+
+      lista.addEventListener('focusin', (e) => {
+        if (!e.target.classList.contains('imp-tags')) return;
+        if (chipTimer) { clearTimeout(chipTimer); chipTimer = null; }
+        removeChips();
+        showChips(e.target);
+      });
+      lista.addEventListener('focusout', (e) => {
+        if (!e.target.classList.contains('imp-tags')) return;
+        chipTimer = setTimeout(removeChips, 250);
+      });
+
       lista.addEventListener('click', (e) => {
-        if (e.target.closest('input, select, textarea')) return;
+        // Tap num chip: adiciona a tag ao campo daquela linha.
+        const chip = e.target.closest('.imp-tagchip');
+        if (chip) {
+          const wrap = chip.closest('.imp-tagwrap');
+          const input = wrap.querySelector('.imp-tags');
+          const i = Number(input.dataset.i);
+          const cur = parseTags(input.value);
+          const tag = chip.dataset.tag;
+          if (!cur.some(t => t.toLowerCase() === tag.toLowerCase())) cur.push(tag);
+          input.value = cur.join(', ');
+          rows[i].tags = cur;
+          input.focus();      // mantém o campo focado e reexibe os chips restantes
+          showChips(input);
+          return;
+        }
+        // Toggle da linha (ignora campos de edição e a barra de chips).
+        if (e.target.closest('input, select, textarea, .imp-tagchips')) return;
         const li = e.target.closest('.imp-row');
         if (!li) return;
         const i = Number(li.dataset.i);

@@ -1152,9 +1152,17 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .imp-amount { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; }
 .imp-amount.pos { color: var(--green); }
 .imp-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; color: var(--text-2); font-size: 12px; }
-.imp-edit { display: flex; gap: 8px; margin-top: 8px; }
-.imp-cat  { flex: 1 1 55%; min-width: 0; padding: 5px 6px; font-size: 13px; }
-.imp-tags { flex: 1 1 40%; min-width: 0; padding: 5px 8px; font-size: 13px; }
+/* Categoria e tags cada uma em sua própria linha (respiram melhor). */
+.imp-cat  { display: block; width: 100%; margin-top: 8px; padding: 7px 8px; font-size: 13px; }
+.imp-tagwrap { margin-top: 8px; }
+.imp-tags { display: block; width: 100%; padding: 7px 8px; font-size: 13px; }
+/* Chips de tags frequentes sob o campo em foco. */
+.imp-tagchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.imp-tagchip {
+  border: 0; cursor: pointer; font-size: 13px; padding: 5px 11px; border-radius: 999px;
+  background: rgba(94,92,230,.16); color: #5e5ce6;
+}
+.imp-tagchip:active { background: rgba(94,92,230,.30); }
 .tag.dup     { background: rgba(10,132,255,.15);  color: var(--tint); }
 .tag.credito { background: rgba(48,209,88,.15);   color: var(--green); }
 .tag.manual  { background: rgba(255,159,10,.15);  color: var(--orange); }
