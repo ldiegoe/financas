@@ -81,6 +81,7 @@ body {
   width: 36px; height: 36px; border-radius: 18px;
   font-size: 22px; font-weight: 500;
   cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 /* Botao "fantasma" pra acoes secundarias na topbar (olho de ocultar valores). */
 .icon-btn-ghost {

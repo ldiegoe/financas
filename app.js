@@ -5014,13 +5014,10 @@ document.addEventListener('db:changed', () => {
 });
 
 // Quick-add no topo cria conforme aba
-document.getElementById('quick-add').addEventListener('click', () => {
-  if (currentTab === 'carteira') sheetRenda();
-  else if (currentTab === 'despesas') sheetDespesa();
-  else if (currentTab === 'categorias') sheetCategoria();
-  else if (currentTab === 'investimentos') { if (investSub === 'objetivos') sheetObjetivo(); else sheetDespesa(null, { investimento: true }); }
-  else sheetDespesa(); // default no dashboard / config
-});
+// Botao do topo: importar fatura (OFX). Cada aba ja tem seu FAB "+" pra
+// adicionar, entao aqui priorizamos o atalho de importacao que antes so
+// existia escondido em Ajustes.
+document.getElementById('quick-add').addEventListener('click', () => sheetImportarFatura());
 
 // Sino na topbar: abre a sheet de notificacoes.
 document.getElementById('alerts-btn').addEventListener('click', sheetAlerts);
