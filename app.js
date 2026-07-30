@@ -3711,7 +3711,7 @@ const sheetDespesa = (desp, opts = {}) => {
           ${existingTags.map(t => `<option value="${escapeAttr(t)}"></option>`).join('')}
         </datalist>
         <div class="tags-row" style="margin-top:8px;" id="tag-quick">
-          ${existingTags.slice(0, 8).map(t => `<button type="button" class="tag usertag" data-tag="${escapeAttr(t)}" style="border:0;cursor:pointer;">#${escapeHTML(t)}</button>`).join('')}
+          ${topTags(40).map(t => `<button type="button" class="tag usertag" data-tag="${escapeAttr(t)}" style="border:0;cursor:pointer;">#${escapeHTML(t)}</button>`).join('')}
         </div>
       ` : ''}
     </label>
@@ -4369,7 +4369,7 @@ const sheetImportarOFX = () => {
       const removeChips = () => lista.querySelector('.imp-tagchips')?.remove();
       const showChips = (inp) => {
         const usadas = new Set(parseTags(inp.value).map(t => t.toLowerCase()));
-        const sug = topTags(12).filter(t => !usadas.has(t.toLowerCase())).slice(0, 8);
+        const sug = topTags(40).filter(t => !usadas.has(t.toLowerCase()));
         const wrap = inp.parentElement;
         wrap.querySelector('.imp-tagchips')?.remove();
         if (sug.length === 0) return;
