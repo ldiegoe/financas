@@ -153,6 +153,51 @@ describe('annotateImport — herda o nome editado de importações anteriores', 
   });
 });
 
+describe('annotateImport — herda as tags de importações anteriores', () => {
+  it('parcela do mês seguinte herda as tags (mesmo FITID e valor)', () => {
+    // Julho: "Amazon - Parcela 3/10" importado com tags.
+    const julho = [{
+      descricao: 'Amazon', tags: ['eletronico', 'parcelado'],
+      dedupKey: 'AMZ|-5620|amazon|3/10', fitid: 'AMZ', srcDesc: 'amazon',
+    }];
+    const ago = { fitid: 'AMZ', valorSigned: -5620, valor: 5620, data: '2026-08-03',
+      descricao: 'Amazon', ehDespesa: true, parcelaNum: 4, parcelaTotal: 10 };
+    const { rows } = annotateImport({ transacoes: [ago], despesas: julho, categorias: [] });
+    expect(rows[0].tags).toEqual(['eletronico', 'parcelado']);
+  });
+
+  it('NÃO herda de outra transação que só compartilha o FITID (IOF x compra)', () => {
+    // A compra internacional (Discord) foi tagueada; o IOF compartilha o FITID
+    // mas tem valor diferente — não pode herdar as tags do Discord.
+    const antes = [{
+      descricao: 'Discord', tags: ['assinatura'],
+      dedupKey: 'COL|-2598|discord* nitromonthly|/', fitid: 'COL', srcDesc: 'discord* nitromonthly',
+    }];
+    const iof = { fitid: 'COL', valorSigned: -90, valor: 90, data: '2026-08-14',
+      descricao: 'IOF de compra internacional', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [iof], despesas: antes, categorias: [] });
+    expect(rows[0].tags).toEqual([]);
+  });
+
+  it('assinatura (FITID muda a cada mês) herda pelas descrição de origem', () => {
+    const julho = [{
+      descricao: 'Netflix', tags: ['streaming'],
+      dedupKey: 'N1|-5590|netflix.com|/', fitid: 'N1', srcDesc: 'netflix.com',
+    }];
+    const ago = { fitid: 'N2', valorSigned: -5590, valor: 5590, data: '2026-08-01',
+      descricao: 'Netflix.com', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [ago], despesas: julho, categorias: [] });
+    expect(rows[0].tags).toEqual(['streaming']);
+  });
+
+  it('sem histórico de tags, vem vazio', () => {
+    const txn = { fitid: 'Z', valorSigned: -100, valor: 100, data: '2026-08-01',
+      descricao: 'Loja', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [txn], despesas: [], categorias: [] });
+    expect(rows[0].tags).toEqual([]);
+  });
+});
+
 describe('resumoRows — recálculo após toggles', () => {
   it('reflete o que o usuário marcou/desmarcou', () => {
     const { rows } = annotateImport({ transacoes: parsed.transacoes, despesas: [], categorias: cats });

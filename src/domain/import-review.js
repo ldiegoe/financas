@@ -44,6 +44,46 @@ export const buildNomeHints = (despesas) => {
   return m;
 };
 
+// "Chave de compra": identidade estável entre meses = dedupKey SEM a parcela
+// (fitid|valor|descrição). Numa parcelada, o Nubank repete o FITID e o valor
+// todo mês, mudando só a parcela — então esta chave casa julho com agosto. E,
+// por incluir o valor, NÃO colide com o IOF, que compartilha FITID com a
+// compra internacional mas tem valor diferente.
+export const purchaseKey = (t) =>
+  `${t.fitid}|${t.valorSigned}|${normalizeDesc(t.descricao)}`;
+
+const purchaseKeyFromDedup = (k) => {
+  const parts = String(k || '').split('|');
+  if (parts.length < 3) return '';
+  const last = parts[parts.length - 1];
+  const temParcela = /^\d*\/\d*$/.test(last);
+  return parts.slice(0, temParcela ? -1 : parts.length).join('|');
+};
+
+// Herança de TAGS de importações anteriores. Chaveia por:
+//  - chave de compra (fitid+valor+desc) → pega a MESMA compra parcelada mês a
+//    mês, com precisão (sem colidir com IOF);
+//  - descrição de origem (memo) → cobre recorrentes cujo FITID muda a cada mês
+//    (assinaturas). A última importação com tags vence.
+export const buildTagHints = (despesas) => {
+  const byPurchase = new Map();
+  const bySrc = new Map();
+  for (const d of despesas) {
+    if (!d.tags || d.tags.length === 0) continue;
+    const pk = purchaseKeyFromDedup(d.dedupKey);
+    if (pk) byPurchase.set(pk, d.tags);
+    const src = d.srcDesc || memoFromDedup(d.dedupKey);
+    if (src) bySrc.set(src, d.tags);
+  }
+  return { byPurchase, bySrc };
+};
+
+const herdarTags = (tagHints, txn) => {
+  const t = tagHints.byPurchase.get(purchaseKey(txn))
+         || tagHints.bySrc.get(normalizeDesc(txn.descricao));
+  return t ? [...t] : [];
+};
+
 // motivo de cada linha:
 //   'nova'          — despesa inédita, entra marcada
 //   'duplicata'     — já importada antes (dedupKey existe), entra desmarcada
@@ -56,6 +96,7 @@ export const annotateImport = ({ transacoes, despesas = [], categorias = [] }) =
   const catValidas = new Set(categorias.map(c => c.id));
   const hints = buildCategoriaHints(despesas);
   const nomeHints = buildNomeHints(despesas);
+  const tagHints = buildTagHints(despesas);
   // Lançamentos digitados na mão (sem dedupKey) indexados por data+valor.
   const manuais = new Set(
     despesas.filter(d => !d.dedupKey).map(d => `${d.data}|${d.valor}`)
@@ -84,9 +125,10 @@ export const annotateImport = ({ transacoes, despesas = [], categorias = [] }) =
     const incluir = motivo === 'nova' || motivo === 'manual';
     // `descricao` e `tags` sao editaveis na tela de revisao (o dedupKey fica
     // congelado no dado original do banco, entao renomear nao afeta a dedup).
-    // Herda o nome salvo numa importacao anterior, se houver.
+    // Herda o nome e as tags salvos numa importacao anterior, se houver.
     const descricao = nomeHints.get(srcKey) || txn.descricao;
-    return { txn, dedupKey: key, motivo, categoriaId, incluir, descricao, tags: [] };
+    const tags = herdarTags(tagHints, txn);
+    return { txn, dedupKey: key, motivo, categoriaId, incluir, descricao, tags };
   });
 
   return { rows, resumo: resumoRows(rows) };
@@ -165,6 +207,7 @@ export const annotateExtrato = ({ transacoes, despesas = [], rendas = [], catego
   const catValidas = new Set(categorias.map(c => c.id));
   const hints = buildCategoriaHints(despesas);
   const nomeHints = buildNomeHints(despesas);
+  const tagHints = buildTagHints(despesas);
   const manuais = new Set([
     ...despesas.filter(d => !d.dedupKey).map(d => `${d.data}|${d.valor}`),
     ...rendas.filter(r => !r.dedupKey).map(r => `${r.data}|${r.valor}`),
@@ -193,7 +236,8 @@ export const annotateExtrato = ({ transacoes, despesas = [], rendas = [], catego
     const sugestao = hints.get(normalizeDesc(descricao));
     const categoriaId = (tipo === 'despesa' && sugestao && catValidas.has(sugestao)) ? sugestao : null;
     const incluir = motivo === 'nova' || motivo === 'manual';
-    return { txn, dedupKey: key, motivo, tipo, categoriaId, incluir, descricao, tags: [], transferencia: ehTransfer };
+    const tags = tipo === 'despesa' ? herdarTags(tagHints, txn) : [];
+    return { txn, dedupKey: key, motivo, tipo, categoriaId, incluir, descricao, tags, transferencia: ehTransfer };
   });
 
   return { rows, resumo: resumoExtrato(rows) };
