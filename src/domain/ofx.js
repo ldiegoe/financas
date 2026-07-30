@@ -55,6 +55,19 @@ export const extractParcela = (memo) => {
 export const normalizeDesc = (s) =>
   String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+// Enxuga o MEMO do extrato: os Pix do Nubank vêm com nome + CPF mascarado +
+// banco + agência/conta de terceiros ("... - Fulano - •••.xxx-•• - BANCO ...
+// Agência: 1 Conta: 123"). Guardamos só até o nome — o resto é ruído (e são
+// dados de terceiros que iriam pro Dropbox). Descrições sem esse padrão
+// (boleto, "Aplicação RDB") passam intactas.
+export const limparDescricao = (memo) => {
+  let s = String(memo || '').trim();
+  s = s.replace(/\s*-\s*•••.*$/s, '');                             // CPF mascarado em diante
+  s = s.replace(/\s*-\s*\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}.*$/s, ''); // CNPJ em diante
+  s = s.replace(/\s*-?\s*(ag[êe]ncia|conta)\s*:.*$/is, '');        // sobra de agência/conta
+  return s.replace(/\s+/g, ' ').trim();
+};
+
 // Identidade de deduplicação — robusta à colisão de FITID do Nubank.
 export const dedupKey = (t) =>
   `${t.fitid}|${t.valorSigned}|${normalizeDesc(t.descricao)}`;
@@ -100,11 +113,19 @@ export const parseOfx = (text) => {
     .map(parseStmtTrn)
     .filter(x => x.data && x.valorSigned !== 0);
 
+  // Tipo de conta: cartão (CREDITCARDMSGSRSV1/CCSTMTRS) x conta corrente
+  // (BANKMSGSRSV1/STMTRS, ACCTTYPE CHECKING). Muda o tratamento na importação
+  // (fatura tem vencimento; extrato tem receitas e transferências).
+  let tipoConta = null;
+  if (/<CREDITCARDMSGSRSV1>|<CCSTMTRS>/i.test(t)) tipoConta = 'creditcard';
+  else if (/<BANKMSGSRSV1>|<STMTRS>|<ACCTTYPE>\s*CHECKING/i.test(t)) tipoConta = 'checking';
+
   const datas = transacoes.map(x => x.data).sort();
   return {
     banco: tagValue(t, 'ORG') || null,
     moeda: tagValue(t, 'CURDEF') || 'BRL',
     conta: tagValue(t, 'ACCTID') || null,
+    tipoConta,
     saldo: /<BALAMT>/i.test(t) ? parseOfxAmount(tagValue(t, 'BALAMT')) : null,
     de: datas[0] || null,
     ate: datas[datas.length - 1] || null,
