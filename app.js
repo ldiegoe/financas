@@ -4413,15 +4413,17 @@ const sheetImportarOFX = () => {
           footerRefresh();
           return;
         }
-        // Toggle de inclusão (ignora campos e controles internos).
-        if (e.target.closest('input, select, textarea, .imp-tagchips, .imp-type')) return;
-        const li = e.target.closest('.imp-row');
-        if (!li) return;
-        const i = Number(li.dataset.i);
-        rows[i].incluir = !rows[i].incluir;
-        li.classList.toggle('on', rows[i].incluir);
-        li.querySelector('.imp-check').setAttribute('aria-label', rows[i].incluir ? 'Não importar' : 'Importar');
-        footerRefresh();
+        // Toggle de inclusão: SÓ ao tocar na bolinha, pra não desmarcar sem
+        // querer ao mirar no nome/tags/categoria.
+        const checkBtn = e.target.closest('.imp-check');
+        if (checkBtn) {
+          const li = checkBtn.closest('.imp-row');
+          const i = Number(li.dataset.i);
+          rows[i].incluir = !rows[i].incluir;
+          li.classList.toggle('on', rows[i].incluir);
+          checkBtn.setAttribute('aria-label', rows[i].incluir ? 'Não importar' : 'Importar');
+          footerRefresh();
+        }
       });
       lista.addEventListener('input', (e) => {
         const el = e.target;

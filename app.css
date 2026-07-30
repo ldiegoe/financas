@@ -1185,7 +1185,11 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
   border-radius: 50%; border: 2px solid var(--separator);
   background: transparent; color: transparent; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+  position: relative;
 }
+/* Área de toque maior que o círculo (invisível), pra facilitar o tap sem
+   crescer o visual. Fica à esquerda, longe dos campos de nome/tags. */
+.imp-check::after { content: ''; position: absolute; inset: -9px -6px -9px -12px; }
 .imp-row.on .imp-check { background: var(--green); border-color: var(--green); color: #fff; }
 .imp-main { flex: 1; min-width: 0; }
 .imp-line1 { display: flex; align-items: center; gap: 10px; }
