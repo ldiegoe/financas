@@ -17,6 +17,33 @@ export const buildCategoriaHints = (despesas) => {
   return m;
 };
 
+// Extrai a parte da descrição normalizada de uma dedupKey — fallback pra
+// despesas importadas antes de existir o campo `srcDesc`. Robusto aos dois
+// formatos de chave: o antigo "fitid|valor|desc" e o novo "fitid|valor|desc|
+// parc" (a parcela, quando presente, é o último segmento, tipo "3/10" ou "/").
+const memoFromDedup = (k) => {
+  const parts = String(k || '').split('|');
+  if (parts.length < 3) return '';
+  const last = parts[parts.length - 1];
+  const temParcela = /^\d*\/\d*$/.test(last);
+  return parts.slice(2, temParcela ? -1 : parts.length).join('|');
+};
+
+// Mapa "origem do banco (descrição normalizada) → nome salvo". Serve pra herdar
+// o nome que o usuário deu numa importação anterior: se ele renomeou a despesa
+// mês passado, a deste mês já vem com o mesmo nome. Chaveia pela descrição
+// ORIGINAL do banco (estável entre meses), não pelo nome editado. A última
+// importação vence (nome mais recente).
+export const buildNomeHints = (despesas) => {
+  const m = new Map();
+  for (const d of despesas) {
+    const key = d.srcDesc || memoFromDedup(d.dedupKey);
+    if (!key || !d.descricao) continue;
+    m.set(key, d.descricao);
+  }
+  return m;
+};
+
 // motivo de cada linha:
 //   'nova'          — despesa inédita, entra marcada
 //   'duplicata'     — já importada antes (dedupKey existe), entra desmarcada
@@ -28,6 +55,7 @@ export const annotateImport = ({ transacoes, despesas = [], categorias = [] }) =
   const jaImportadas = new Set(despesas.map(d => d.dedupKey).filter(Boolean));
   const catValidas = new Set(categorias.map(c => c.id));
   const hints = buildCategoriaHints(despesas);
+  const nomeHints = buildNomeHints(despesas);
   // Lançamentos digitados na mão (sem dedupKey) indexados por data+valor.
   const manuais = new Set(
     despesas.filter(d => !d.dedupKey).map(d => `${d.data}|${d.valor}`)
@@ -50,12 +78,15 @@ export const annotateImport = ({ transacoes, despesas = [], categorias = [] }) =
     }
     if (txn.ehDespesa) vistosNoLote.add(key);
 
-    const sugestao = hints.get(normalizeDesc(txn.descricao));
+    const srcKey = normalizeDesc(txn.descricao);
+    const sugestao = hints.get(srcKey);
     const categoriaId = (sugestao && catValidas.has(sugestao)) ? sugestao : null;
     const incluir = motivo === 'nova' || motivo === 'manual';
     // `descricao` e `tags` sao editaveis na tela de revisao (o dedupKey fica
     // congelado no dado original do banco, entao renomear nao afeta a dedup).
-    return { txn, dedupKey: key, motivo, categoriaId, incluir, descricao: txn.descricao, tags: [] };
+    // Herda o nome salvo numa importacao anterior, se houver.
+    const descricao = nomeHints.get(srcKey) || txn.descricao;
+    return { txn, dedupKey: key, motivo, categoriaId, incluir, descricao, tags: [] };
   });
 
   return { rows, resumo: resumoRows(rows) };
@@ -105,6 +136,9 @@ export const rowsToDespesas = (rows, { importId, fonte, importadoEm, vencimento 
       pago: !!pago,
       fitid: r.txn.fitid,
       dedupKey: r.dedupKey,
+      // Descrição original do banco (normalizada), estável entre meses. Permite
+      // que a próxima importação herde o nome que o usuário deu a esta.
+      srcDesc: normalizeDesc(r.txn.descricao),
       importId,
       fonte,
     };
@@ -130,6 +164,7 @@ export const annotateExtrato = ({ transacoes, despesas = [], rendas = [], catego
   const jaImportadas = new Set([...despesas, ...rendas].map(x => x.dedupKey).filter(Boolean));
   const catValidas = new Set(categorias.map(c => c.id));
   const hints = buildCategoriaHints(despesas);
+  const nomeHints = buildNomeHints(despesas);
   const manuais = new Set([
     ...despesas.filter(d => !d.dedupKey).map(d => `${d.data}|${d.valor}`),
     ...rendas.filter(r => !r.dedupKey).map(r => `${r.data}|${r.valor}`),
@@ -151,7 +186,10 @@ export const annotateExtrato = ({ transacoes, despesas = [], rendas = [], catego
     else motivo = 'nova';
     vistosNoLote.add(key);
 
-    const descricao = limparDescricao(txn.descricao);
+    const cleaned = limparDescricao(txn.descricao);
+    // Herda o nome salvo antes (só pra despesa — receita usa outro campo).
+    const nomeHint = tipo === 'despesa' ? nomeHints.get(normalizeDesc(txn.descricao)) : null;
+    const descricao = nomeHint || cleaned;
     const sugestao = hints.get(normalizeDesc(descricao));
     const categoriaId = (tipo === 'despesa' && sugestao && catValidas.has(sugestao)) ? sugestao : null;
     const incluir = motivo === 'nova' || motivo === 'manual';

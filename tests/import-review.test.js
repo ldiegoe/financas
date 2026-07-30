@@ -106,6 +106,53 @@ describe('annotateImport — sugestão de categoria pelo histórico', () => {
   });
 });
 
+describe('annotateImport — herda o nome editado de importações anteriores', () => {
+  it('usa o nome salvo (via srcDesc) quando a mesma origem se repete', () => {
+    // Mês passado: "Discord* Nitromonthly" foi importado e renomeado p/ "Discord".
+    const mesPassado = [{
+      descricao: 'Discord', dedupKey: 'f1|-2598|discord* nitromonthly|/',
+      srcDesc: 'discord* nitromonthly',
+    }];
+    const txn = { fitid: 'f2', valorSigned: -2598, valor: 2598, data: '2026-08-14',
+      descricao: 'Discord* Nitromonthly', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [txn], despesas: mesPassado, categorias: [] });
+    expect(rows[0].descricao).toBe('Discord');   // herdou o nome editado
+  });
+
+  it('fallback: herda mesmo sem srcDesc, lendo a origem da dedupKey', () => {
+    // Despesa importada antes de existir srcDesc — a origem sai da dedupKey.
+    const antigo = [{ descricao: 'Netflix assinatura', dedupKey: 'fx|-5590|netflix.com|/' }];
+    const txn = { fitid: 'fy', valorSigned: -5590, valor: 5590, data: '2026-08-01',
+      descricao: 'Netflix.com', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [txn], despesas: antigo, categorias: [] });
+    expect(rows[0].descricao).toBe('Netflix assinatura');
+  });
+
+  it('fallback funciona também com a dedupKey no formato ANTIGO (3 partes)', () => {
+    // Julho foi importado antes do campo de parcela na chave.
+    const julho = [{ descricao: 'Netflix', dedupKey: 'fx|-5590|netflix.com' }];
+    const txn = { fitid: 'fy', valorSigned: -5590, valor: 5590, data: '2026-08-01',
+      descricao: 'Netflix.com', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [txn], despesas: julho, categorias: [] });
+    expect(rows[0].descricao).toBe('Netflix');
+  });
+
+  it('sem histórico, usa a descrição do banco', () => {
+    const txn = { fitid: 'f', valorSigned: -1000, valor: 1000, data: '2026-08-01',
+      descricao: 'Loja Nova', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [txn], despesas: [], categorias: [] });
+    expect(rows[0].descricao).toBe('Loja Nova');
+  });
+
+  it('rowsToDespesas grava srcDesc pra alimentar o próximo mês', () => {
+    const txn = { fitid: 'f', valorSigned: -1000, valor: 1000, data: '2026-08-01',
+      descricao: 'Loja Nova', ehDespesa: true, parcelaNum: null, parcelaTotal: null };
+    const { rows } = annotateImport({ transacoes: [txn], despesas: [], categorias: [] });
+    const out = rowsToDespesas(rows, { importId: 'i', fonte: 'f', importadoEm: 'z' });
+    expect(out[0].srcDesc).toBe('loja nova');
+  });
+});
+
 describe('resumoRows — recálculo após toggles', () => {
   it('reflete o que o usuário marcou/desmarcou', () => {
     const { rows } = annotateImport({ transacoes: parsed.transacoes, despesas: [], categorias: cats });
