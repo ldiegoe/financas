@@ -98,6 +98,9 @@ export const rowsToDespesas = (rows, { importId, fonte, importadoEm, vencimento 
       categoriaId: r.categoriaId || null,
       recorrente: false,
       parcelas: 1,
+      // Selo informativo "X/Y" quando a compra é parcelada na fatura. NÃO vira
+      // uma parcelada de verdade (cada mês entra avulso, exato) — é só rótulo.
+      parcelaImport: r.txn.parcelaTotal ? `${r.txn.parcelaNum}/${r.txn.parcelaTotal}` : null,
       tags: r.tags || [],
       pago: !!pago,
       fitid: r.txn.fitid,

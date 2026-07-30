@@ -2282,6 +2282,7 @@ views.despesas = (root) => {
               <div class="t">${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
                 ${d.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
                 ${d._parcelaTotal ? `<span class="tag installment">${d._parcelaNum}/${d._parcelaTotal}</span>` : ''}
+                ${d.parcelaImport ? `<span class="tag installment" title="Parcela da fatura">${d.parcelaImport}</span>` : ''}
                 ${d._pago ? '' : '<span class="tag pendente">Pendente</span>'}
                 ${boletoDaOcorrencia(d) ? `<span class="tag boleto" title="Boleto disponível">${icon('barcode', 11)}</span>` : ''}
               </div>
@@ -5013,7 +5014,8 @@ const sheetDespesaDetalhes = (d) => {
   const cat = state.categorias.find(c => c.id === d.categoriaId);
   const tipo = d.recorrente
     ? 'Mensal recorrente'
-    : (d._parcelaTotal ? `Parcelada (${d._parcelaNum}/${d._parcelaTotal})` : 'Apenas neste mês');
+    : (d._parcelaTotal ? `Parcelada (${d._parcelaNum}/${d._parcelaTotal})`
+      : (d.parcelaImport ? `Parcela ${d.parcelaImport} da fatura` : 'Apenas neste mês'));
   const tags = d.tags || [];
 
   // Boleto do mes desta ocorrencia (se o carne ja foi importado).

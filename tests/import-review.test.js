@@ -150,6 +150,19 @@ describe('rowsToDespesas', () => {
     expect(rowsToDespesas(zerado, { importId: 'x', fonte: 'y', importadoEm: 'z' })).toEqual([]);
   });
 
+  it('guarda o selo de parcela (X/Y) nas parceladas, e null nas avulsas', () => {
+    const out2 = rowsToDespesas(rows, { importId: 'i', fonte: 'f', importadoEm: 'z' });
+    // "Loja Online - Parcela 1/10" no fixture → selo "1/10".
+    const parcelada = out2.find(d => d.descricao === 'Loja Online');
+    expect(parcelada.parcelaImport).toBe('1/10');
+    // Compra avulsa não recebe selo.
+    const avulsa = out2.find(d => d.descricao === 'Mercado Central');
+    expect(avulsa.parcelaImport).toBe(null);
+    // Continua avulsa de verdade (não vira parcelada projetada).
+    expect(parcelada.parcelas).toBe(1);
+    expect(parcelada.recorrente).toBe(false);
+  });
+
   it('com vencimento, lança tudo na data da fatura e guarda a compra em criadoEm', () => {
     const comVenc = rowsToDespesas(rows, {
       importId: 'i', fonte: 'f', importadoEm: '2026-08-01', vencimento: '2026-08-10',
