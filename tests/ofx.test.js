@@ -71,6 +71,17 @@ describe('dedupKey', () => {
     expect(dedupKey({ fitid: 'X', valorSigned: -100, descricao: 'Uber  RIDES' }))
       .toBe(dedupKey({ fitid: 'X', valorSigned: -100, descricao: 'uber rides' }));
   });
+  it('parcelas de meses diferentes (mesmo FITID e valor) NÃO colidem', () => {
+    // O Nubank repete o FITID da compra parcelada em todo mês, mudando só a
+    // parcela. A de julho e a de agosto são cobranças distintas.
+    const jul = { fitid: 'P', valorSigned: -5620, descricao: 'Amazon', parcelaNum: 3, parcelaTotal: 10 };
+    const ago = { fitid: 'P', valorSigned: -5620, descricao: 'Amazon', parcelaNum: 4, parcelaTotal: 10 };
+    expect(dedupKey(jul)).not.toBe(dedupKey(ago));
+  });
+  it('a mesma parcela é estável (dedup de reimport funciona)', () => {
+    const a = { fitid: 'P', valorSigned: -5620, descricao: 'Amazon', parcelaNum: 4, parcelaTotal: 10 };
+    expect(dedupKey(a)).toBe(dedupKey({ ...a }));
+  });
 });
 
 describe('parseOfx — fatura real do Nubank', () => {

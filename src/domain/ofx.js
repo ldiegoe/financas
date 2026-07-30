@@ -68,9 +68,15 @@ export const limparDescricao = (memo) => {
   return s.replace(/\s+/g, ' ').trim();
 };
 
-// Identidade de deduplicação — robusta à colisão de FITID do Nubank.
+// Identidade de deduplicação. Inclui:
+//  - fitid + valor + descrição → separa a colisão de FITID (IOF x compra
+//    internacional compartilham FITID, mas diferem em valor/descrição);
+//  - a PARCELA (X/Y) → o Nubank reusa o MESMO FITID pra uma compra parcelada
+//    em todos os meses, mudando só "Parcela X/Y". Sem isso, a parcela de
+//    julho (3/10) e a de agosto (4/10) — que são cobranças distintas — teriam
+//    a mesma chave e a de agosto seria descartada como duplicata.
 export const dedupKey = (t) =>
-  `${t.fitid}|${t.valorSigned}|${normalizeDesc(t.descricao)}`;
+  `${t.fitid}|${t.valorSigned}|${normalizeDesc(t.descricao)}|${t.parcelaNum || ''}/${t.parcelaTotal || ''}`;
 
 // Quebra o texto nos blocos <STMTTRN>. Aceita blocos fechados (</STMTTRN>) e o
 // SGML sem fechamento (corta no próximo <STMTTRN> ou no fim da lista).
