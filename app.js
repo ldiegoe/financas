@@ -4219,7 +4219,7 @@ const sheetImportarOFX = () => {
 
     if (etapa === 'feito') {
       const msg = kind === 'extrato'
-        ? 'As despesas entraram como pendentes e as receitas foram lançadas.'
+        ? 'As despesas entraram como pagas (o dinheiro já saiu) e as receitas foram lançadas.'
         : 'As despesas entraram como pendentes — marque cada uma como paga quando quitar a fatura.';
       return `
         <div class="boleto-resumo">
@@ -4470,6 +4470,8 @@ const sheetImportarOFX = () => {
         fonte: meta.arquivo,
         importadoEm: todayISO(),
         vencimento: (kind === 'fatura' && vencOn && vencDate) ? vencDate : null,
+        // Extrato: o dinheiro já saiu → nasce paga. Fatura: paga depois.
+        pago: kind === 'extrato',
       });
       const rendas = kind === 'extrato'
         ? rowsToRendas(rows, { importId, importadoEm: todayISO() })

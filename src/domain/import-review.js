@@ -82,7 +82,10 @@ export const resumoRows = (rows) => ({
 // vencimento da fatura, não na data da compra. Quando informado, as despesas
 // (débitos) recebem `data = vencimento` e a data da compra é preservada em
 // `criadoEm`. Créditos/estornos, se incluídos, mantêm a própria data.
-export const rowsToDespesas = (rows, { importId, fonte, importadoEm, vencimento = null }) =>
+//
+// `pago`: na fatura, a despesa nasce pendente (você paga depois) → false. No
+// extrato, o dinheiro já saiu (Pix, boleto) → true.
+export const rowsToDespesas = (rows, { importId, fonte, importadoEm, vencimento = null, pago = false }) =>
   rows.filter(r => r.incluir && (r.tipo == null || r.tipo === 'despesa')).map(r => {
     const noVenc = !!vencimento && r.txn.ehDespesa;
     return {
@@ -96,7 +99,7 @@ export const rowsToDespesas = (rows, { importId, fonte, importadoEm, vencimento 
       recorrente: false,
       parcelas: 1,
       tags: r.tags || [],
-      pago: false,
+      pago: !!pago,
       fitid: r.txn.fitid,
       dedupKey: r.dedupKey,
       importId,

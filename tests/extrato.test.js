@@ -98,10 +98,15 @@ describe('rowsToRendas / rowsToDespesas — split correto', () => {
   it('rowsToDespesas pega só as despesas marcadas (não receita nem transferência)', () => {
     const desp = rowsToDespesas(rows, { importId: 'i', fonte: 'extrato.ofx', importadoEm: '2026-07-30' });
     expect(desp).toHaveLength(3);
-    expect(desp.every(d => d.pago === false && d.importId === 'i')).toBe(true);
+    expect(desp.every(d => d.importId === 'i')).toBe(true);
     // Sem vencimento no extrato: data = data real da transação.
     const boleto = desp.find(d => d.valor === 41208);
     expect(boleto.data).toBe('2026-07-17');
+  });
+
+  it('despesas do extrato nascem JÁ PAGAS (o dinheiro já saiu)', () => {
+    const desp = rowsToDespesas(rows, { importId: 'i', fonte: 'x', importadoEm: '2026-07-30', pago: true });
+    expect(desp.every(d => d.pago === true)).toBe(true);
   });
 
   it('rowsToRendas pega só as receitas marcadas', () => {
