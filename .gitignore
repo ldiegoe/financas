@@ -4,3 +4,7 @@ Thumbs.db
 .vscode/
 .idea/
 node_modules/
+
+# Claude Code — tudo local, não vai pro repo público
+.claude/
+CLAUDE.md
