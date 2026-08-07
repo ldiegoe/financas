@@ -74,6 +74,9 @@ import { ICONS, icon } from './src/ui/icons.js';
 import { createToast, createSheet } from './src/ui/dom.js';
 import { bindCurrencyInput } from './src/ui/currency-input.js';
 import { createSheetRenda } from './src/ui/sheets/renda.js';
+import { createSheetApagarTudo } from './src/ui/sheets/apagar-tudo.js';
+import { createSheetAlerts } from './src/ui/sheets/alerts.js';
+import { createSheetsProfiles } from './src/ui/sheets/profiles.js';
 
 // --------------------------- DB --------------------------------------------
 const PROFILES_KEY     = 'financas:profiles';
@@ -4415,62 +4418,7 @@ const sheetImportarOFX = () => {
 // Escolha de alcance ao apagar tudo COM Dropbox conectado. Sem esta tela, o
 // reset dispararia um push do estado vazio, apagando também a nuvem e, por
 // LWW, os outros aparelhos. Aqui o usuário decide explicitamente.
-const sheetApagarTudo = () => {
-  const optStyle = 'border:1px solid var(--separator);border-radius:12px;padding:12px 14px;margin-bottom:10px;';
-  openSheet('Apagar tudo', () => `
-    <p style="color:var(--text-2);font-size:14px;line-height:1.5;margin:0 0 14px;">
-      O Dropbox está conectado. Escolha o que apagar:
-    </p>
-    <div style="${optStyle}">
-      <strong>Só neste aparelho</strong>
-      <p style="color:var(--text-2);font-size:13px;line-height:1.45;margin:6px 0 0;">
-        Desconecta o Dropbox e apaga os dados só aqui. Sua cópia na nuvem e nos
-        outros aparelhos fica intacta — dá pra recuperar reconectando.
-      </p>
-    </div>
-    <div style="${optStyle}">
-      <strong style="color:var(--red);">Apagar em todo lugar</strong>
-      <p style="color:var(--text-2);font-size:13px;line-height:1.45;margin:6px 0 0;">
-        Apaga aqui e também no Dropbox e nos seus outros aparelhos.
-        Não dá pra desfazer.
-      </p>
-    </div>
-    <div class="actions" style="flex-direction:column;">
-      <button class="secondary" id="scope-local">Só neste aparelho</button>
-      <button class="danger"    id="scope-all">Apagar em todo lugar</button>
-      <button class="link"      id="scope-cancel" style="margin-top:4px;">Cancelar</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#scope-cancel').addEventListener('click', closeSheet);
-
-    body.querySelector('#scope-local').addEventListener('click', () => {
-      if (!confirm('Apagar os dados deste aparelho? A cópia no Dropbox será preservada.')) return;
-      // Desconecta ANTES do reset: com syncState zerado, o persist() do reset
-      // não agenda push, então a nuvem não é tocada.
-      syncDisconnect();
-      db.reset();
-      closeSheet();
-      toast('Dados apagados neste aparelho');
-      render();
-    });
-
-    body.querySelector('#scope-all').addEventListener('click', async () => {
-      if (!confirm('Isso apaga também no Dropbox e nos seus outros aparelhos. Continuar?')) return;
-      db.reset();
-      closeSheet();
-      // Empurra o estado vazio na hora (sem esperar o debounce) pra garantir
-      // que a nuvem reflita o apagamento mesmo se o app fechar em seguida.
-      try {
-        await syncPushProfile(activeProfileId);
-        await syncPushMeta();
-        toast('Apagado aqui e no Dropbox');
-      } catch {
-        toast('Apagado aqui; falha ao apagar no Dropbox');
-      }
-      render();
-    });
-  });
-};
+// sheetApagarTudo vive em src/ui/sheets/apagar-tudo.js — ligado no "wiring de sheets".
 
 const palette = [
   '#FF6B6B','#FF9F0A','#FFD60A','#30D158','#4ECDC4','#0A84FF','#5E5CE6',
@@ -4616,140 +4564,11 @@ const sheetCategoria = (cat) => {
 };
 
 // --------------------------- Sheets (notificacoes) --------------------------
-const sheetAlerts = () => {
-  const renderBody = (body) => {
-    const alerts = activeAlerts();
-    if (alerts.length === 0) {
-      body.innerHTML = `
-        <div class="empty"><span class="ico">${icon('sparkles', 48)}</span>Sem notificações.</div>
-        <div class="actions" style="margin-top:14px;">
-          <button class="secondary" id="close-sheet" style="flex:1;">Fechar</button>
-        </div>`;
-      body.querySelector('#close-sheet').addEventListener('click', closeSheet);
-      return;
-    }
-    body.innerHTML = `
-      <ul class="alert-list">
-        ${alerts.map(a => `
-          <li class="alert-item alert-${a.severity}" data-id="${escapeAttr(a.id)}">
-            <div class="grow">
-              <div class="t">${escapeHTML(a.title)}</div>
-              <div class="s">${escapeHTML(a.message)}</div>
-            </div>
-            <div class="alert-actions">
-              ${a.tab ? `<button class="link" data-action="goto" data-tab="${a.tab}">Ver</button>` : ''}
-              <button class="alert-close" data-action="dismiss" aria-label="Dispensar">✕</button>
-            </div>
-          </li>`).join('')}
-      </ul>
-      <div class="actions" style="margin-top:14px;">
-        <button class="secondary" id="close-sheet" style="flex:1;">Fechar</button>
-      </div>`;
-    body.querySelector('#close-sheet').addEventListener('click', closeSheet);
-    body.querySelectorAll('[data-action="goto"]').forEach(b => {
-      b.addEventListener('click', (e) => {
-        const tab = e.target.dataset.tab;
-        closeSheet();
-        location.hash = '#/' + tab;
-      });
-    });
-    body.querySelectorAll('[data-action="dismiss"]').forEach(b => {
-      b.addEventListener('click', (e) => {
-        const li = e.target.closest('[data-id]');
-        dismissAlert(li.dataset.id);
-        applyAlertBadge();
-        // Re-renderiza o conteudo no lugar pra o usuario ver lista atualizada
-        // sem fechar e abrir de novo.
-        renderBody(body);
-      });
-    });
-  };
-  openSheet('Notificações', () => '', renderBody);
-};
+// sheetAlerts vive em src/ui/sheets/alerts.js — ligado no "wiring de sheets".
 
 // --------------------------- Sheets (perfis) --------------------------------
-const sheetProfiles = () => {
-  const meta = profileStore.meta();
-  openSheet('Perfis', () => `
-    <ul class="list" style="margin-bottom:14px;">
-      ${meta.list.map(p => `
-        <li class="profile-row" data-id="${p.id}" style="cursor:pointer;">
-          <div class="grow">
-            <div class="t">${escapeHTML(p.name)}</div>
-          </div>
-          ${p.id===meta.current ? '<span style="color:var(--tint);font-weight:600;">✓</span>' : ''}
-        </li>
-      `).join('')}
-    </ul>
-    <div class="actions">
-      <button class="secondary" id="cancel">Fechar</button>
-      <button class="primary"   id="new-profile">+ Novo perfil</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#cancel').addEventListener('click', closeSheet);
-    body.querySelector('#new-profile').addEventListener('click', () => {
-      closeSheet();
-      sheetNewProfile();
-    });
-    body.querySelectorAll('.profile-row').forEach(li => {
-      li.addEventListener('click', () => {
-        const id = li.dataset.id;
-        if (id !== meta.current) switchProfile(id);  // dispara reload
-      });
-    });
-  });
-};
-
-const sheetNewProfile = () => {
-  openSheet('Novo perfil', () => `
-    <label class="field"><span>Nome</span>
-      <input id="f-pname" type="text" placeholder="Ex.: Empresa, Família, Viagem" required />
-    </label>
-    <p style="color:var(--text-2);font-size:13px;margin:0;">
-      Vai começar vazio com as categorias padrão. Você troca entre perfis a qualquer momento pelo nome no topo.
-    </p>
-    <div class="actions">
-      <button class="secondary" id="cancel">Cancelar</button>
-      <button class="primary"   id="create">Criar</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#cancel').addEventListener('click', closeSheet);
-    const create = () => {
-      const name = body.querySelector('#f-pname').value.trim();
-      if (!name) { alert('Informe um nome.'); return; }
-      createProfile(name);  // dispara reload
-    };
-    body.querySelector('#create').addEventListener('click', create);
-    body.querySelector('#f-pname').focus();
-  });
-};
-
-const sheetRenameProfile = (id) => {
-  const meta = profileStore.meta();
-  const p = meta.list.find(x => x.id === id);
-  if (!p) return;
-  openSheet('Renomear perfil', () => `
-    <label class="field"><span>Nome</span>
-      <input id="f-pname" type="text" value="${escapeAttr(p.name)}" required />
-    </label>
-    <div class="actions">
-      <button class="secondary" id="cancel">Cancelar</button>
-      <button class="primary"   id="save">Salvar</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#cancel').addEventListener('click', closeSheet);
-    body.querySelector('#save').addEventListener('click', () => {
-      const name = body.querySelector('#f-pname').value.trim();
-      if (!name) { alert('Informe um nome.'); return; }
-      renameProfile(id, name);
-      closeSheet();
-      toast('Perfil renomeado');
-      render();
-      applyProfileChip();
-    });
-    body.querySelector('#f-pname').focus();
-  });
-};
+// sheetProfiles, sheetNewProfile e sheetRenameProfile vivem em
+// src/ui/sheets/profiles.js — ligados no "wiring de sheets".
 
 // --------------------------- Sheets (detalhes) ------------------------------
 // Mostra os dados completos de uma despesa quando o usuario toca na linha,
@@ -5183,6 +5002,20 @@ const render = (opts = {}) => {
 // runtime (openSheet/closeSheet, db, render, toast). Fica depois de `render`
 // porque `render` é definido tarde — instanciar antes daria TDZ.
 const sheetRenda = createSheetRenda({ openSheet, closeSheet, db, render, toast });
+// getActiveProfileId é getter porque activeProfileId é `let` — injetar o valor
+// congelaria o binding. Mesmo padrão usado ao montar o syncEngine.
+const sheetApagarTudo = createSheetApagarTudo({
+  openSheet, closeSheet, db, render, toast,
+  syncDisconnect, syncPushProfile, syncPushMeta,
+  getActiveProfileId: () => activeProfileId,
+});
+const sheetAlerts = createSheetAlerts({
+  openSheet, closeSheet, activeAlerts, dismissAlert, applyAlertBadge,
+});
+const { sheetProfiles, sheetNewProfile, sheetRenameProfile } = createSheetsProfiles({
+  openSheet, closeSheet, render, toast,
+  profileStore, switchProfile, createProfile, renameProfile, applyProfileChip,
+});
 
 window.addEventListener('hashchange', () => {
   const tab = location.hash.replace('#/', '') || 'dashboard';
