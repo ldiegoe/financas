@@ -66,6 +66,7 @@ import { createSheetObjetivo } from './src/ui/sheets/objetivo.js';
 import { createSheetsDetalhes } from './src/ui/sheets/detalhes.js';
 import { createSheetImportarBoletos } from './src/ui/sheets/importar-boletos.js';
 import { createSheetImportarOFX } from './src/ui/sheets/importar-ofx.js';
+import { createSheetBulkEdit } from './src/ui/sheets/bulk-edit.js';
 
 // --------------------------- DB --------------------------------------------
 const PROFILES_KEY     = 'financas:profiles';
@@ -1904,8 +1905,10 @@ let dateToFilter = null;        // ISO 'YYYY-MM-DD' (data <= valor) ou null
 let dateBasisFilter = 'pagamento'; // 'pagamento' (data) | 'cadastro' (criadoEm)
 
 // Modo seleção da tela de Despesas — permite marcar várias e apagar de uma vez.
-let selectionMode = false;
-let selectedIds = new Set();    // ids de despesas (reais, nao virtuais) marcadas
+const selection = { mode: false, ids: new Set() };
+// Sai do modo de selecao. Idioma repetido em 4 lugares — cancelar, apos apagar
+// em lote, apos editar em lote e ao trocar de aba.
+const exitSelection = () => { selection.mode = false; selection.ids.clear(); };
 
 // Modo seleção do card Vencimentos (dashboard) — marcar várias como pagas.
 // Chaves sao "id|data" pra distinguir ocorrencias de recorrentes/parceladas.
@@ -2179,15 +2182,15 @@ views.despesas = (root) => {
     })()}
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      ${(selectionMode || despesasPeriod.length === 0)
+      ${(selection.mode || despesasPeriod.length === 0)
         ? `<span>Lançamentos</span>`
         : `<button class="sort-toggle" id="sort-toggle" type="button" aria-label="Alterar ordenação">
              ${icon('sort', 14)}<span>${sortMode === 'cadastro' ? 'Últimas cadastradas' : 'Mais recentes'}</span>
            </button>`}
-      ${despesasPeriod.length === 0 ? '' : (selectionMode
+      ${despesasPeriod.length === 0 ? '' : (selection.mode
         ? (() => {
             const realIds = despesasPeriod.filter(d => !d._virtual).map(d => d.id);
-            const allSel = realIds.length > 0 && realIds.every(id => selectedIds.has(id));
+            const allSel = realIds.length > 0 && realIds.every(id => selection.ids.has(id));
             return `<button class="link" id="select-all" style="padding:4px 0;">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`;
           })()
         : `<button class="link" id="enter-select" style="padding:4px 0;">Selecionar</button>`)}
@@ -2196,15 +2199,15 @@ views.despesas = (root) => {
       <div class="empty"><span class="ico">${icon('card', 48)}</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
         <button class="primary" id="add-desp">Adicionar despesa</button></div>
     ` : `
-      <ul class="list ${selectionMode ? 'selecting' : ''}">
+      <ul class="list ${selection.mode ? 'selecting' : ''}">
         ${sortedDespesas.map(d => {
           const cat = state.categorias.find(c => c.id === d.categoriaId);
           const dTags = d.tags || [];
           const isReal = !d._virtual;
-          const sel = selectedIds.has(d.id);
+          const sel = selection.ids.has(d.id);
           return `
-          <li class="swipe-row ${selectionMode ? 'select-row' : ''}" data-id="${d.id}" data-data="${d.data}" data-real="${isReal}">
-            ${selectionMode ? `
+          <li class="swipe-row ${selection.mode ? 'select-row' : ''}" data-id="${d.id}" data-data="${d.data}" data-real="${isReal}">
+            ${selection.mode ? `
               <span class="select-circle ${sel ? 'checked' : ''} ${isReal ? '' : 'disabled'}" ${isReal ? '' : 'title="Ocorrência projetada — não pode ser selecionada"'}>${sel ? '✓' : ''}</span>
             ` : ''}
             ${catEmoji(cat)
@@ -2226,7 +2229,7 @@ views.despesas = (root) => {
               ` : ''}
             </div>
             <div class="amount neg">${fmtBRL(d.valor)}</div>
-            ${!selectionMode ? `
+            ${!selection.mode ? `
               <div class="swipe-actions">
                 <button class="${d._pago ? 'undo' : 'pago'}" data-action="toggle-pago-swipe">${d._pago ? 'Pendente' : 'Paga'}</button>
                 ${!d._virtual ? `
@@ -2240,51 +2243,51 @@ views.despesas = (root) => {
       </ul>
     `}
 
-    ${selectionMode ? `
+    ${selection.mode ? `
       <div class="select-bar">
-        <span class="count">${selectedIds.size} selecionada${selectedIds.size === 1 ? '' : 's'}</span>
+        <span class="count">${selection.ids.size} selecionada${selection.ids.size === 1 ? '' : 's'}</span>
         <button class="link" id="cancel-select">Cancelar</button>
-        <button class="primary" id="bulk-edit" style="padding:8px 14px;" ${selectedIds.size === 0 ? 'disabled' : ''}>Editar</button>
-        <button class="danger" id="delete-select" style="padding:8px 14px;" ${selectedIds.size === 0 ? 'disabled' : ''}>Apagar</button>
+        <button class="primary" id="bulk-edit" style="padding:8px 14px;" ${selection.ids.size === 0 ? 'disabled' : ''}>Editar</button>
+        <button class="danger" id="delete-select" style="padding:8px 14px;" ${selection.ids.size === 0 ? 'disabled' : ''}>Apagar</button>
       </div>
     ` : `<button class="fab" id="fab-desp" aria-label="Adicionar despesa">+</button>`}
   `;
 
-  if (selectionMode) {
+  if (selection.mode) {
     // Tap numa linha real alterna a selecao. Linhas virtuais (ocorrencias
     // projetadas) sao ignoradas — nao existem como registro proprio.
     root.querySelectorAll('.select-row[data-real="true"]').forEach(row => {
       row.addEventListener('click', () => {
         const id = row.dataset.id;
-        if (selectedIds.has(id)) selectedIds.delete(id);
-        else selectedIds.add(id);
+        if (selection.ids.has(id)) selection.ids.delete(id);
+        else selection.ids.add(id);
         render({ preserveScroll: true });
       });
     });
     const selAllBtn = root.querySelector('#select-all');
     if (selAllBtn) selAllBtn.addEventListener('click', () => {
       const realIds = despesasPeriod.filter(d => !d._virtual).map(d => d.id);
-      const allSel = realIds.length > 0 && realIds.every(id => selectedIds.has(id));
-      if (allSel) realIds.forEach(id => selectedIds.delete(id));
-      else realIds.forEach(id => selectedIds.add(id));
+      const allSel = realIds.length > 0 && realIds.every(id => selection.ids.has(id));
+      if (allSel) realIds.forEach(id => selection.ids.delete(id));
+      else realIds.forEach(id => selection.ids.add(id));
       render({ preserveScroll: true });
     });
     root.querySelector('#cancel-select').addEventListener('click', () => {
-      selectionMode = false; selectedIds.clear(); render({ preserveScroll: true });
+      exitSelection(); render({ preserveScroll: true });
     });
     root.querySelector('#delete-select').addEventListener('click', () => {
-      const n = selectedIds.size;
+      const n = selection.ids.size;
       if (n === 0) return;
       if (!confirm(`Apagar ${n} despesa${n === 1 ? '' : 's'}? Recorrentes/parceladas marcadas serão removidas por completo.`)) return;
-      for (const id of selectedIds) db.removeDespesa(id);
-      selectionMode = false; selectedIds.clear();
+      for (const id of selection.ids) db.removeDespesa(id);
+      exitSelection();
       toast(`${n} despesa${n === 1 ? '' : 's'} excluída${n === 1 ? '' : 's'}`);
       render();
     });
     const bulkEditBtn = root.querySelector('#bulk-edit');
     if (bulkEditBtn) bulkEditBtn.addEventListener('click', () => {
-      if (selectedIds.size === 0) return;
-      sheetBulkEdit([...selectedIds]);
+      if (selection.ids.size === 0) return;
+      sheetBulkEdit([...selection.ids]);
     });
   } else {
     bindSwipe(root);
@@ -2321,7 +2324,7 @@ views.despesas = (root) => {
       render();
     }));
     const enterSelBtn = root.querySelector('#enter-select');
-    if (enterSelBtn) enterSelBtn.addEventListener('click', () => { selectionMode = true; selectedIds.clear(); render({ preserveScroll: true }); });
+    if (enterSelBtn) enterSelBtn.addEventListener('click', () => { selection.mode = true; selection.ids.clear(); render({ preserveScroll: true }); });
   }
   const sortToggle = root.querySelector('#sort-toggle');
   if (sortToggle) sortToggle.addEventListener('click', () => {
@@ -3434,94 +3437,8 @@ const bindPeriodHeader = (root) => {
 // Antecipar parcelas: o usuário informa quantas parcelas quitou adiantado e o
 // Edicao em lote das despesas selecionadas. Aplica UMA acao por vez (mudar
 // categoria, adicionar/remover tag, marcar paga/pendente). Ocorrencias
-// virtuais nao aparecem em selectedIds — sempre opera sobre a despesa base.
-const sheetBulkEdit = (ids) => {
-  const n = ids.length;
-  if (n === 0) return;
-  const despesasCats = state.categorias.filter(c => !c.poupanca);
-  const investCats   = state.categorias.filter(c => c.poupanca);
-  openSheet(`Editar ${n} ${n === 1 ? 'despesa' : 'despesas'}`, () => `
-    <p style="color:var(--text-2);font-size:13px;margin:0 2px 14px;">
-      A ação selecionada é aplicada a todas as ${n} ${n === 1 ? 'despesa' : 'despesas'} selecionadas.
-    </p>
-    <label class="field"><span>Mudar categoria</span>
-      <select id="bulk-cat">
-        <option value="__none">— manter atual —</option>
-        <option value="">Sem categoria</option>
-        <optgroup label="Despesa">
-          ${despesasCats.map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
-        </optgroup>
-        ${investCats.length > 0 ? `
-          <optgroup label="Investimento">
-            ${investCats.map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
-          </optgroup>
-        ` : ''}
-      </select>
-    </label>
-    <label class="field"><span>Adicionar tag</span>
-      <input id="bulk-tag-add" type="text" placeholder="Ex.: viagem" autocapitalize="none" autocorrect="off" />
-      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Se já existir naquela despesa, ignora.</small>
-    </label>
-    <label class="field"><span>Remover tag</span>
-      <input id="bulk-tag-rem" type="text" placeholder="Ex.: provisória" autocapitalize="none" autocorrect="off" />
-    </label>
-    <label class="field" style="margin-bottom:6px;"><span>Status de pagamento</span>
-      <select id="bulk-status">
-        <option value="__none">— manter atual —</option>
-        <option value="paga">Marcar como paga</option>
-        <option value="pendente">Marcar como pendente</option>
-      </select>
-    </label>
-    <div class="actions">
-      <button class="secondary" id="cancel">Cancelar</button>
-      <button class="primary"   id="apply">Aplicar</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#cancel').addEventListener('click', closeSheet);
-    body.querySelector('#apply').addEventListener('click', () => {
-      const catChoice = body.querySelector('#bulk-cat').value;
-      const tagAdd = body.querySelector('#bulk-tag-add').value.trim();
-      const tagRem = body.querySelector('#bulk-tag-rem').value.trim().toLowerCase();
-      const status = body.querySelector('#bulk-status').value;
-      let changes = 0;
-      for (const id of ids) {
-        const d = state.despesas.find(x => x.id === id);
-        if (!d) continue;
-        const patch = {};
-        if (catChoice !== '__none') {
-          patch.categoriaId = catChoice === '' ? null : catChoice;
-        }
-        if (tagAdd) {
-          const cur = d.tags || [];
-          if (!cur.some(t => t.toLowerCase() === tagAdd.toLowerCase())) {
-            patch.tags = [...cur, tagAdd];
-          }
-        }
-        if (tagRem) {
-          const cur = patch.tags || d.tags || [];
-          const next = cur.filter(t => t.toLowerCase() !== tagRem);
-          if (next.length !== cur.length) patch.tags = next;
-        }
-        if (Object.keys(patch).length > 0) {
-          db.updateDespesa(id, patch);
-          changes++;
-        }
-        if (status !== '__none') {
-          const wantPaga = status === 'paga';
-          const occ = { ...d, _virtual: false, _pago: d.pago === true };
-          if (wantPaga !== occ._pago) {
-            toggleDespesaPago(occ);
-            changes++;
-          }
-        }
-      }
-      selectionMode = false; selectedIds.clear();
-      closeSheet();
-      toast(changes > 0 ? `${changes} aplicada${changes === 1 ? '' : 's'}` : 'Nenhuma alteração');
-      render();
-    });
-  });
-};
+// virtuais nao aparecem em selection.ids — sempre opera sobre a despesa base.
+// sheetBulkEdit vive em src/ui/sheets/bulk-edit.js — ligado no "wiring de sheets".
 
 // total de parcelas diminui (as últimas saem da projeção). Não deixa reduzir
 // abaixo da parcela atual nem das já marcadas como pagas, pra não apagar
@@ -3572,7 +3489,7 @@ const setTab = (name) => {
   if (name === 'objetivos') name = 'investimentos'; // alias do hash antigo
   if (!tabs.includes(name)) name = 'dashboard';
   // Sair da tela de Despesas cancela o modo seleção (evita estado pendurado).
-  if (name !== 'despesas') { selectionMode = false; selectedIds.clear(); }
+  if (name !== 'despesas') exitSelection();
   if (name !== 'dashboard') { vencSelMode = false; vencSel.clear(); }
   currentTab = name;
   document.querySelectorAll('.tabbar a').forEach(a => {
@@ -3640,6 +3557,11 @@ const sheetImportarBoletos = createSheetImportarBoletos({
 const sheetImportarOFX = createSheetImportarOFX({
   openSheet, closeSheet, db, render, toast, getState: () => state, fmtBRL,
   allTags, topTags, catEmoji, uid,
+});
+// Recebe exitSelection, não o objeto `selection` — só precisa sair do modo.
+const sheetBulkEdit = createSheetBulkEdit({
+  openSheet, closeSheet, db, render, toast,
+  getState: () => state, catEmoji, toggleDespesaPago, exitSelection,
 });
 // Depende de sheetDespesa, sheetRenda e sheetImportarBoletos (criados acima).
 const { sheetDespesaDetalhes, sheetAnteciparParcelas, sheetRendaDetalhes } = createSheetsDetalhes({
