@@ -818,7 +818,51 @@ button.link { background: none; border: 0; color: var(--tint); font-size: var(--
 .checkbox-row.flush { padding-top: 0; }
 /* Botões lado a lado que quebram pra linha de baixo se não couberem. */
 .btn-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.btn-row.spaced { margin-top: var(--sp-3); }
+
+/* ---------- Ritmo vertical dos blocos de Ajustes ----------
+   A tela empilha campo, caixa de seleção, texto de apoio e botão dentro do
+   mesmo card. Antes o espaçamento era uma dúzia de margens avulsas em
+   `style=`, cada uma num degrau diferente (6, 10, 12, 14, 16px) — passos que
+   o olho não distingue, mas cujo desalinhamento acumulado aparece. Duas
+   variantes cobrem todos os desvios do ritmo padrão. */
+.spaced { margin-top: var(--sp-3); }
+.tight,
+label.field.tight { margin-bottom: 0; }   /* vence a margem própria do campo */
+
+/* Texto de apoio: explica um controle ou informa um estado ("Conectado como
+   …", "este navegador não suporta …"). Eram seis parágrafos com seis
+   combinações diferentes de tamanho (13px e 14px) e de margem. */
+.help {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+/* Linha que continua a de cima ("Conectado" → "Última sincronização"), ou que
+   vem logo depois de uma lista que já abriu o respiro. */
+.help + .help,
+.list + .help { margin-top: 0; }
+/* Fechando o card, o padding dele já dá o respiro de baixo. */
+.help:last-child { margin-bottom: 0; }
+
+/* Rótulo de um bloco dentro de um card — menor que o h2 e sem caixa alta.
+   Acompanha um botão de info, por isso é flex. */
+.block-label {
+  display: flex; align-items: center;
+  gap: 2px;                 /* 2px: o ícone de info encosta na palavra */
+  font-weight: 600; font-size: var(--fs-sm);
+  margin: 0 0 var(--sp-2);
+}
+
+/* Link que fecha um bloco: o `.link` solto tem padding próprio pra virar alvo
+   de toque isolado, mas aqui ele segue um campo e só precisa do respiro de
+   cima — o padding lateral o desalinhava da coluna do card. */
+.link.inline { padding: var(--sp-2) 0 0; }
+/* Link de ação destrutiva (excluir perfil): vermelho porque apaga dado. */
+.link.destructive { color: var(--red); }
+/* Botão que ocupa a largura do card. */
+.btn-block { width: 100%; }
+/* Nome do app no card "Sobre". */
+.app-name { margin: var(--sp-1) 0 var(--sp-3); font-weight: 600; font-size: var(--fs-lg); }
 .checkbox-row input { width: auto; }
 .checkbox-row label { font-size: var(--fs-md); }
 

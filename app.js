@@ -2576,7 +2576,7 @@ views.config = (root) => {
         <button data-t="oled"   class="${tema==='oled'?'active':''}">OLED</button>
       </div>
 
-      <label class="field" style="margin-top:14px;margin-bottom:14px;">
+      <label class="field spaced">
         <span>Tamanho do texto</span>
         <div class="segmented" id="text-size">
           <button data-size="small"  class="${textSize==='small' ?'active':''}">Pequeno</button>
@@ -2601,7 +2601,7 @@ views.config = (root) => {
           ${infoBtn('Usa o desbloqueio nativo do aparelho (Face ID, Touch ID, digital ou PIN). Nenhum dado sai daqui.')}
         </div>
       ` : `
-        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 14px;">
+        <p class="help">
           Este navegador não suporta biometria via WebAuthn.
         </p>
       `}
@@ -2621,14 +2621,14 @@ views.config = (root) => {
           <label for="f-notif">Notificações de vencimento</label>
           ${infoBtn('Avisa quando há contas atrasadas ou perto de vencer. Como o app não tem servidor, a checagem roda quando você abre — é preciso abrir o app ao menos uma vez no dia.')}
         </div>
-        <label class="field" style="margin:12px 0 6px;">
+        <label class="field spaced">
           <span class="with-info">Lembrar quantos dias antes${infoBtn('0 = só no dia do vencimento · 1 = hoje ou amanhã · 7 = próximos 7 dias.')}</span>
           <input id="f-notif-days" type="number" min="0" max="14" inputmode="numeric"
                  value="${state.config.notifDaysAhead ?? 1}" />
         </label>
-        <button class="secondary" id="notif-test" style="margin-top:6px;">Testar notificação</button>
+        <button class="secondary" id="notif-test">Testar notificação</button>
       ` : `
-        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 0;">
+        <p class="help">
           Este navegador não suporta notificações nativas. No iOS, isso fica disponível
           quando o app é instalado na tela de início (iOS 16.4+).
         </p>
@@ -2638,10 +2638,10 @@ views.config = (root) => {
     <div class="card">
       <h2 class="with-info">Sincronização${infoBtn('Cada perfil sincroniza num arquivo separado, dentro de uma pasta privada (/Apps/Financas/) na sua Dropbox.')}</h2>
       ${syncState.provider === 'dropbox' ? `
-        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 4px;">
+        <p class="help">
           Conectado: <strong>${escapeHTML(syncState.accountEmail || '—')}</strong>
         </p>
-        <p style="color:var(--text-2);font-size:13px;margin:0 2px 12px;">
+        <p class="help">
           Última sincronização: ${syncRelativeTime(syncState.lastSyncAt)}.
         </p>
         <div class="checkbox-row">
@@ -2654,7 +2654,7 @@ views.config = (root) => {
           <button class="secondary" id="sync-disconnect">Desconectar</button>
         </div>
       ` : `
-        <p style="color:var(--text-2);font-size:14px;margin:6px 2px 12px;">
+        <p class="help">
           Mantenha os dados em sincronia entre seus aparelhos.
         </p>
         <button class="primary" id="sync-connect-dropbox">Conectar Dropbox</button>
@@ -2671,7 +2671,7 @@ views.config = (root) => {
             <input id="f-dash-${idSuf}-donut-show" type="checkbox" ${cfg('DonutShow', prefix)!==false?'checked':''}/>
             <label for="f-dash-${idSuf}-donut-show">Exibir gráfico</label>
           </div>
-          <label class="field" style="margin:10px 0 0;">
+          <label class="field spaced tight">
             <span>Tipo do gráfico</span>
             <div class="segmented" id="dash-${idSuf}-donut-type">
               <button data-type="donut" class="${tipo==='donut'?'active':''}">Donut</button>
@@ -2680,7 +2680,7 @@ views.config = (root) => {
             </div>
           </label>
           ${tipo !== 'bars' ? `
-            <div class="checkbox-row" style="margin-top:14px;">
+            <div class="checkbox-row spaced">
               <input id="f-dash-${idSuf}-donut-inner" type="checkbox" ${cfg('DonutInnerPct', prefix)?'checked':''}/>
               <label for="f-dash-${idSuf}-donut-inner">Mostrar % dentro das fatias</label>
             </div>
@@ -2704,7 +2704,7 @@ views.config = (root) => {
             <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
             <label for="f-dash-tag-show">Exibir card de despesas por tag</label>
           </div>
-          <label class="field" style="margin:10px 0 0;">
+          <label class="field spaced tight">
             <span class="with-info">Despesas com várias tags${infoBtn('"Dividir": despesa de R$ 100 com 2 tags vira R$ 50 em cada, e a soma bate com o total real. "Contar em cada": cada tag recebe o valor inteiro, então a soma pode passar do total.')}</span>
             <div class="segmented" id="dash-tag-split">
               <button data-mode="split" class="${tagSplitMode==='split'?'active':''}">Dividir entre tags</button>
@@ -2739,7 +2739,7 @@ views.config = (root) => {
           <label for="f-dash-invest-show">Investimentos por categoria</label>
         </div>
         <div class="divided-block">
-          <div class="with-info" style="display:flex;align-items:center;gap:2px;font-weight:600;font-size:14px;margin:0 2px 8px;">
+          <div class="block-label">
             Ordem dos cards${infoBtn('Arraste pelo ≡ pra mudar a ordem em que aparecem no dashboard. O card de saldo fica sempre fixo no topo.')}
           </div>
           <ul class="list" id="dash-order-list">
@@ -2763,10 +2763,10 @@ views.config = (root) => {
         <label class="field"><span class="with-info">Custo fixo / renda — limite ideal (%)${infoBtn('Peso das despesas recorrentes (não-investimento) na renda.')}</span>
           <input id="f-health-fixo" type="number" min="1" max="100" inputmode="numeric" value="${hm.fixo}" />
         </label>
-        <label class="field" style="margin-bottom:6px;"><span class="with-info">Reserva de emergência — meses ideais${infoBtn('Quantos meses de custo fixo a reserva deveria cobrir. Só aparece se houver categoria de reserva.')}</span>
+        <label class="field tight"><span class="with-info">Reserva de emergência — meses ideais${infoBtn('Quantos meses de custo fixo a reserva deveria cobrir. Só aparece se houver categoria de reserva.')}</span>
           <input id="f-health-reserva" type="number" min="1" max="60" inputmode="numeric" value="${hm.reserva}" />
         </label>
-        <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50% / 6 meses)</button>
+        <button class="link inline" id="health-reset">Restaurar padrões (20% / 70% / 50% / 6 meses)</button>
       `;
 
       return `
@@ -2794,18 +2794,18 @@ views.config = (root) => {
                   <div class="t">${escapeHTML(p.name)}${p.id===meta.current?' <span class="tag atual">atual</span>':''}</div>
                 </div>
                 <button class="link" data-action="rename-profile">Renomear</button>
-                ${meta.list.length > 1 && p.id !== meta.current ? `<button class="link" data-action="delete-profile" style="color:var(--red);">Excluir</button>` : ''}
+                ${meta.list.length > 1 && p.id !== meta.current ? `<button class="link destructive" data-action="delete-profile">Excluir</button>` : ''}
               </li>
             `).join('')}
           </ul>
-          <button class="primary" id="add-profile" style="margin-top:12px;">+ Novo perfil</button>
+          <button class="primary spaced" id="add-profile">+ Novo perfil</button>
         </div>
       `;
     })()}
 
     <div class="card">
       <h2 class="with-info">Importar OFX${infoBtn('Traga a fatura do cartão ou o extrato da conta em arquivo OFX. O app lê as transações, marca o que já existe e deixa você conferir antes de gerar despesas e receitas.')}</h2>
-      <button class="secondary" id="import-fatura" style="width:100%;">
+      <button class="secondary btn-block" id="import-fatura">
         ${icon('download', 16)} Importar fatura ou extrato (OFX)
       </button>
     </div>
@@ -2818,7 +2818,7 @@ views.config = (root) => {
         <li><div class="grow">Categorias</div><div class="amount">${state.categorias.length}</div></li>
       </ul>
       ${state.lastBackupAt ? `
-        <p style="color:var(--text-2);font-size:13px;margin:0 0 12px;">
+        <p class="help">
           Último backup: ${fmtDate(state.lastBackupAt)}${(() => {
             const d = daysSince(state.lastBackupAt);
             if (d === null) return '';
@@ -2835,7 +2835,7 @@ views.config = (root) => {
       <input type="file" id="import-file" accept="application/json,.json" hidden />
 
       <div class="divided-block">
-        <label class="field" style="margin-bottom:0;">
+        <label class="field tight">
           <span class="with-info">Lembrete de backup${infoBtn('O navegador não permite que o app salve arquivos sozinho no aparelho, mas o dashboard vai avisar quando estiver na hora de exportar.')}</span>
           <select id="backup-reminder">
             <option value="0"  ${(state.config.backupReminderDays|0)===0?'selected':''}>Desativado</option>
@@ -2849,7 +2849,7 @@ views.config = (root) => {
 
     <div class="card">
       <h2>Sobre e suporte</h2>
-      <p style="margin:4px 0 10px;font-weight:600;font-size:16px;">Finanças PWA</p>
+      <p class="app-name">Finanças PWA</p>
       <ul class="list in-card">
         <li><div class="grow">Versão</div><div class="amount">${APP_VERSION}</div></li>
         <li><div class="grow">Lançamentos</div><div class="amount">${state.rendas.length + state.despesas.length}</div></li>
@@ -2861,7 +2861,7 @@ views.config = (root) => {
           return `<li><div class="grow">Em uso há</div><div class="amount">${days === 0 ? 'hoje' : days === 1 ? '1 dia' : `${days} dias`}</div></li>`;
         })()}
       </ul>
-      <button class="link" id="replay-onboarding" style="padding:8px 0 0;">Ver tutorial novamente</button>
+      <button class="link inline" id="replay-onboarding">Ver tutorial novamente</button>
       <div class="divided-block row">
         <button class="secondary" id="force-refresh">Forçar atualização do app</button>
         ${infoBtn('Limpa o cache do app e recarrega — útil se algo travou ou se a versão nova não chegou. Seus dados não são afetados.')}
