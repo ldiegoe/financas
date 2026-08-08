@@ -505,7 +505,16 @@ const topTags = (limit = 8) => {
 
 // Cabecalho colapsavel pros cards do dashboard. Retorna o <h2> com chevron;
 // o body do card eh renderizado condicionalmente pelo caller via isCollapsed.
-const isCollapsed = (key) => !!(state.config.dashCollapsed || {})[key];
+// Cards que nascem fechados: informação de apoio, não a resposta principal do
+// dashboard ("como estou este mês?"). Ficam a um toque de distância e a
+// escolha do usuário é gravada — quem abrir uma vez não vê fechar de novo.
+const COLAPSADOS_POR_PADRAO = new Set(['compare']);
+const isCollapsed = (key) => {
+  const cfg = state.config.dashCollapsed || {};
+  // `key in cfg` distingue "o usuário decidiu" de "nunca mexeu" — sem isso o
+  // padrão sobrescreveria a escolha de quem abriu o card.
+  return key in cfg ? !!cfg[key] : COLAPSADOS_POR_PADRAO.has(key);
+};
 const collapseHeader = (key, title) => `
   <h2 class="collapsible-h" data-collapse="${key}">
     <span>${escapeHTML(title)}</span>
@@ -1663,7 +1672,7 @@ views.dashboard = (root) => {
     h.addEventListener('click', () => {
       const key = h.dataset.collapse;
       const cur = state.config.dashCollapsed || {};
-      updateConfig({ dashCollapsed: { ...cur, [key]: !cur[key] } });
+      updateConfig({ dashCollapsed: { ...cur, [key]: !isCollapsed(key) } });
       render({ preserveScroll: true });
     });
   });
@@ -3115,7 +3124,7 @@ views.config = (root) => {
     h.addEventListener('click', () => {
       const key = h.dataset.collapse;
       const cur = state.config.dashCollapsed || {};
-      updateConfig({ dashCollapsed: { ...cur, [key]: !cur[key] } });
+      updateConfig({ dashCollapsed: { ...cur, [key]: !isCollapsed(key) } });
       render({ preserveScroll: true });
     });
   });
