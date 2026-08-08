@@ -1069,7 +1069,7 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => 
     ? `<div class="chart-wrap donut" ${donutWrapStyle}><canvas id="${canvasId}"></canvas></div>`
     : '';
   const listHTML = showList ? `
-    <ul class="list" style="margin-top:${showDonut?'12px':'0'};">
+    <ul class="list ${showDonut ? 'below-chart' : ''}">
       ${data.map(c => {
         const pctTotal = total > 0 ? Math.round((c.valor / total) * 100) : 0;
         const pct = c.meta ? Math.min(100, Math.round((c.valor / c.meta) * 100)) : null;
@@ -1378,10 +1378,10 @@ views.dashboard = (root) => {
     }
     if (msg) {
       backupBanner = `
-        <div class="card" style="display:flex;align-items:center;gap:12px;border-left:3px solid var(--orange);">
-          <div style="flex:1;">
-            <div style="font-weight:600;margin-bottom:2px;">Hora de fazer backup</div>
-            <div style="color:var(--text-2);font-size:14px;">${msg}</div>
+        <div class="card backup-banner">
+          <div class="grow">
+            <div class="t">Hora de fazer backup</div>
+            <div class="s">${msg}</div>
           </div>
           <button class="primary" id="banner-backup">Exportar agora</button>
         </div>
@@ -1417,7 +1417,7 @@ views.dashboard = (root) => {
         <span class="summary-label">Saldo</span>
         <span class="summary-value ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</span>
       </div>
-      <div class="summary-sub" style="justify-content:flex-end;gap:16px;">
+      <div class="summary-sub end">
         ${rendaProgramada > 0 ? `<span>A receber <strong>${fmtBRL(rendaProgramada)}</strong></span>` : ''}
         <span>Atual <strong>${fmtBRL(saldoAtual)}</strong></span>
       </div>
@@ -1435,7 +1435,7 @@ views.dashboard = (root) => {
         <div class="card">
           ${collapseHeader('goals', 'Objetivos')}
           ${isCollapsed('goals') ? '' : `
-            <ul class="list" style="box-shadow:none;margin:0;">
+            <ul class="list in-card">
               ${objs.map(o => {
                 const atual = objetivoAtual(o);
                 const pct = o.alvo > 0 ? Math.min(100, Math.round(atual / o.alvo * 100)) : 0;
@@ -1575,13 +1575,13 @@ views.dashboard = (root) => {
         <div class="card">
           ${collapseHeader('upcoming', 'Vencimentos')}
           ${collapsed ? '' : `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 10px;gap:12px;">
-              <span style="color:var(--text-2);font-size:13px;">${summary} · ${fmtBRL(total)}</span>
+            <div class="card-toolbar">
+              <span class="label">${summary} · ${fmtBRL(total)}</span>
               ${vencSelMode
-                ? `<button class="link" id="venc-select-all" style="padding:0;flex:0 0 auto;">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`
-                : `<button class="link" id="venc-enter-select" style="padding:0;flex:0 0 auto;">Selecionar</button>`}
+                ? `<button class="link" id="venc-select-all">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`
+                : `<button class="link" id="venc-enter-select">Selecionar</button>`}
             </div>
-            <ul class="list upcoming-list ${vencSelMode ? 'selecting' : ''}" style="box-shadow:none;margin:0;">
+            <ul class="list in-card upcoming-list ${vencSelMode ? 'selecting' : ''}">
               ${items.map(d => {
                 const c = state.categorias.find(x => x.id === d.categoriaId);
                 const key = `${d.id}|${d.data}`;
@@ -1610,7 +1610,7 @@ views.dashboard = (root) => {
               <div class="venc-actions">
                 <span class="count">${vencSel.size} selecionada${vencSel.size === 1 ? '' : 's'}</span>
                 <button class="link" id="venc-cancel">Cancelar</button>
-                <button class="primary" id="venc-pay" style="padding:8px 14px;" ${vencSel.size === 0 ? 'disabled' : ''}>Marcar pagas</button>
+                <button class="primary" id="venc-pay" ${vencSel.size === 0 ? 'disabled' : ''}>Marcar pagas</button>
               </div>
             ` : ''}
           `}
@@ -1636,7 +1636,7 @@ views.dashboard = (root) => {
           `).join('')}
 
           ${topChanges.length > 0 ? `
-            <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
+            <div class="section-title in-card">Maiores variações por categoria</div>
             <ul class="compare-changes">
               ${topChanges.map(c => `
                 <li>
@@ -2441,12 +2441,12 @@ const renderAportesSub = (root, seg) => {
     </div>
     ${invIds.size === 0 ? `
       <div class="empty"><span class="ico">${icon('trending', 48)}</span>
-        Nenhuma categoria de investimento ainda.<br/><br/>
-        Crie uma categoria marcando <strong>"É investimento"</strong> para começar a registrar aportes.
+        Nenhuma categoria de investimento ainda.
+        <div class="empty-note">Crie uma categoria marcando <strong>"É investimento"</strong> para começar a registrar aportes.</div>
       </div>
     ` : (lancs.length === 0 ? `
-      <div class="empty"><span class="ico">${icon('trending', 48)}</span>Nenhum investimento no período.<br/><br/>
-        <button class="primary" id="add-invest">Adicionar investimento</button></div>
+      <div class="empty"><span class="ico">${icon('trending', 48)}</span>Nenhum investimento no período.
+        <div class="empty-action"><button class="primary" id="add-invest">Adicionar investimento</button></div></div>
     ` : `
       <div class="section-title">Lançamentos</div>
       <ul class="list">
@@ -2494,8 +2494,8 @@ const renderObjetivosSub = (root, seg) => {
   root.innerHTML = `
     ${seg}
     ${objetivos.length === 0 ? `
-      <div class="empty"><span class="ico">${icon('target', 48)}</span>Nenhum objetivo ainda.<br/><br/>
-        <button class="primary" id="add-obj">Criar objetivo</button></div>
+      <div class="empty"><span class="ico">${icon('target', 48)}</span>Nenhum objetivo ainda.
+        <div class="empty-action"><button class="primary" id="add-obj">Criar objetivo</button></div></div>
     ` : `
       <ul class="list">
         ${objetivos.map(o => objetivoRowHTML(o)).join('')}
@@ -2550,7 +2550,7 @@ const objetivoRowHTML = (o) => {
         <div class="t">${escapeHTML(o.nome)}${done ? '<span class="tag poupanca">Concluído</span>' : ''}</div>
         <div class="s">${fmtBRL(atual)} de ${fmtBRL(o.alvo)} · ${pct}%${done ? '' : ` · faltam ${fmtBRL(falta)}`}</div>
         <div class="progress"><i style="width:${pct}%"></i></div>
-        ${prazoLine ? `<div class="s" style="margin-top:4px;">${prazoLine}</div>` : ''}
+        ${prazoLine ? `<div class="s">${prazoLine}</div>` : ''}
         ${ritmoLine ? `<div class="s">${ritmoLine}</div>` : ''}
       </div>
       <div class="swipe-actions">
@@ -2585,7 +2585,7 @@ views.config = (root) => {
         </div>
       </label>
 
-      <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+      <div class="checkbox-row divided">
         <input id="f-cat-icons" type="checkbox" ${iconsEnabled()?'checked':''}/>
         <label for="f-cat-icons">Mostrar ícones das categorias</label>
         ${infoBtn('Quando desligado, mostra só a cor da categoria — sem o emoji.')}
@@ -2606,7 +2606,7 @@ views.config = (root) => {
         </p>
       `}
 
-      <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+      <div class="checkbox-row divided">
         <input id="f-hide" type="checkbox" ${state.config.valuesHidden?'checked':''}/>
         <label for="f-hide">Ocultar valores em R$</label>
         ${infoBtn('Mostra R$ •••• no lugar dos valores em toda a tela. Dá pra alternar rapidinho pelo ícone de olho na barra do topo.')}
@@ -2649,7 +2649,7 @@ views.config = (root) => {
           <label for="f-sync-auto">Sincronização automática</label>
           ${infoBtn('Mudanças sobem em até 5 s. O app baixa novidades ao abrir e ao voltar pro primeiro plano.')}
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+        <div class="btn-row spaced">
           <button class="primary"   id="sync-now">Sincronizar agora</button>
           <button class="secondary" id="sync-disconnect">Desconectar</button>
         </div>
@@ -2667,7 +2667,7 @@ views.config = (root) => {
       const dashControls = (prefix, idSuf, extraTail) => {
         const tipo = cfg('DonutType', prefix) || 'donut';
         return `
-          <div class="checkbox-row" style="padding-top:0;">
+          <div class="checkbox-row flush">
             <input id="f-dash-${idSuf}-donut-show" type="checkbox" ${cfg('DonutShow', prefix)!==false?'checked':''}/>
             <label for="f-dash-${idSuf}-donut-show">Exibir gráfico</label>
           </div>
@@ -2685,7 +2685,7 @@ views.config = (root) => {
               <label for="f-dash-${idSuf}-donut-inner">Mostrar % dentro das fatias</label>
             </div>
           ` : ''}
-          <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+          <div class="checkbox-row divided">
             <input id="f-dash-${idSuf}-list-show" type="checkbox" ${cfg('ListShow', prefix)!==false?'checked':''}/>
             <label for="f-dash-${idSuf}-list-show">Exibir lista</label>
           </div>
@@ -2699,8 +2699,8 @@ views.config = (root) => {
 
       const tagSplitMode = state.config.dashTagSplit !== false ? 'split' : 'each';
       const tagExtra = `
-        <div style="border-top:1px solid var(--separator);padding-top:14px;margin-top:14px;">
-          <div class="checkbox-row" style="padding-top:0;">
+        <div class="divided-block">
+          <div class="checkbox-row flush">
             <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
             <label for="f-dash-tag-show">Exibir card de despesas por tag</label>
           </div>
@@ -2714,31 +2714,31 @@ views.config = (root) => {
         </div>`;
 
       const cardsControls = `
-        <div class="checkbox-row" style="padding-top:0;">
+        <div class="checkbox-row flush">
           <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
           <label for="f-dash-compare-show">Comparação com mês anterior</label>
         </div>
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <div class="checkbox-row divided">
           <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
           <label for="f-dash-bars-show">Gráfico de Receitas vs Despesas</label>
         </div>
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <div class="checkbox-row divided">
           <input id="f-dash-upcoming-show" type="checkbox" ${state.config.dashUpcomingShow!==false?'checked':''}/>
           <label for="f-dash-upcoming-show">Vencimentos (pendentes e atrasados)</label>
         </div>
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <div class="checkbox-row divided">
           <input id="f-dash-goals-show" type="checkbox" ${state.config.dashGoalsShow!==false?'checked':''}/>
           <label for="f-dash-goals-show">Objetivos (progresso das metas)</label>
         </div>
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <div class="checkbox-row divided">
           <input id="f-dash-health-show" type="checkbox" ${state.config.dashHealthShow!==false?'checked':''}/>
           <label for="f-dash-health-show">Saúde financeira (indicadores)</label>
         </div>
-        <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
+        <div class="checkbox-row divided">
           <input id="f-dash-invest-show" type="checkbox" ${state.config.dashInvestShow!==false?'checked':''}/>
           <label for="f-dash-invest-show">Investimentos por categoria</label>
         </div>
-        <div style="border-top:1px solid var(--separator);padding-top:14px;margin-top:14px;">
+        <div class="divided-block">
           <div class="with-info" style="display:flex;align-items:center;gap:2px;font-weight:600;font-size:14px;margin:0 2px 8px;">
             Ordem dos cards${infoBtn('Arraste pelo ≡ pra mudar a ordem em que aparecem no dashboard. O card de saldo fica sempre fixo no topo.')}
           </div>
@@ -2787,11 +2787,11 @@ views.config = (root) => {
       return `
         <div class="card">
           <h2 class="with-info">Perfis${infoBtn('Cada perfil tem dados, categorias e backups separados. Bloqueio biométrico e preferências visuais são compartilhados entre todos.')}</h2>
-          <ul class="list" style="box-shadow:none;">
+          <ul class="list in-card">
             ${meta.list.map(p => `
               <li data-pid="${p.id}">
                 <div class="grow">
-                  <div class="t">${escapeHTML(p.name)}${p.id===meta.current?' <span class="tag" style="background:rgba(10,132,255,.15);color:var(--tint);margin-left:6px;">atual</span>':''}</div>
+                  <div class="t">${escapeHTML(p.name)}${p.id===meta.current?' <span class="tag atual">atual</span>':''}</div>
                 </div>
                 <button class="link" data-action="rename-profile">Renomear</button>
                 ${meta.list.length > 1 && p.id !== meta.current ? `<button class="link" data-action="delete-profile" style="color:var(--red);">Excluir</button>` : ''}
@@ -2812,7 +2812,7 @@ views.config = (root) => {
 
     <div class="card">
       <h2 class="with-info">Dados e backup${infoBtn('Os dados ficam apenas neste aparelho. Exporte de tempos em tempos para não perder histórico.')}</h2>
-      <ul class="list" style="box-shadow:none;margin:0 0 14px;">
+      <ul class="list in-card with-gap">
         <li><div class="grow">Receitas</div><div class="amount">${state.rendas.length}</div></li>
         <li><div class="grow">Despesas</div><div class="amount">${state.despesas.length}</div></li>
         <li><div class="grow">Categorias</div><div class="amount">${state.categorias.length}</div></li>
@@ -2828,13 +2828,13 @@ views.config = (root) => {
           })()}
         </p>
       ` : ''}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="btn-row">
         <button class="primary"   id="export">Exportar dados</button>
         <button class="secondary" id="import">Importar dados</button>
       </div>
       <input type="file" id="import-file" accept="application/json,.json" hidden />
 
-      <div style="margin-top:16px;border-top:1px solid var(--separator);padding-top:14px;">
+      <div class="divided-block">
         <label class="field" style="margin-bottom:0;">
           <span class="with-info">Lembrete de backup${infoBtn('O navegador não permite que o app salve arquivos sozinho no aparelho, mas o dashboard vai avisar quando estiver na hora de exportar.')}</span>
           <select id="backup-reminder">
@@ -2850,7 +2850,7 @@ views.config = (root) => {
     <div class="card">
       <h2>Sobre e suporte</h2>
       <p style="margin:4px 0 10px;font-weight:600;font-size:16px;">Finanças PWA</p>
-      <ul class="list" style="box-shadow:none;">
+      <ul class="list in-card">
         <li><div class="grow">Versão</div><div class="amount">${APP_VERSION}</div></li>
         <li><div class="grow">Lançamentos</div><div class="amount">${state.rendas.length + state.despesas.length}</div></li>
         ${(() => {
@@ -2862,7 +2862,7 @@ views.config = (root) => {
         })()}
       </ul>
       <button class="link" id="replay-onboarding" style="padding:8px 0 0;">Ver tutorial novamente</button>
-      <div style="margin-top:14px;border-top:1px solid var(--separator);padding-top:14px;display:flex;align-items:center;gap:4px;">
+      <div class="divided-block row">
         <button class="secondary" id="force-refresh">Forçar atualização do app</button>
         ${infoBtn('Limpa o cache do app e recarrega — útil se algo travou ou se a versão nova não chegou. Seus dados não são afetados.')}
       </div>

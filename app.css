@@ -358,7 +358,7 @@ main#view {
 .chevron.collapsed { transform: rotate(-90deg); }
 
 /* Sub-secoes colapsaveis dentro de um card (usado em "Personalizar dashboard"). */
-.subsection { border-top: 1px solid var(--separator); margin-top: var(--sp-4); padding-top: 14px; }
+.subsection { border-top: 1px solid var(--separator); margin-top: var(--sp-4); padding-top: var(--sp-4); }
 .subsection-h {
   display: flex;
   align-items: center;
@@ -424,6 +424,9 @@ main#view {
   font-variant-numeric: tabular-nums;
 }
 .summary-sub strong { color: var(--text); font-weight: 600; }
+/* Linha de fechamento do card-resumo ("A receber / Atual"): não é um par
+   rótulo↔valor como as demais, então agrupa à direita, sob o saldo. */
+.summary-sub.end { justify-content: flex-end; gap: var(--sp-4); }
 /* O saldo é a conclusão do card, não mais uma linha: ganha respiro extra
    acima pra se destacar do bloco de receitas/despesas que o alimenta. */
 .summary-row-main { padding-top: var(--sp-3); }
@@ -448,6 +451,14 @@ main#view {
 .list .amount { font-variant-numeric: tabular-nums; font-weight: 600; }
 .list .amount.neg { color: var(--red); }
 .list .amount.pos { color: var(--green); }
+/* Lista aninhada DENTRO de um card: o card já dá a superfície e a elevação, e
+   a lista repetir as duas cria uma caixa dentro da caixa. Vivia como
+   `style="box-shadow:none;margin:0"` copiado em cada template. */
+.list.in-card { box-shadow: none; }
+/* Lista dentro de card seguida de outro conteúdo (contadores + botões). */
+.list.in-card.with-gap { margin-bottom: var(--sp-4); }
+/* Lista logo abaixo do gráfico, no card de distribuição por categoria/tag. */
+.list.below-chart { margin-top: var(--sp-3); }
 
 /* O respiro ACIMA do título é o que separa um bloco do anterior — por isso é
    bem maior que o de baixo, que apenas cola o título no seu conteúdo. */
@@ -466,6 +477,20 @@ main#view {
 /* O `.link` solto tem padding próprio pra virar alvo de toque; aqui quem dá o
    alvo é a altura da linha, então só sobra o respiro vertical. */
 .section-title.with-action .link { padding: var(--sp-1) 0; }
+/* Dentro de um card as margens encolhem: o `--sp-5` de cima existe pra separar
+   blocos inteiros da tela, e aqui o card já faz essa separação. */
+.section-title.in-card { margin: var(--sp-4) 0 var(--sp-2); }
+
+/* Rótulo + ação no topo do conteúdo de um card (ex.: "Vencimentos"). Mesmo
+   papel do `.section-title.with-action`, mas sem caixa alta — aqui quem
+   titula é o cabeçalho do próprio card. */
+.card-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+}
+.card-toolbar .label { color: var(--text-2); font-size: var(--fs-sm); }
+.card-toolbar .link { padding: 0; flex: 0 0 auto; }
 /* Toggle de ordenação: parece o título, mas é tocável e mostra o modo atual. */
 .sort-toggle {
   display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -478,17 +503,14 @@ main#view {
 
 .empty {
   text-align: center;
-  /* 36px fora da escala, de propósito por ora: `.empty` é global e Dashboard,
-     Investimentos e Objetivos ainda não passaram pela repaginação. Tokenizar
-     aqui mexeria no estado vazio delas sem validação. Fica pra quando fecharem. */
-  padding: 36px var(--sp-4);
+  padding: var(--sp-6) var(--sp-4);
   color: var(--text-2);
 }
-/* O respiro entre a mensagem e o botão de ação era feito com dois <br/> no
-   template — espaçamento é papel do CSS, não da marcação. Classe própria (e
-   não `.empty button`) porque as outras telas ainda usam os <br/> e ganhariam
-   o espaço em dobro; migram quando chegar a vez delas. */
-.empty-action { margin-top: var(--sp-4); }
+/* O respiro entre a mensagem e o que vem depois era feito com dois <br/> no
+   template — espaçamento é papel do CSS, não da marcação. `-action` para um
+   botão, `-note` para uma segunda frase explicativa. */
+.empty-action,
+.empty-note { margin-top: var(--sp-4); }
 .empty .ico {
   display: flex;
   justify-content: center;
@@ -779,6 +801,24 @@ button.link { background: none; border: 0; color: var(--tint); font-size: var(--
 .toggle input { width: auto; }
 
 .checkbox-row { display: flex; align-items: center; gap: var(--sp-3); padding: 8px 0; }
+/* Divisor entre blocos dentro de um card de Ajustes: linha acima + respiro.
+   Vivia como `style="border-top:...;padding-top:14px"` repetido em uma dúzia
+   de pontos — é a mesma regra que `.subsection` já expressava. */
+.divided { border-top: 1px solid var(--separator); padding-top: var(--sp-4); }
+/* Em <div> soltas o bloco também precisa descolar do que veio antes; a
+   `.checkbox-row` não precisa, porque já tem padding vertical próprio. */
+.divided-block {
+  border-top: 1px solid var(--separator);
+  padding-top: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+.divided-block.row { display: flex; align-items: center; gap: var(--sp-1); }
+/* Quando a linha ABRE um bloco (logo abaixo do título do card), o respiro de
+   cima da `.checkbox-row` vira espaço morto. */
+.checkbox-row.flush { padding-top: 0; }
+/* Botões lado a lado que quebram pra linha de baixo se não couberem. */
+.btn-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.btn-row.spaced { margin-top: var(--sp-3); }
 .checkbox-row input { width: auto; }
 .checkbox-row label { font-size: var(--fs-md); }
 
@@ -963,13 +1003,14 @@ label.field span .info-btn svg,
 }
 .progress > i.warn { background: var(--orange); }
 .progress > i.over { background: var(--red); }
+/* Texto logo abaixo da barra (prazo/ritmo de um objetivo) precisa descolar
+   dela. Vivia como `style="margin-top:4px"` na primeira das duas linhas —
+   como regra, vale pra qualquer uma que venha primeiro. */
+.progress + .s { margin-top: var(--sp-1); }
 
 .drag-handle {
   flex: 0 0 auto;
-  /* 6px lateral fora da escala, mantido por ora: a alça é compartilhada com a
-     lista "Ordem dos cards" em Ajustes, que ainda não passou pela repaginação.
-     Vira `--sp-2` quando aquela tela for revisada. */
-  padding: var(--sp-2) 6px;
+  padding: var(--sp-2);
   margin-left: var(--sp-1);
   color: var(--text-2);
   font-size: 22px;
@@ -999,6 +1040,15 @@ label.field span .info-btn svg,
 .swipe-actions .del { background: var(--red); }
 .swipe-actions .pago { background: var(--green); }
 .swipe-actions .undo { background: #636366; }
+
+/* Aviso de backup atrasado, no topo do Dashboard. Laranja é ATENÇÃO REAL: os
+   dados estão sem cópia há dias e isso pede ação do usuário. A faixa lateral
+   de 3px marca o card sem transformá-lo num bloco colorido. */
+.backup-banner { display: flex; align-items: center; gap: var(--sp-3); border-left: 3px solid var(--orange); }
+.backup-banner .grow { flex: 1; min-width: 0; }
+/* 2px: o título e a mensagem são uma unidade, só precisam não se tocar. */
+.backup-banner .t { font-weight: 600; margin-bottom: 2px; }
+.backup-banner .s { color: var(--text-2); font-size: var(--fs-sm); }
 
 .chart-wrap { position: relative; height: 240px; }
 .chart-wrap.donut { height: 260px; }
@@ -1081,7 +1131,7 @@ label.field span .info-btn svg,
   border: 1px solid var(--separator);
 }
 /* Sub-abas no topo da aba Investimentos (Investimentos / Objetivos). */
-.invest-subtabs { margin: 2px 0 14px; }
+.invest-subtabs { margin: var(--sp-1) 0 var(--sp-4); }
 .segmented button {
   appearance: none; -webkit-appearance: none;
   border: 0;
@@ -1160,6 +1210,8 @@ label.field span .info-btn svg,
 /* POLARIDADE / INTERAÇÃO — significado real de cor. */
 .tag.poupanca    { background: rgba(48,209,88,.15);   color: var(--green); }
 .tag.reserva     { background: rgba(10,132,255,.15);  color: var(--tint); }
+/* "atual" marca o perfil ativo: estado selecionado, portanto azul. */
+.tag.atual       { background: rgba(10,132,255,.15);  color: var(--tint); }
 
 /* Lançamento de renda com data futura: ainda não entrou no caixa, então
    aparece levemente esmaecido na lista da Carteira. */
@@ -1204,11 +1256,14 @@ label.field span .info-btn svg,
 /* Barra de acao inline do modo selecao do card Vencimentos */
 .venc-actions {
   display: flex; align-items: center; gap: var(--sp-3);
-  margin-top: var(--sp-3); padding-top: 12px;
+  margin-top: var(--sp-3); padding-top: var(--sp-3);
   border-top: 1px solid var(--separator);
 }
 .venc-actions .count { flex: 1; font-weight: 600; font-size: var(--fs-sm); }
 .venc-actions .primary[disabled] { opacity: .4; cursor: default; }
+/* Compacto pelo mesmo motivo da `.select-bar`: a linha leva três elementos e o
+   `min-height: 44px` de button.primary já garante o alvo de toque. */
+.venc-actions button.primary { padding: var(--sp-2) var(--sp-4); }
 
 .tags-row { margin-top: var(--sp-1); display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .tags-row .tag { margin-left: 0; }
