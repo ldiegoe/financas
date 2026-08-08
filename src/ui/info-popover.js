@@ -34,28 +34,47 @@ export const mountInfoPopover = (doc = document) => {
     anchor = null;
   };
 
+  // "Tamanho do texto" (html.text-small/large) aplica `zoom`, e isso divide as
+  // medidas em dois espaços. Medido no Chrome:
+  //   getBoundingClientRect()  → VISUAL (já multiplicado pelo zoom)
+  //   documentElement.clientWidth/Height → VISUAL (== innerWidth/Height)
+  //   style.top/left que escrevemos → LOCAL (multiplicado só na hora de pintar)
+  // Ou seja: dá pra fazer TODA a conta em espaço visual, onde os rects e a
+  // viewport concordam, e dividir pelo zoom só o que vai pro style.
+  const zoomFactor = () => {
+    let z = 1;
+    for (let el = pop.parentElement; el; el = el.parentElement) {
+      z *= parseFloat(win.getComputedStyle(el).zoom) || 1;
+    }
+    return z || 1;
+  };
+
   // Posiciona o balão já montado: centraliza no "i", prende dentro da tela e
   // vira pra cima quando não cabe embaixo.
   const place = () => {
+    const z = zoomFactor();
     const a = anchor.getBoundingClientRect();
     const vw = doc.documentElement.clientWidth;
     const vh = doc.documentElement.clientHeight;
 
-    pop.style.maxWidth = `${Math.min(300, vw - PAD * 2)}px`;
+    // maxWidth é comprimento local: o balão escala junto com o resto da UI.
+    pop.style.maxWidth = `${Math.min(300, vw / z - PAD * 2)}px`;
     const { width, height } = pop.getBoundingClientRect();
 
-    const left = Math.min(Math.max(PAD, a.left + a.width / 2 - width / 2), vw - width - PAD);
-    const below = a.bottom + GAP;
-    const above = a.top - height - GAP;
+    // PAD/GAP são pensados em espaço local — no visual valem × zoom.
+    const pad = PAD * z, gap = GAP * z;
+    const left = Math.min(Math.max(pad, a.left + a.width / 2 - width / 2), vw - width - pad);
+    const below = a.bottom + gap;
+    const above = a.top - height - gap;
     // Só sobe se não couber embaixo E couber em cima.
-    const flip = below + height > vh - PAD && above >= PAD;
+    const flip = below + height > vh - pad && above >= pad;
 
-    pop.style.left = `${left}px`;
-    pop.style.top = `${flip ? above : below}px`;
+    pop.style.left = `${left / z}px`;
+    pop.style.top = `${(flip ? above : below) / z}px`;
     pop.classList.toggle('above', flip);
     // Seta aponta pro centro do "i", sem escapar dos cantos arredondados.
-    const arrowX = Math.min(Math.max(14, a.left + a.width / 2 - left), width - 14);
-    pop.style.setProperty('--arrow-x', `${arrowX}px`);
+    const arrowX = Math.min(Math.max(14 * z, a.left + a.width / 2 - left), width - 14 * z);
+    pop.style.setProperty('--arrow-x', `${arrowX / z}px`);
   };
 
   const open = (btn) => {
