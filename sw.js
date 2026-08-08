@@ -1,5 +1,5 @@
 // Service Worker — cache offline + auto-update no celular
-const CACHE = 'financas-v115';
+const CACHE = 'financas-v116';
 const ASSETS = [
   './',
   './index.html',
@@ -41,6 +41,7 @@ const ASSETS = [
   './src/ui/sheets/importar-boletos.js',
   './src/ui/sheets/importar-ofx.js',
   './src/ui/sheets/bulk-edit.js',
+  './src/ui/sheets/filters.js',
   './icon.svg',
   './manifest.webmanifest',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',

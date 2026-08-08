@@ -64,6 +64,7 @@ import { createSheetsDetalhes } from './src/ui/sheets/detalhes.js';
 import { createSheetImportarBoletos } from './src/ui/sheets/importar-boletos.js';
 import { createSheetImportarOFX } from './src/ui/sheets/importar-ofx.js';
 import { createSheetBulkEdit } from './src/ui/sheets/bulk-edit.js';
+import { createSheetFilters } from './src/ui/sheets/filters.js';
 
 // --------------------------- DB --------------------------------------------
 const PROFILES_KEY     = 'financas:profiles';
@@ -1890,14 +1891,25 @@ views.carteira = (root) => {
 // ----- Despesas -----
 // Filtros de despesas: multi-selecao via Set. "vazio" = sem filtro (mostra
 // tudo). Tap num chip toggles a inclusao; "Todas X" limpa o set.
-let tagFilter = new Set();      // chaves lowercase de tags ativas
-let searchQuery = '';           // texto digitado na busca
-let categoryFilter = new Set(); // ids de categorias ativas
-let statusFilter = null;        // null | 'pago' | 'pendente'
-let typeFilter = null;          // null | 'mensal' | 'parcelada'
-let dateFromFilter = null;      // ISO 'YYYY-MM-DD' (data >= valor) ou null
-let dateToFilter = null;        // ISO 'YYYY-MM-DD' (data <= valor) ou null
-let dateBasisFilter = 'pagamento'; // 'pagamento' (data) | 'cadastro' (criadoEm)
+// Objeto (nao `let` solto) pra poder ser injetado nos sheets — mutacao de
+// propriedade propaga por referencia.
+const filters = {
+  tag: new Set(),         // chaves lowercase de tags ativas
+  query: '',              // texto digitado na busca
+  category: new Set(),    // ids de categorias ativas
+  status: null,           // null | 'pago' | 'pendente'
+  type: null,             // null | 'mensal' | 'parcelada'
+  dateFrom: null,         // ISO 'YYYY-MM-DD' (data >= valor) ou null
+  dateTo: null,           // ISO 'YYYY-MM-DD' (data <= valor) ou null
+  dateBasis: 'pagamento', // 'pagamento' (data) | 'cadastro' (criadoEm)
+};
+// Zera tudo, inclusive a busca. Idioma repetido em 2 lugares: "Limpar tudo" do
+// sheet de filtros e o "limpar" inline da barra.
+const resetFilters = () => {
+  filters.query = ''; filters.category.clear(); filters.tag.clear();
+  filters.status = null; filters.type = null;
+  filters.dateFrom = null; filters.dateTo = null; filters.dateBasis = 'pagamento';
+};
 
 // Modo seleção da tela de Despesas — permite marcar várias e apagar de uma vez.
 const selection = { mode: false, ids: new Set() };
@@ -1915,27 +1927,27 @@ let vencSel = new Set();
 // categorias/tags selecionadas), entre filtros eh "E".
 const filterDespesas = (despesas) => {
   let result = despesas;
-  if (categoryFilter.size > 0) {
-    result = result.filter(d => categoryFilter.has(d.categoriaId));
+  if (filters.category.size > 0) {
+    result = result.filter(d => filters.category.has(d.categoriaId));
   }
-  if (tagFilter.size > 0) {
-    result = result.filter(d => (d.tags || []).some(t => tagFilter.has(t.toLowerCase())));
+  if (filters.tag.size > 0) {
+    result = result.filter(d => (d.tags || []).some(t => filters.tag.has(t.toLowerCase())));
   }
-  if (statusFilter === 'pago') result = result.filter(d => d._pago);
-  if (statusFilter === 'pendente') result = result.filter(d => !d._pago);
-  if (typeFilter === 'mensal') result = result.filter(d => d.recorrente);
-  if (typeFilter === 'parcelada') result = result.filter(d => (d.parcelas || 1) > 1);
-  if (typeFilter === 'unica') result = result.filter(d => !d.recorrente && (d.parcelas || 1) <= 1);
-  if (dateFromFilter || dateToFilter) {
-    const field = dateBasisFilter === 'cadastro' ? 'criadoEm' : 'data';
+  if (filters.status === 'pago') result = result.filter(d => d._pago);
+  if (filters.status === 'pendente') result = result.filter(d => !d._pago);
+  if (filters.type === 'mensal') result = result.filter(d => d.recorrente);
+  if (filters.type === 'parcelada') result = result.filter(d => (d.parcelas || 1) > 1);
+  if (filters.type === 'unica') result = result.filter(d => !d.recorrente && (d.parcelas || 1) <= 1);
+  if (filters.dateFrom || filters.dateTo) {
+    const field = filters.dateBasis === 'cadastro' ? 'criadoEm' : 'data';
     result = result.filter(d => {
       const v = d[field] || d.data; // fallback p/ despesas antigas sem criadoEm
-      if (dateFromFilter && v < dateFromFilter) return false;
-      if (dateToFilter && v > dateToFilter) return false;
+      if (filters.dateFrom && v < filters.dateFrom) return false;
+      if (filters.dateTo && v > filters.dateTo) return false;
       return true;
     });
   }
-  const q = searchQuery.trim().toLowerCase();
+  const q = filters.query.trim().toLowerCase();
   if (q) {
     result = result.filter(d =>
       (d.descricao || '').toLowerCase().includes(q) ||
@@ -1949,11 +1961,11 @@ const filterDespesas = (despesas) => {
 // Usado pra mostrar o badge "Filtros · N" no botão que abre o sheet.
 const activeFilterCount = () => {
   let n = 0;
-  n += categoryFilter.size;
-  n += tagFilter.size;
-  if (statusFilter !== null) n++;
-  if (typeFilter !== null) n++;
-  if (dateFromFilter || dateToFilter) n++;
+  n += filters.category.size;
+  n += filters.tag.size;
+  if (filters.status !== null) n++;
+  if (filters.type !== null) n++;
+  if (filters.dateFrom || filters.dateTo) n++;
   return n;
 };
 
@@ -1962,26 +1974,26 @@ const activeFilterCount = () => {
 // o handler usa pra remover só aquele filtro.
 const activeFilterPills = () => {
   const pills = [];
-  for (const cid of categoryFilter) {
+  for (const cid of filters.category) {
     const c = state.categorias.find(x => x.id === cid);
     if (c) pills.push({ key: `cat:${cid}`, label: escapeHTML(c.nome), color: c.cor });
   }
-  for (const t of tagFilter) {
+  for (const t of filters.tag) {
     pills.push({ key: `tag:${t}`, label: `#${escapeHTML(t)}` });
   }
-  if (statusFilter) {
-    pills.push({ key: 'status', label: statusFilter === 'pago' ? 'Pagas' : 'Pendentes' });
+  if (filters.status) {
+    pills.push({ key: 'status', label: filters.status === 'pago' ? 'Pagas' : 'Pendentes' });
   }
-  if (typeFilter) {
-    const lbl = typeFilter === 'mensal' ? 'Mensais'
-              : typeFilter === 'parcelada' ? 'Parceladas'
+  if (filters.type) {
+    const lbl = filters.type === 'mensal' ? 'Mensais'
+              : filters.type === 'parcelada' ? 'Parceladas'
               : 'Apenas neste mês';
     pills.push({ key: 'type', label: lbl });
   }
-  if (dateFromFilter || dateToFilter) {
+  if (filters.dateFrom || filters.dateTo) {
     const ds = (iso) => iso ? fmtDate(iso) : '…';
-    const basis = dateBasisFilter === 'cadastro' ? ' (cadastro)' : '';
-    pills.push({ key: 'date', label: `${ds(dateFromFilter)} → ${ds(dateToFilter)}${basis}` });
+    const basis = filters.dateBasis === 'cadastro' ? ' (cadastro)' : '';
+    pills.push({ key: 'date', label: `${ds(filters.dateFrom)} → ${ds(filters.dateTo)}${basis}` });
   }
   return pills;
 };
@@ -1989,132 +2001,18 @@ const activeFilterPills = () => {
 // Remove um filtro específico pela `key` da pill (cat:<id>, tag:<nome>,
 // status, type, date). Usado pelo clique no × das pills ativas.
 const removeFilterByKey = (key) => {
-  if (key.startsWith('cat:')) categoryFilter.delete(key.slice(4));
-  else if (key.startsWith('tag:')) tagFilter.delete(key.slice(4));
-  else if (key === 'status') statusFilter = null;
-  else if (key === 'type') typeFilter = null;
-  else if (key === 'date') { dateFromFilter = null; dateToFilter = null; }
+  if (key.startsWith('cat:')) filters.category.delete(key.slice(4));
+  else if (key.startsWith('tag:')) filters.tag.delete(key.slice(4));
+  else if (key === 'status') filters.status = null;
+  else if (key === 'type') filters.type = null;
+  else if (key === 'date') { filters.dateFrom = null; filters.dateTo = null; }
 };
 
 // Sheet com TODOS os controles de filtro (cat/tag/status/tipo/intervalo).
 // Toques nos chips/inputs aplicam IMEDIATAMENTE (state + render do view de
 // fundo); o sheet em si fica aberto pra o usuário continuar ajustando.
 // "Limpar tudo" zera tudo (inclusive busca) e reabre o sheet limpo.
-const sheetFilters = () => {
-  const tags = allTags();
-  const despesasCats = state.categorias.filter(c => !c.poupanca);
-  openSheet('Filtros', () => `
-    ${despesasCats.length > 0 ? `
-      <div class="filter-group">
-        <div class="filter-group-label">Categoria</div>
-        <div class="filter-bar" id="sheet-cat-filter">
-          <button class="chip ${categoryFilter.size===0?'active':''}" data-cat="">Todas</button>
-          ${despesasCats.map(c => `
-            <button class="chip ${categoryFilter.has(c.id)?'active':''}" data-cat="${c.id}">
-              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.cor};margin-right:6px;vertical-align:middle;"></span>${escapeHTML(c.nome)}
-            </button>`).join('')}
-        </div>
-      </div>
-    ` : ''}
-    ${tags.length > 0 ? `
-      <div class="filter-group">
-        <div class="filter-group-label">Tag</div>
-        <div class="filter-bar" id="sheet-tag-filter">
-          <button class="chip ${tagFilter.size===0?'active':''}" data-tag="">Todas</button>
-          ${tags.map(t => `<button class="chip ${tagFilter.has(t.toLowerCase())?'active':''}" data-tag="${escapeAttr(t.toLowerCase())}">#${escapeHTML(t)}</button>`).join('')}
-        </div>
-      </div>
-    ` : ''}
-    <div class="filter-group">
-      <div class="filter-group-label">Status</div>
-      <div class="filter-bar" id="sheet-status-filter">
-        <button class="chip ${statusFilter===null?'active':''}" data-status="">Todas</button>
-        <button class="chip ${statusFilter==='pago'?'active':''}" data-status="pago">Pagas</button>
-        <button class="chip ${statusFilter==='pendente'?'active':''}" data-status="pendente">Pendentes</button>
-      </div>
-    </div>
-    <div class="filter-group">
-      <div class="filter-group-label">Tipo</div>
-      <div class="filter-bar" id="sheet-type-filter">
-        <button class="chip ${typeFilter===null?'active':''}" data-type="">Todos</button>
-        <button class="chip ${typeFilter==='mensal'?'active':''}" data-type="mensal">Mensais</button>
-        <button class="chip ${typeFilter==='parcelada'?'active':''}" data-type="parcelada">Parceladas</button>
-        <button class="chip ${typeFilter==='unica'?'active':''}" data-type="unica">Apenas neste mês</button>
-      </div>
-    </div>
-    <div class="filter-group">
-      <div class="filter-group-label">Intervalo de datas</div>
-      <div class="segmented" id="sheet-date-basis" style="margin-bottom:10px;">
-        <button data-basis="pagamento" class="${dateBasisFilter==='pagamento'?'active':''}">Por pagamento</button>
-        <button data-basis="cadastro"  class="${dateBasisFilter==='cadastro' ?'active':''}">Por cadastro</button>
-      </div>
-      <div class="date-range-row">
-        <label class="date-range-field">
-          <span>De</span>
-          <input type="date" id="sheet-date-from" value="${dateFromFilter || ''}" />
-        </label>
-        <label class="date-range-field">
-          <span>Até</span>
-          <input type="date" id="sheet-date-to" value="${dateToFilter || ''}" />
-        </label>
-      </div>
-    </div>
-    <div class="actions">
-      <button class="secondary" id="sheet-filters-clear">Limpar tudo</button>
-      <button class="primary"   id="sheet-filters-close">Concluir</button>
-    </div>
-  `, (body) => {
-    const syncCls = (sel, getter) => body.querySelectorAll(sel).forEach(x => x.classList.toggle('active', getter(x)));
-    body.querySelectorAll('#sheet-cat-filter .chip').forEach(b => b.addEventListener('click', () => {
-      const c = b.dataset.cat;
-      if (!c) categoryFilter.clear();
-      else categoryFilter.has(c) ? categoryFilter.delete(c) : categoryFilter.add(c);
-      syncCls('#sheet-cat-filter .chip', x => x.dataset.cat ? categoryFilter.has(x.dataset.cat) : categoryFilter.size === 0);
-      render();
-    }));
-    body.querySelectorAll('#sheet-tag-filter .chip').forEach(b => b.addEventListener('click', () => {
-      const t = b.dataset.tag;
-      if (!t) tagFilter.clear();
-      else tagFilter.has(t) ? tagFilter.delete(t) : tagFilter.add(t);
-      syncCls('#sheet-tag-filter .chip', x => x.dataset.tag ? tagFilter.has(x.dataset.tag) : tagFilter.size === 0);
-      render();
-    }));
-    body.querySelectorAll('#sheet-status-filter .chip').forEach(b => b.addEventListener('click', () => {
-      statusFilter = b.dataset.status || null;
-      syncCls('#sheet-status-filter .chip', x => (x.dataset.status || null) === statusFilter);
-      render();
-    }));
-    body.querySelectorAll('#sheet-type-filter .chip').forEach(b => b.addEventListener('click', () => {
-      typeFilter = b.dataset.type || null;
-      syncCls('#sheet-type-filter .chip', x => (x.dataset.type || null) === typeFilter);
-      render();
-    }));
-    body.querySelectorAll('#sheet-date-basis button').forEach(b => b.addEventListener('click', () => {
-      dateBasisFilter = b.dataset.basis;
-      syncCls('#sheet-date-basis button', x => x.dataset.basis === dateBasisFilter);
-      if (dateFromFilter || dateToFilter) render();
-    }));
-    const dFrom = body.querySelector('#sheet-date-from');
-    if (dFrom) dFrom.addEventListener('change', () => { dateFromFilter = dFrom.value || null; render(); });
-    const dTo = body.querySelector('#sheet-date-to');
-    if (dTo) dTo.addEventListener('change', () => { dateToFilter = dTo.value || null; render(); });
-    body.querySelector('#sheet-filters-clear').addEventListener('click', () => {
-      searchQuery = ''; categoryFilter.clear(); tagFilter.clear();
-      statusFilter = null; typeFilter = null;
-      dateFromFilter = null; dateToFilter = null; dateBasisFilter = 'pagamento';
-      // Atualiza as classes/valores do sheet sem fechar/reabrir (sem flash).
-      syncCls('#sheet-cat-filter .chip',    x => !x.dataset.cat);
-      syncCls('#sheet-tag-filter .chip',    x => !x.dataset.tag);
-      syncCls('#sheet-status-filter .chip', x => !x.dataset.status);
-      syncCls('#sheet-type-filter .chip',   x => !x.dataset.type);
-      syncCls('#sheet-date-basis button',   x => x.dataset.basis === 'pagamento');
-      const df = body.querySelector('#sheet-date-from'); if (df) df.value = '';
-      const dt = body.querySelector('#sheet-date-to');   if (dt) dt.value = '';
-      render();
-    });
-    body.querySelector('#sheet-filters-close').addEventListener('click', closeSheet);
-  });
-};
+// sheetFilters vive em src/ui/sheets/filters.js — ligado no "wiring de sheets".
 
 
 views.despesas = (root) => {
@@ -2138,7 +2036,7 @@ views.despesas = (root) => {
       ? (b.data.localeCompare(a.data) || (idxOf(b) - idxOf(a)))
       : ((idxOf(b) - idxOf(a)) || b.data.localeCompare(a.data))
   );
-  const hasFilter = !!searchQuery || categoryFilter.size > 0 || tagFilter.size > 0 || statusFilter !== null || typeFilter !== null || !!dateFromFilter || !!dateToFilter;
+  const hasFilter = !!filters.query || filters.category.size > 0 || filters.tag.size > 0 || filters.status !== null || filters.type !== null || !!filters.dateFrom || !!filters.dateTo;
 
   root.innerHTML = `
     ${periodHeader()}
@@ -2149,7 +2047,7 @@ views.despesas = (root) => {
 
     <div class="search-row">
       <input id="search" type="search" inputmode="search" autocapitalize="none" autocorrect="off"
-             placeholder="Buscar por descrição ou tag" value="${escapeAttr(searchQuery)}" />
+             placeholder="Buscar por descrição ou tag" value="${escapeAttr(filters.query)}" />
     </div>
 
     ${(() => {
@@ -2336,15 +2234,13 @@ views.despesas = (root) => {
   }));
   const clearInline = root.querySelector('#clear-filters-inline');
   if (clearInline) clearInline.addEventListener('click', () => {
-    searchQuery = ''; categoryFilter.clear(); tagFilter.clear();
-    statusFilter = null; typeFilter = null;
-    dateFromFilter = null; dateToFilter = null; dateBasisFilter = 'pagamento';
+    resetFilters();
     render();
   });
   const searchEl = root.querySelector('#search');
   if (searchEl) {
     searchEl.addEventListener('input', () => {
-      searchQuery = searchEl.value;
+      filters.query = searchEl.value;
       render();
       // O re-render destrói o input antigo; recoloca o foco e o cursor no fim
       // do novo input para que a digitação continue sem perder o teclado.
@@ -3552,6 +3448,11 @@ const sheetImportarBoletos = createSheetImportarBoletos({
 const sheetImportarOFX = createSheetImportarOFX({
   openSheet, closeSheet, db, render, toast, getState: () => state, fmtBRL,
   allTags, topTags, catEmoji, uid,
+});
+// Recebe o objeto `filters` (lê e escreve campos individuais) além do reset.
+const sheetFilters = createSheetFilters({
+  openSheet, closeSheet, render, getState: () => state,
+  allTags, filters, resetFilters,
 });
 // Recebe exitSelection, não o objeto `selection` — só precisa sair do modo.
 const sheetBulkEdit = createSheetBulkEdit({

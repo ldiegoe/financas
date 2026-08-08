@@ -5,6 +5,8 @@ Thumbs.db
 .idea/
 node_modules/
 
-# Claude Code — tudo local, não vai pro repo público
+# Claude Code — tudo local, não vai pro repo público.
+# O ferramental (incl. .claude/CLAUDE.md) tem versionamento próprio em .claude/.git
 .claude/
+# Rede de segurança: se alguma sessão recriar CLAUDE.md na raiz, não vaza.
 CLAUDE.md
