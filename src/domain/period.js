@@ -52,6 +52,16 @@ export const previousPeriod = (p) => {
   return np;
 };
 
+// Espelho de previousPeriod: avança um período, virando o ano ao passar do
+// último valor (dez → jan, 4º tri → 1º tri, 2º sem → 1º sem).
+export const nextPeriod = (p) => {
+  const np = { ...p };
+  if (p.type === 'year') { np.year++; return np; }
+  const wrap = p.type === 'month' ? 12 : (p.type === 'quarter' ? 4 : 2);
+  if (p.value === wrap) { np.year++; np.value = 1; } else { np.value++; }
+  return np;
+};
+
 // Rótulo amigável do período (humano).
 export const labelOfPeriod = (p) => {
   if (p.type === 'year')     return String(p.year);

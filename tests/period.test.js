@@ -5,6 +5,7 @@ import {
   periodMatches,
   monthsInPeriod,
   previousPeriod,
+  nextPeriod,
   labelOfPeriod,
 } from '../src/domain/period.js';
 
@@ -105,6 +106,54 @@ describe('previousPeriod', () => {
   it('year → ano anterior', () => {
     expect(previousPeriod({ type: 'year', year: 2025 }))
       .toEqual({ type: 'year', year: 2024 });
+  });
+  it('não muta o período recebido', () => {
+    const p = { type: 'month', year: 2025, value: 1 };
+    previousPeriod(p);
+    expect(p).toEqual({ type: 'month', year: 2025, value: 1 });
+  });
+});
+
+describe('nextPeriod', () => {
+  it('month → mês seguinte', () => {
+    expect(nextPeriod({ type: 'month', year: 2025, value: 5 }))
+      .toEqual({ type: 'month', year: 2025, value: 6 });
+  });
+  it('month dezembro → janeiro do ano seguinte', () => {
+    expect(nextPeriod({ type: 'month', year: 2025, value: 12 }))
+      .toEqual({ type: 'month', year: 2026, value: 1 });
+  });
+  it('quarter 4º → 1º do ano seguinte', () => {
+    expect(nextPeriod({ type: 'quarter', year: 2025, value: 4 }))
+      .toEqual({ type: 'quarter', year: 2026, value: 1 });
+  });
+  it('semester 2º → 1º do ano seguinte', () => {
+    expect(nextPeriod({ type: 'semester', year: 2025, value: 2 }))
+      .toEqual({ type: 'semester', year: 2026, value: 1 });
+  });
+  it('year → ano seguinte', () => {
+    expect(nextPeriod({ type: 'year', year: 2025 }))
+      .toEqual({ type: 'year', year: 2026 });
+  });
+  it('não muta o período recebido', () => {
+    const p = { type: 'month', year: 2025, value: 12 };
+    nextPeriod(p);
+    expect(p).toEqual({ type: 'month', year: 2025, value: 12 });
+  });
+  // Verificação independente: avançar e voltar devolve o ponto de partida,
+  // em qualquer tipo e nas bordas de ano.
+  it('é inverso de previousPeriod (ida e volta)', () => {
+    const casos = [
+      { type: 'month', year: 2025, value: 12 },
+      { type: 'month', year: 2025, value: 1 },
+      { type: 'quarter', year: 2025, value: 4 },
+      { type: 'semester', year: 2025, value: 2 },
+      { type: 'year', year: 2025 },
+    ];
+    for (const p of casos) {
+      expect(previousPeriod(nextPeriod(p))).toEqual(p);
+      expect(nextPeriod(previousPeriod(p))).toEqual(p);
+    }
   });
 });
 

@@ -13,7 +13,7 @@ import {
 } from './src/helpers/parse.js';
 import {
   monthsInPeriod,
-  previousPeriod, labelOfPeriod,
+  previousPeriod, nextPeriod, labelOfPeriod,
 } from './src/domain/period.js';
 import {
   sumAmount, expandWithRecurring,
@@ -54,6 +54,7 @@ import { createToast, createSheet } from './src/ui/dom.js';
 import { infoBtn, mountInfoPopover } from './src/ui/info-popover.js';
 import { createSheetRenda } from './src/ui/sheets/renda.js';
 import { createSheetApagarTudo } from './src/ui/sheets/apagar-tudo.js';
+import { createSheetPeriodo } from './src/ui/sheets/periodo.js';
 import { createSheetAlerts } from './src/ui/sheets/alerts.js';
 import { createSheetsProfiles } from './src/ui/sheets/profiles.js';
 import { createSheetCategoria } from './src/ui/sheets/categoria.js';
@@ -1610,22 +1611,20 @@ views.dashboard = (root) => {
       <div class="card">
         ${collapseHeader('compare', `Comparação com ${labelOfPeriod(prev)}`)}
         ${isCollapsed('compare') ? '' : `
-          <div class="compare-row">
-            <span class="label">Despesas</span>
-            <span class="amount">${fmtBRL(totalDespesa)}</span>
-            <span class="delta ${deltaDesp.cls}">${deltaDesp.sign} ${deltaDesp.label}</span>
-          </div>
-          <div class="compare-row">
-            <span class="label">Receitas</span>
-            <span class="amount">${fmtBRL(totalRenda)}</span>
-            <span class="delta ${deltaRenda.cls}">${deltaRenda.sign} ${deltaRenda.label}</span>
-          </div>
-          <div class="compare-row">
-            <span class="label">Saldo</span>
-            <span class="amount">${fmtBRL(saldo)}</span>
-            <span class="delta ${deltaSaldo.cls}">${deltaSaldo.sign} ${deltaSaldo.label}</span>
-          </div>
-          <div class="compare-sub">vs ${fmtBRL(prevDespesa)} / ${fmtBRL(prevRenda)} / ${fmtBRL(prevSaldo)}</div>
+          ${[
+            { rotulo: 'Despesas', atual: totalDespesa, anterior: prevDespesa, delta: deltaDesp },
+            { rotulo: 'Receitas', atual: totalRenda,   anterior: prevRenda,   delta: deltaRenda },
+            { rotulo: 'Saldo',    atual: saldo,        anterior: prevSaldo,   delta: deltaSaldo },
+          ].map(l => `
+            <div class="compare-row">
+              <span class="label">${l.rotulo}</span>
+              <span class="amount">
+                ${fmtBRL(l.atual)}
+                <small>antes ${fmtBRL(l.anterior)}</small>
+              </span>
+              <span class="delta ${l.delta.cls}">${l.delta.sign} ${l.delta.label}</span>
+            </div>
+          `).join('')}
 
           ${topChanges.length > 0 ? `
             <div class="section-title" style="margin:14px 0 6px;">Maiores variações por categoria</div>
@@ -1744,25 +1743,9 @@ views.dashboard = (root) => {
   }
 };
 
-const valueChips = () => {
-  if (period.type === 'year') return '';
-  if (period.type === 'month') {
-    return Array.from({length:12}, (_,i) => i+1).map(m =>
-      `<button class="chip ${period.value===m?'active':''}" data-value="${m}">${monthName(m,true)}</button>`
-    ).join('');
-  }
-  if (period.type === 'quarter') {
-    return [1,2,3,4].map(q =>
-      `<button class="chip ${period.value===q?'active':''}" data-value="${q}">${q}º Tri</button>`
-    ).join('');
-  }
-  if (period.type === 'semester') {
-    return [1,2].map(s =>
-      `<button class="chip ${period.value===s?'active':''}" data-value="${s}">${s}º Sem</button>`
-    ).join('');
-  }
-  return '';
-};
+// valueChips() vivia aqui: a faixa de chips de mês/trimestre do cabeçalho.
+// Saiu com o cabeçalho compacto — a escolha de valor agora é a grade do
+// sheet de período (src/ui/sheets/periodo.js).
 
 const chartOpts = () => ({
   responsive: true,
@@ -3201,39 +3184,32 @@ views.config = (root) => {
 //   - Stepper de ano sutil logo abaixo (pula pro ano anterior/proximo)
 //   - Segmented com tipo (Mes/Tri/Sem/Ano)
 //   - Chips horizontais com o valor do periodo (Jan/Fev/... ou 1Tri/2Tri/...)
+// Cabeçalho de período compacto: uma linha só. As setas andam de um em um
+// (caso comum: olhar o mês anterior); tocar no rótulo abre o seletor completo
+// (tipo + ano + valor), que é o caso raro. Antes isto ocupava quatro blocos
+// empilhados e ~35% da tela antes do primeiro número aparecer.
 const periodHeader = () => `
-  <div class="period-head">
-    <div class="period-title">${periodLabel()}</div>
-    <div class="period-year-stepper">
-      <button class="link" id="prev-year">‹ ${period.year - 1}</button>
-      <button class="link" id="next-year">${period.year + 1} ›</button>
-    </div>
+  <div class="period-nav">
+    <button class="period-arrow" id="period-prev" type="button" aria-label="Período anterior">‹</button>
+    <button class="period-current" id="period-pick" type="button">
+      <span>${periodLabel()}</span>
+      <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+        <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <button class="period-arrow" id="period-next" type="button" aria-label="Próximo período">›</button>
   </div>
-  <div class="segmented period-type" id="filter-type">
-    <button data-type="month"    class="${period.type==='month'?'active':''}">Mês</button>
-    <button data-type="quarter"  class="${period.type==='quarter'?'active':''}">Trimestre</button>
-    <button data-type="semester" class="${period.type==='semester'?'active':''}">Semestre</button>
-    <button data-type="year"     class="${period.type==='year'?'active':''}">Ano</button>
-  </div>
-  <div class="filter-bar" id="filter-value">${valueChips()}</div>
 `;
 const bindPeriodHeader = (root) => {
-  root.querySelectorAll('#filter-type button').forEach(b => {
-    b.addEventListener('click', () => {
-      const today = new Date();
-      period.type = b.dataset.type;
-      period.year = today.getFullYear();
-      if (period.type === 'month')    period.value = today.getMonth() + 1;
-      if (period.type === 'quarter')  period.value = Math.floor(today.getMonth()/3) + 1;
-      if (period.type === 'semester') period.value = today.getMonth() <= 5 ? 1 : 2;
-      render();
-    });
-  });
-  root.querySelectorAll('#filter-value .chip').forEach(b => {
-    b.addEventListener('click', () => { period.value = parseInt(b.dataset.value, 10); render(); });
-  });
-  const prev = root.querySelector('#prev-year'); if (prev) prev.addEventListener('click', () => { period.year--; render(); });
-  const next = root.querySelector('#next-year'); if (next) next.addEventListener('click', () => { period.year++; render(); });
+  // `period` é const e mutado no lugar de propósito — módulos que guardam a
+  // referência continuam vendo o valor atual. Por isso Object.assign, não
+  // reatribuição.
+  const prev = root.querySelector('#period-prev');
+  if (prev) prev.addEventListener('click', () => { Object.assign(period, previousPeriod(period)); render(); });
+  const next = root.querySelector('#period-next');
+  if (next) next.addEventListener('click', () => { Object.assign(period, nextPeriod(period)); render(); });
+  const pick = root.querySelector('#period-pick');
+  if (pick) pick.addEventListener('click', () => sheetPeriodo());
 };
 
 // --------------------------- Sheets (forms) ---------------------------------
@@ -3380,6 +3356,13 @@ const render = (opts = {}) => {
 // runtime (openSheet/closeSheet, db, render, toast). Fica depois de `render`
 // porque `render` é definido tarde — instanciar antes daria TDZ.
 const sheetRenda = createSheetRenda({ openSheet, closeSheet, db, render, toast });
+// setPeriod usa Object.assign porque `period` é const mutado no lugar — a
+// identidade do objeto precisa sobreviver à troca.
+const sheetPeriodo = createSheetPeriodo({
+  openSheet, closeSheet, render,
+  getPeriod: () => period,
+  setPeriod: (p) => Object.assign(period, p),
+});
 // getActiveProfileId é getter porque activeProfileId é `let` — injetar o valor
 // congelaria o binding. Mesmo padrão usado ao montar o syncEngine.
 const sheetApagarTudo = createSheetApagarTudo({
