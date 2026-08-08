@@ -5,15 +5,14 @@
 
 // Módulos extraídos pra organização e testes (Vitest sob `npm test`).
 import {
-  fmtBRL as fmtBRLPure, formatCentsDisplay, fmtDate, monthName,
+  fmtBRL as fmtBRLPure, fmtDate, monthName,
   yyyyMmFromDate,
 } from './src/helpers/format.js';
 import {
-  looksLikeExpression, evaluateExpression, parseAmount, parseTags,
-  isoToDate, todayISO,
+  parseTags, isoToDate, todayISO,
 } from './src/helpers/parse.js';
 import {
-  partsOf, clampDay, periodMatches, monthsInPeriod,
+  clampDay, periodMatches, monthsInPeriod,
   previousPeriod, labelOfPeriod,
 } from './src/domain/period.js';
 import {
@@ -45,7 +44,6 @@ import {
   resumoBoletos,
   scoreDespesa,
   mergeBoletos,
-  formatLinha,
 } from './src/domain/boleto.js';
 import { parseOfx } from './src/domain/ofx.js';
 import {
@@ -72,13 +70,16 @@ import {
 import { escapeHTML, escapeAttr } from './src/ui/escape.js';
 import { ICONS, icon } from './src/ui/icons.js';
 import { createToast, createSheet } from './src/ui/dom.js';
-import { bindCurrencyInput } from './src/ui/currency-input.js';
 import { createSheetRenda } from './src/ui/sheets/renda.js';
 import { createSheetApagarTudo } from './src/ui/sheets/apagar-tudo.js';
 import { createSheetAlerts } from './src/ui/sheets/alerts.js';
 import { createSheetsProfiles } from './src/ui/sheets/profiles.js';
 import { createSheetCategoria } from './src/ui/sheets/categoria.js';
 import { createSheetDespesa } from './src/ui/sheets/despesa.js';
+import { createSheetInsights } from './src/ui/sheets/insights.js';
+import { createSheetCategoriaHistorico } from './src/ui/sheets/categoria-historico.js';
+import { createSheetObjetivo } from './src/ui/sheets/objetivo.js';
+import { createSheetsDetalhes } from './src/ui/sheets/detalhes.js';
 
 // --------------------------- DB --------------------------------------------
 const PROFILES_KEY     = 'financas:profiles';
@@ -627,31 +628,7 @@ const computeInsights = () => computeInsightsPure({
   fmtMoney:   fmtBRL,
 });
 
-const sheetInsights = () => {
-  const insights = computeInsights();
-  if (insights.length === 0) return false;
-  openSheet('Insights', () => `
-    <p style="color:var(--text-2);font-size:14px;margin:0 2px 14px;">
-      Coisas que merecem sua atenção desde a última vez.
-    </p>
-    <ul class="insights-list">
-      ${insights.map(i => `
-        <li class="insight-item ${i.severity}">
-          <span class="insight-icon">${icon(i.icon, 22)}</span>
-          <div class="grow">
-            <div class="insight-title">${escapeHTML(i.title)}</div>
-            <div class="insight-body">${escapeHTML(i.body)}</div>
-          </div>
-        </li>`).join('')}
-    </ul>
-    <div class="actions">
-      <button class="primary" id="insights-close">Fechar</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#insights-close').addEventListener('click', closeSheet);
-  });
-  return true;
-};
+// sheetInsights vive em src/ui/sheets/insights.js — ligado no "wiring de sheets".
 
 // --------------------------- Notificacoes nativas --------------------------
 // Notificacoes do sistema (via service worker) sobre vencimentos.
@@ -2503,69 +2480,8 @@ views.categorias = (root) => {
 
 // Sheet de historico de uma categoria — mini grafico dos ultimos 6 meses de
 // gasto nela + media mensal, maior mes e acumulado. Tap numa categoria abre.
-const sheetCategoriaHistorico = (c) => {
-  const now = new Date();
-  const months = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ y: d.getFullYear(), m: d.getMonth() + 1 });
-  }
-  const valores = months.map(({ y, m }) =>
-    sumAmount(expandWithRecurring(state.despesas, { type: 'month', year: y, value: m })
-      .filter(d => d.categoriaId === c.id)));
-  const totalAcum = valores.reduce((a, b) => a + b, 0);
-  const mediaMes = Math.round(totalAcum / months.length);
-  const maxIdx = valores.reduce((mi, v, i, arr) => v > arr[mi] ? i : mi, 0);
-  const maxVal = valores[maxIdx];
-  const verbo = c.poupanca ? 'Guardado' : 'Gasto';
-
-  openSheet(`${catEmoji(c) ? catEmoji(c) + ' ' : ''}${c.nome}`, () => `
-    <div class="chart-wrap" style="height:200px;"><canvas id="ch-cat-hist"></canvas></div>
-    <ul class="details-list" style="margin-top:8px;">
-      <li><span>Média mensal</span><span>${fmtBRL(mediaMes)}</span></li>
-      <li><span>Maior mês</span><span>${fmtBRL(maxVal)} (${monthName(months[maxIdx].m, true)}/${String(months[maxIdx].y).slice(2)})</span></li>
-      <li><span>Acumulado (6 meses)</span><span>${fmtBRL(totalAcum)}</span></li>
-      ${c.meta ? `<li><span>${c.poupanca ? 'Meta de investimento' : 'Limite mensal'}</span><span>${fmtBRL(c.meta)}</span></li>` : ''}
-    </ul>
-    <div class="actions">
-      <button class="secondary" id="close">Fechar</button>
-      <button class="primary"   id="edit-cat-hist">Editar categoria</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#close').addEventListener('click', closeSheet);
-    body.querySelector('#edit-cat-hist').addEventListener('click', () => {
-      closeSheet();
-      sheetCategoria(state.categorias.find(x => x.id === c.id));
-    });
-    const canvas = body.querySelector('#ch-cat-hist');
-    if (canvas && window.Chart) {
-      new Chart(canvas, {
-        type: 'bar',
-        data: {
-          labels: months.map(({ m }) => monthName(m, true)),
-          datasets: [{
-            label: verbo,
-            data: valores.map(v => v / 100),
-            backgroundColor: c.cor,
-            borderRadius: 4,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: (ctx) => `${verbo}: ${fmtBRL(ctx.parsed.y * 100)}` } },
-          },
-          scales: {
-            x: { ticks: { color: getCSS('--text-2'), font: { size: 11 } }, grid: { display: false } },
-            y: { ticks: { color: getCSS('--text-2'), callback: v => state.config.valuesHidden ? '' : `R$${v}` }, grid: { color: getCSS('--separator') } },
-          },
-        },
-      });
-    }
-  });
-};
+// sheetCategoriaHistorico vive em src/ui/sheets/categoria-historico.js
+// — ligado no "wiring de sheets".
 
 // ----- Investimentos (aba) -----
 // Sub-abas: "Investimentos" (aportes = despesas em categorias marcadas como
@@ -2755,67 +2671,7 @@ const objetivoRowHTML = (o) => {
     </li>`;
 };
 
-const sheetObjetivo = (obj) => {
-  const isEdit = !!obj;
-  const o = obj || { nome: '', alvo: 0, prazo: '', desde: '', categoriaIds: [] };
-  const linkedSet = new Set(o.categoriaIds || []);
-  // Objetivos contam só categorias de investimento.
-  const investCats = state.categorias.filter(c => c.poupanca);
-  openSheet(isEdit ? 'Editar objetivo' : 'Novo objetivo', () => `
-    <label class="field"><span>Nome</span>
-      <input id="o-nome" type="text" placeholder="Ex.: Reserva de emergência, Viagem, Carro" value="${escapeAttr(o.nome || '')}" required />
-    </label>
-    <label class="field"><span>Valor-alvo (R$)</span>
-      <input id="o-alvo" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(o.alvo)}" required />
-    </label>
-    <label class="field"><span>Prazo (opcional)</span>
-      <input id="o-prazo" type="date" value="${o.prazo || ''}" />
-    </label>
-    <label class="field"><span>Categorias que contam pra esse objetivo</span>
-      <div class="check-list" id="o-cats">
-        ${investCats.length === 0
-          ? '<p style="color:var(--text-2);font-size:13px;margin:0;">Crie uma categoria marcada como "É investimento" primeiro.</p>'
-          : investCats.map(c => `
-            <label class="check-item">
-              <input type="checkbox" data-cat="${c.id}" ${linkedSet.has(c.id) ? 'checked' : ''}/>
-              ${catEmoji(c) ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>` : `<span class="swatch" style="background:${c.cor}"></span>`}
-              <span>${escapeHTML(c.nome)}</span>
-            </label>`).join('')}
-      </div>
-      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-        Só aparecem categorias marcadas como investimento.
-      </small>
-    </label>
-    <label class="field"><span>Contar lançamentos a partir de (opcional)</span>
-      <input id="o-desde" type="date" value="${o.desde || ''}" />
-      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-        Vazio = conta tudo o que já existe nessas categorias.
-      </small>
-    </label>
-    <div class="actions">
-      <button class="secondary" id="cancel">Cancelar</button>
-      <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Criar'}</button>
-    </div>
-  `, (body) => {
-    bindCurrencyInput(body.querySelector('#o-alvo'));
-    body.querySelector('#cancel').addEventListener('click', closeSheet);
-    body.querySelector('#save').addEventListener('click', () => {
-      const data = {
-        nome: body.querySelector('#o-nome').value.trim(),
-        alvo: parseAmount(body.querySelector('#o-alvo').value),
-        prazo: body.querySelector('#o-prazo').value || null,
-        desde: body.querySelector('#o-desde').value || null,
-        categoriaIds: [...body.querySelectorAll('#o-cats input:checked')].map(el => el.dataset.cat),
-      };
-      if (!data.nome) { alert('Informe um nome.'); return; }
-      if (data.alvo <= 0) { alert('Informe um valor-alvo válido.'); return; }
-      if (isEdit) db.updateObjetivo(o.id, data); else db.addObjetivo(data);
-      closeSheet();
-      toast(isEdit ? 'Objetivo atualizado' : 'Objetivo criado');
-      render();
-    });
-  });
-};
+// sheetObjetivo vive em src/ui/sheets/objetivo.js — ligado no "wiring de sheets".
 
 // ----- Configurações -----
 views.config = (root) => {
@@ -4281,264 +4137,10 @@ const sheetBulkEdit = (ids) => {
 // total de parcelas diminui (as últimas saem da projeção). Não deixa reduzir
 // abaixo da parcela atual nem das já marcadas como pagas, pra não apagar
 // parcelas que já aconteceram.
-const sheetAnteciparParcelas = (d) => {
-  const desp = state.despesas.find(x => x.id === d.id);
-  if (!desp) return;
-  const total = desp.parcelas || 1;
-  if (total <= 1) return;
-  const start = partsOf(desp.data);
-  const now = new Date();
-  const monthsFromStart = (now.getFullYear() - start.y) * 12 + (now.getMonth() + 1 - start.m);
-  const parcelaAtual = Math.min(total, Math.max(1, monthsFromStart + 1));
-  const pagas = (desp.pagasEm || []).length;
-  const minTotal = Math.max(parcelaAtual, pagas, 1);
-  const maxAntecipar = total - minTotal;
 
-  openSheet('Antecipar parcelas', () => maxAntecipar < 1 ? `
-    <p style="color:var(--text-2);font-size:14px;margin:0 2px;">
-      Não há parcelas futuras para antecipar — você já está na última.
-    </p>
-    <div class="actions"><button class="secondary" id="close">Fechar</button></div>
-  ` : `
-    <p style="color:var(--text-2);font-size:14px;margin:0 2px 14px;">
-      ${escapeHTML(desp.descricao || 'Despesa parcelada')} — ${total}x de ${fmtBRL(desp.valor)}.
-      Você está na parcela ${parcelaAtual} de ${total}.
-    </p>
-    <label class="field"><span>Quantas parcelas você antecipou?</span>
-      <input id="f-antecipar" type="number" min="1" max="${maxAntecipar}" inputmode="numeric" value="1" />
-      <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-        Isso reduz o total de parcelas. Pode antecipar até ${maxAntecipar}.
-      </small>
-    </label>
-    <div id="antecipar-preview" style="font-size:15px;color:var(--text);margin:2px 2px 4px;"></div>
-    <div class="actions">
-      <button class="secondary" id="close">Cancelar</button>
-      <button class="primary"   id="save">Antecipar</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#close').addEventListener('click', closeSheet);
-    if (maxAntecipar < 1) return;
-    const input = body.querySelector('#f-antecipar');
-    const preview = body.querySelector('#antecipar-preview');
-    const clamp = () => {
-      let x = parseInt(input.value, 10);
-      if (!Number.isFinite(x) || x < 1) x = 1;
-      if (x > maxAntecipar) x = maxAntecipar;
-      return x;
-    };
-    const updatePreview = () => {
-      const x = clamp();
-      preview.innerHTML = `De <strong>${total}x</strong> passará para <strong>${total - x}x</strong>.`;
-    };
-    input.addEventListener('input', updatePreview);
-    updatePreview();
-    body.querySelector('#save').addEventListener('click', () => {
-      const x = clamp();
-      input.value = x;
-      const novoTotal = total - x;
-      db.updateDespesa(d.id, { parcelas: novoTotal });
-      closeSheet();
-      toast(`${x} parcela${x === 1 ? '' : 's'} antecipada${x === 1 ? '' : 's'} · agora ${novoTotal}x`);
-      render();
-    });
-  });
-};
+// sheetDespesaDetalhes, sheetAnteciparParcelas e sheetRendaDetalhes vivem em
+// src/ui/sheets/detalhes.js — ligados no "wiring de sheets".
 
-const sheetDespesaDetalhes = (d) => {
-  const cat = state.categorias.find(c => c.id === d.categoriaId);
-  const tipo = d.recorrente
-    ? 'Mensal recorrente'
-    : (d._parcelaTotal ? `Parcelada (${d._parcelaNum}/${d._parcelaTotal})`
-      : (d.parcelaImport ? `Parcela ${d.parcelaImport} da fatura` : 'Apenas neste mês'));
-  const tags = d.tags || [];
-
-  // Boleto do mes desta ocorrencia (se o carne ja foi importado).
-  const boleto = boletoDaOcorrencia(d);
-  const totalBoletos = boletosDaDespesa(d.id).length;
-  const diasDesdeVencimento = boleto ? daysSince(boleto.vencimento) : 0;
-  const boletoVencido = !!boleto && !d._pago && diasDesdeVencimento > 0;
-  const boletoValorDiverge = !!boleto && boleto.valor !== d.valor;
-
-  openSheet('Detalhes da despesa', () => `
-    <div style="margin-bottom:12px;">
-      <div style="font-size:18px;font-weight:600;word-break:break-word;line-height:1.3;">
-        ${escapeHTML(d.descricao || (cat ? cat.nome : 'Despesa'))}
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${cat ? cat.cor : '#999'};"></span>
-        <span style="color:var(--text-2);font-size:14px;">${cat ? escapeHTML(cat.nome) : 'Sem categoria'}</span>
-      </div>
-    </div>
-
-    <div class="big negative" style="margin-bottom:14px;">${fmtBRL(d.valor)}</div>
-
-    <ul class="details-list">
-      <li><span>Status</span><span style="color:${d._pago?'var(--green)':'var(--orange)'};font-weight:600;">${d._pago ? 'Paga' : 'Pendente'}</span></li>
-      <li><span>Data de pagamento</span><span>${fmtDate(d.data)}</span></li>
-      <li><span>Tipo</span><span>${tipo}</span></li>
-      ${d._parcelaTotal ? `
-        <li><span>Total geral</span><span>${fmtBRL(d.valor * d._parcelaTotal)}</span></li>
-      ` : ''}
-      ${tags.length > 0 ? `
-        <li><span>Tags</span><span>${tags.map(t => `#${escapeHTML(t)}`).join(' ')}</span></li>
-      ` : ''}
-      ${d.criadoEm ? `<li><span>Cadastrado em</span><span style="color:var(--text-2);">${fmtDate(d.criadoEm)}</span></li>` : ''}
-    </ul>
-
-    ${d._virtual ? `
-      <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
-        Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original; "Marcar como paga/pendente" afeta apenas esta ocorrência.
-      </p>
-    ` : ''}
-
-    ${boleto ? `
-      <div class="boleto-box">
-        <div class="boleto-head">
-          ${icon('barcode', 18)}
-          <span>Boleto · vence ${fmtDate(boleto.vencimento)}</span>
-        </div>
-        <div class="boleto-linha" id="boleto-linha">${formatLinha(boleto.linha)}</div>
-        <button class="primary boleto-copy" id="copy-boleto">
-          ${icon('copy', 16)} Copiar código
-        </button>
-        ${boletoValorDiverge ? `
-          <p class="boleto-aviso">O boleto é de ${fmtBRL(boleto.valor)}, diferente
-            do valor cadastrado (${fmtBRL(d.valor)}).</p>` : ''}
-        ${boletoVencido ? `
-          <p class="boleto-aviso">Vencido há ${diasDesdeVencimento}
-            ${diasDesdeVencimento === 1 ? 'dia' : 'dias'} — o banco pode recusar este
-            código ou cobrar multa e juros por fora.</p>` : ''}
-        <div class="boleto-meta">
-          ${escapeHTML(boleto.origem || 'importado')}${totalBoletos > 1
-            ? ` · ${totalBoletos} boletos nesta despesa` : ''}
-          <button class="link" id="del-boleto">Remover</button>
-        </div>
-      </div>
-    ` : `
-      <button id="add-boleto" class="secondary boleto-add">
-        ${icon('barcode', 16)} ${totalBoletos > 0
-          ? 'Sem boleto para este mês — importar outro PDF'
-          : 'Anexar carnê (PDF)'}
-      </button>
-    `}
-
-    <button id="toggle-pago" class="primary" style="width:100%;margin-top:14px;">
-      ${d._pago ? 'Marcar como pendente' : 'Marcar como paga'}
-    </button>
-
-    ${d._parcelaTotal ? `
-      <button id="antecipar" class="secondary" style="width:100%;margin-top:8px;">Antecipar parcelas</button>
-    ` : ''}
-
-    <div class="actions">
-      <button class="secondary" id="close">Fechar</button>
-      <button class="primary"   id="edit">Editar</button>
-      <button class="danger"    id="del">Excluir</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#close').addEventListener('click', closeSheet);
-
-    const copyBtn = body.querySelector('#copy-boleto');
-    if (copyBtn) copyBtn.addEventListener('click', async () => {
-      const ok = await copyToClipboard(boleto.linha);
-      toast(ok ? 'Código copiado' : 'Não consegui copiar — toque e segure no código');
-    });
-    const addBoleto = body.querySelector('#add-boleto');
-    if (addBoleto) addBoleto.addEventListener('click', () => {
-      sheetImportarBoletos(state.despesas.find(x => x.id === d.id));
-    });
-    const delBoleto = body.querySelector('#del-boleto');
-    if (delBoleto) delBoleto.addEventListener('click', () => {
-      if (!confirm(`Remover o boleto de ${fmtDate(boleto.vencimento)}?`)) return;
-      db.removeBoleto(boleto.id);
-      closeSheet();
-      toast('Boleto removido');
-      render();
-    });
-
-    const antBtn = body.querySelector('#antecipar');
-    if (antBtn) antBtn.addEventListener('click', () => {
-      closeSheet();
-      sheetAnteciparParcelas(d);
-    });
-    body.querySelector('#toggle-pago').addEventListener('click', () => {
-      const wasPago = d._pago;
-      toggleDespesaPago(d);
-      closeSheet();
-      toast(wasPago ? 'Marcada como pendente' : 'Marcada como paga');
-      render();
-    });
-    body.querySelector('#edit').addEventListener('click', () => {
-      closeSheet();
-      sheetDespesa(state.despesas.find(x => x.id === d.id));
-    });
-    body.querySelector('#del').addEventListener('click', () => {
-      const msg = d._virtual
-        ? 'Excluir o lançamento original? Isso remove esta e todas as outras ocorrências.'
-        : 'Excluir esta despesa?';
-      if (confirm(msg)) {
-        db.removeDespesa(d.id);
-        closeSheet();
-        toast('Despesa excluída');
-        render();
-      }
-    });
-  });
-};
-
-const sheetRendaDetalhes = (r) => {
-  const tipo = r.recorrente
-    ? (r.duracaoMeses ? `Mensal por ${r.duracaoMeses} ${r.duracaoMeses === 1 ? 'mês' : 'meses'}` : 'Mensal recorrente')
-    : 'Apenas neste mês';
-  const programada = r.data > todayISO();
-  openSheet('Detalhes da receita', () => `
-    <div style="margin-bottom:12px;">
-      <div style="font-size:18px;font-weight:600;word-break:break-word;line-height:1.3;">
-        ${escapeHTML(r.fonte || 'Receita')}
-      </div>
-    </div>
-
-    <div class="big positive" style="margin-bottom:14px;">${fmtBRL(r.valor)}</div>
-
-    <ul class="details-list">
-      <li><span>Data</span><span>${fmtDate(r.data)}</span></li>
-      <li><span>Status</span><span>${programada ? 'Programada (entra na data)' : 'Recebida'}</span></li>
-      <li><span>Tipo</span><span>${tipo}</span></li>
-      ${r.descricao ? `
-        <li><span>Descrição</span><span>${escapeHTML(r.descricao)}</span></li>
-      ` : ''}
-    </ul>
-
-    ${r._virtual ? `
-      <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
-        Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original.
-      </p>
-    ` : ''}
-
-    <div class="actions">
-      <button class="secondary" id="close">Fechar</button>
-      <button class="primary"   id="edit">Editar</button>
-      <button class="danger"    id="del">Excluir</button>
-    </div>
-  `, (body) => {
-    body.querySelector('#close').addEventListener('click', closeSheet);
-    body.querySelector('#edit').addEventListener('click', () => {
-      closeSheet();
-      sheetRenda(state.rendas.find(x => x.id === r.id));
-    });
-    body.querySelector('#del').addEventListener('click', () => {
-      const msg = r._virtual
-        ? 'Excluir o lançamento original? Isso remove esta e todas as outras ocorrências.'
-        : 'Excluir esta receita?';
-      if (confirm(msg)) {
-        db.removeRenda(r.id);
-        closeSheet();
-        toast('Receita excluída');
-        render();
-      }
-    });
-  });
-};
 
 // --------------------------- Swipe to reveal --------------------------------
 function bindSwipe(root) {
@@ -4632,6 +4234,22 @@ const sheetCategoria = createSheetCategoria({
 const sheetDespesa = createSheetDespesa({
   openSheet, closeSheet, db, render, toast,
   getState: () => state, allTags, topTags, catEmoji, fmtBRL,
+});
+const sheetInsights = createSheetInsights({ openSheet, closeSheet, computeInsights });
+const sheetObjetivo = createSheetObjetivo({
+  openSheet, closeSheet, db, render, toast, getState: () => state, catEmoji,
+});
+// Depende de sheetCategoria (criado acima).
+const sheetCategoriaHistorico = createSheetCategoriaHistorico({
+  openSheet, closeSheet, getState: () => state,
+  catEmoji, fmtBRL, getCSS, sheetCategoria,
+});
+// Depende de sheetDespesa e sheetRenda (criados acima); sheetImportarBoletos
+// continua no app.js, definido antes deste bloco.
+const { sheetDespesaDetalhes, sheetAnteciparParcelas, sheetRendaDetalhes } = createSheetsDetalhes({
+  openSheet, closeSheet, db, render, toast, getState: () => state, fmtBRL,
+  boletoDaOcorrencia, boletosDaDespesa, daysSince, copyToClipboard,
+  toggleDespesaPago, sheetDespesa, sheetRenda, sheetImportarBoletos,
 });
 const { sheetProfiles, sheetNewProfile, sheetRenameProfile } = createSheetsProfiles({
   openSheet, closeSheet, render, toast,
