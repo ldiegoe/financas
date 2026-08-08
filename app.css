@@ -221,25 +221,59 @@ main#view {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Card de navegação: leva a outra tela mostrando um dado, em vez de ser um
+   botão vazio. Usado na Carteira pra entrar em Investimentos. */
+.nav-card {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-elev);
+  border: 0; border-radius: var(--r-lg);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow);
+  font-family: inherit; color: var(--text);
+}
+.nav-card:active { opacity: .7; }
+.nav-card-ico {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: var(--r-full);
+  background: rgba(48,209,88,.14); color: var(--green);
+}
+.nav-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-card-title { font-size: var(--fs-lg); font-weight: 600; }
+.nav-card-sub { font-size: var(--fs-sm); color: var(--text-2); }
+.nav-card-caret { flex: 0 0 auto; color: var(--text-2); font-size: var(--fs-xl); line-height: 1; }
+
+/* Barra de navegação flutuante (cápsula descolada das bordas).
+   Continua NO FLUXO FLEX, não em position:fixed — o comentário do #view
+   explica: fixed faz a barra "andar" no meio da tela no PWA do iOS. O efeito
+   flutuante vem de margin + raio + sombra, sem reintroduzir aquele bug.
+   A safe-area vira MARGEM (e não padding interno) pra a cápsula ficar acima
+   do indicador de home, não colada nele. */
 .tabbar {
   flex: 0 0 auto;
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
   background: var(--bg-elev);
-  border-top: 1px solid var(--separator);
-  padding-bottom: var(--safe-bottom);
+  border-radius: var(--r-full);
+  margin: 0 var(--sp-2) calc(var(--sp-2) + var(--safe-bottom));
+  padding: var(--sp-1);
+  box-shadow: 0 2px 8px rgba(0,0,0,.10), 0 8px 28px rgba(0,0,0,.16);
   z-index: 10;
 }
 .tabbar a {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 8px 2px;
+  padding: var(--sp-2) 2px;
+  border-radius: var(--r-full);
   text-decoration: none;
   color: var(--text-2);
   font-size: 10.5px;
   gap: 2px;
   min-width: 0;
+  transition: background-color .18s ease, color .18s ease;
 }
 .tabbar a span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tabbar a.active { color: var(--tint); }
+/* Ativo ganha uma "pílula" de fundo além da cor — o destaque fica legível
+   mesmo de relance, sem depender só de matiz (ajuda em daltonismo). */
+.tabbar a.active { color: var(--tint); background: rgba(10,132,255,.16); }
 .tabbar a .ico { width: 22px; height: 22px; }
 
 .card {
@@ -321,7 +355,7 @@ main#view {
 /* Card unico no topo do dashboard com Receitas, Despesas e Saldo. Linha
    por metrica + divisoria e linha "Saldo" levemente maior pra hierarquia.
    Gradiente sutil baseado no sinal do saldo da personalidade sem cafona. */
-.summary-card { padding: 14px 16px; position: relative; overflow: hidden; }
+.summary-card { padding: var(--sp-4); position: relative; overflow: hidden; }
 .summary-card.positive { background-image: linear-gradient(135deg, transparent 40%, rgba(48,209,88,.06) 100%); }
 .summary-card.negative { background-image: linear-gradient(135deg, transparent 40%, rgba(255,69,58,.06) 100%); }
 .summary-row {
@@ -329,14 +363,14 @@ main#view {
   justify-content: space-between;
   align-items: baseline;
   gap: var(--sp-3);
-  padding: 6px 0;
+  padding: var(--sp-2) 0;
   font-variant-numeric: tabular-nums;
 }
 .summary-label { color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
 .summary-value { font-size: var(--fs-lg); font-weight: 600; word-break: break-all; text-align: right; }
 .summary-value.positive { color: var(--green); }
 .summary-value.negative { color: var(--red); }
-.summary-divider { height: 1px; background: var(--separator); margin: 4px 0; }
+.summary-divider { height: 1px; background: var(--separator); margin: var(--sp-1) 0; }
 .summary-sub {
   display: flex;
   justify-content: space-between;
@@ -346,7 +380,9 @@ main#view {
   font-variant-numeric: tabular-nums;
 }
 .summary-sub strong { color: var(--text); font-weight: 600; }
-.summary-row-main { padding-top: 8px; }
+/* O saldo é a conclusão do card, não mais uma linha: ganha respiro extra
+   acima pra se destacar do bloco de receitas/despesas que o alimenta. */
+.summary-row-main { padding-top: var(--sp-3); }
 .summary-row-main .summary-label { color: var(--text); font-weight: 600; font-size: var(--fs-md); }
 /* O saldo é o número herói da tela — o maior elemento tipográfico do app,
    junto do título da página. Dado acima de navegação. */
@@ -565,7 +601,9 @@ main#view {
 .chip.active { background: var(--tint); color: white; border-color: var(--tint); }
 
 .fab {
-  position: fixed; right: 18px; bottom: calc(76px + var(--safe-bottom));
+  /* +8px em relação à tabbar antiga: a cápsula ganhou margem inferior, então
+     o FAB sobe junto pra manter o mesmo respiro entre os dois. */
+  position: fixed; right: 18px; bottom: calc(84px + var(--safe-bottom));
   width: 56px; height: 56px; border-radius: var(--r-full);
   background: var(--tint); color: white;
   display: flex; align-items: center; justify-content: center;

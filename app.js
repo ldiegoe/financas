@@ -1797,6 +1797,12 @@ views.carteira = (root) => {
   const programadas = rendasPeriod.filter(r => r.data >  hoje);
   const total     = sumAmount(recebidas);
   const totalProg = sumAmount(programadas);
+  // Aportes do período — o card de acesso a Investimentos mostra o número em
+  // vez de ser um botão vazio: informa e navega no mesmo toque.
+  const investIds = investCategoriaIds();
+  const investTotalPeriodo = sumAmount(
+    expandWithRecurring(state.despesas, period).filter(d => investIds.has(d.categoriaId))
+  );
   const proxProg  = programadas.length ? programadas.reduce((a, b) => a.data < b.data ? a : b) : null;
   // Lista por fonte (só do recebido, pra bater com o total exibido)
   const porFonte = new Map();
@@ -1861,10 +1867,23 @@ views.carteira = (root) => {
       </ul>
     `}
 
+    <div class="section-title">Investimentos</div>
+    <button class="nav-card" id="go-invest" type="button">
+      <span class="nav-card-ico">${icon('trending', 20)}</span>
+      <span class="nav-card-body">
+        <span class="nav-card-title">Investimentos</span>
+        <span class="nav-card-sub">${investTotalPeriodo > 0
+          ? `${fmtBRL(investTotalPeriodo)} aportado em ${periodLabel()}`
+          : `Nenhum aporte em ${periodLabel()}`}</span>
+      </span>
+      <span class="nav-card-caret">›</span>
+    </button>
+
     <button class="fab" id="fab-renda" aria-label="Adicionar receita">+</button>
   `;
 
   bindSwipe(root);
+  root.querySelector('#go-invest').addEventListener('click', () => { location.hash = '#/investimentos'; });
 
   // Tap na linha abre os detalhes (descricao completa, valor, tipo, etc).
   // Ignora clicks nas swipe-actions (editar/excluir) e tambem se a linha
@@ -3326,8 +3345,12 @@ const setTab = (name) => {
   if (name !== 'despesas') exitSelection();
   if (name !== 'dashboard') { vencSelMode = false; vencSel.clear(); }
   currentTab = name;
+  // Investimentos não tem aba própria (entra pela Carteira), mas continua sendo
+  // uma rota válida — deep link, notificação e voltar do histórico funcionam.
+  // Acende a Carteira pra o usuário não ficar numa tela sem aba destacada.
+  const abaAcesa = name === 'investimentos' ? 'carteira' : name;
   document.querySelectorAll('.tabbar a').forEach(a => {
-    a.classList.toggle('active', a.dataset.tab === name);
+    a.classList.toggle('active', a.dataset.tab === abaAcesa);
   });
   const titleEl = document.getElementById('title');
   titleEl.innerHTML = escapeHTML(titles[name]) + (TAB_INFO[name] ? infoBtn(TAB_INFO[name]) : '');
