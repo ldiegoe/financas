@@ -1477,22 +1477,33 @@ label.field span .info-btn svg,
 .boleto-quick:active { background: rgba(10,132,255,.15); }
 
 /* ----- Importação de fatura (OFX) ----- */
+/* As sangrias laterais (lista e rodapé vão até a borda do sheet) DERIVAM do
+   padding do .sheet em vez de repetir o número: era um -18px cru contra um
+   padding que virou var(--sp-4)=16px, e os 2px sobrando davam scroll
+   horizontal no sheet inteiro (overflow-y:auto torna o overflow-x auto). */
+
+/* Enquanto lê o arquivo. */
+.imp-loading { text-align: center; padding: var(--sp-5) 0; color: var(--text-2); }
+
 /* Cabeçalho: banco, arquivo e chips de resumo. */
 .imp-head {
-  padding: var(--sp-4); border-radius: var(--r-lg); margin-bottom: var(--sp-3);
+  padding: var(--sp-3); border-radius: var(--r-lg); margin-bottom: var(--sp-3);
   background: var(--card, rgba(120,120,128,.10));
 }
 .imp-head-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
 .imp-bank { font-weight: 700; font-size: var(--fs-lg); }
 .imp-period { color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
-.imp-file { color: var(--text-2); font-size: var(--fs-sm); margin-top: 2px; word-break: break-all; }
-.imp-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
-.imp-chip { font-size: var(--fs-sm); font-weight: 600; padding: 3px 9px; border-radius: var(--r-full); }
-.imp-chip.nova    { background: rgba(48,209,88,.16);   color: var(--green); }
-.imp-chip.receita { background: rgba(48,209,88,.16);   color: var(--green); }
-.imp-chip.desp    { background: rgba(255,159,10,.16);  color: var(--orange); }
-.imp-chip.dup     { background: rgba(10,132,255,.16);  color: var(--tint); }
-.imp-chip.credito { background: rgba(142,142,147,.20); color: var(--text-2); }
+.imp-file { color: var(--text-2); font-size: var(--fs-sm); word-break: break-all; }
+.imp-head .boleto-aviso { margin-top: var(--sp-3); }
+.imp-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+/* Chip de resumo é CONTAGEM — metadado, e metadado não ganha cor. "já no app"
+   era azul (a cor de interação: lia como botão, mas não é tocável) e
+   "N despesas" era laranja (a cor reservada pra atenção real). */
+.imp-chip {
+  font-size: var(--fs-sm); font-weight: 600;
+  padding: var(--sp-1) var(--sp-2); border-radius: var(--r-full);
+  background: var(--separator); color: var(--text-2);
+}
 
 /* Escolha inicial: fatura x extrato. */
 .imp-choice {
@@ -1509,66 +1520,94 @@ label.field span .info-btn svg,
 /* Toggle de tipo por linha (extrato). */
 .imp-type { display: inline-flex; border: 1px solid var(--separator); border-radius: var(--r-sm); overflow: hidden; }
 .imp-type-btn {
-  background: none; border: 0; cursor: pointer; padding: 3px 10px;
+  background: none; border: 0; cursor: pointer; padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-sm); color: var(--text-2);
 }
 .imp-type-btn + .imp-type-btn { border-left: 1px solid var(--separator); }
-.imp-row.tipo-despesa .imp-type-btn[data-tipo="despesa"] { background: var(--orange); color: #fff; }
-.imp-row.tipo-receita .imp-type-btn[data-tipo="receita"] { background: var(--green);  color: #fff; }
-/* Receita não tem categoria/tags nem cor vermelha; valor fica verde. */
-.imp-row.tipo-receita .imp-cat,
-.imp-row.tipo-receita .imp-tagwrap { display: none; }
+/* Selecionado é ESTADO, não polaridade — azul (interação). O "Despesa" ativo
+   era laranja, a cor que a política reserva pra atenção real: era o elemento
+   mais gritante da tela pra dizer apenas "esta opção está escolhida". */
+.imp-row.tipo-despesa .imp-type-btn[data-tipo="despesa"],
+.imp-row.tipo-receita .imp-type-btn[data-tipo="receita"] { background: var(--tint); color: #fff; }
+/* A polaridade continua onde o dinheiro está: no valor. */
 .imp-row.tipo-receita .imp-amount { color: var(--green); }
 
 /* Barra de ações em massa. */
 .imp-toolbar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); flex-wrap: wrap; }
 .imp-seg { display: inline-flex; border: 1px solid var(--separator); border-radius: var(--r-md); overflow: hidden; }
-.imp-seg button { background: none; border: 0; color: var(--tint); font-size: var(--fs-sm); padding: 7px 12px; cursor: pointer; }
+.imp-seg button { background: none; border: 0; color: var(--tint); font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); cursor: pointer; }
 .imp-seg button + button { border-left: 1px solid var(--separator); }
-.imp-bulkcat { margin-left: auto; max-width: 56%; padding: 7px 8px; font-size: var(--fs-sm); }
+.imp-bulkcat { margin-left: auto; max-width: 56%; padding: var(--sp-2); font-size: var(--fs-sm); }
 
-/* Vencimento da fatura: data única onde caem todas as compras. */
+/* Vencimento da fatura: data única onde caem todas as compras. Checkbox e
+   campo dividem UMA linha — empilhados, este bloco custava 158px do espaço
+   que a lista precisa (era o maior item do cabeçalho). */
 .imp-venc {
-  margin: 2px 0 10px; padding: 12px 14px;
+  margin: 0 0 var(--sp-3); padding: var(--sp-3);
   border: 1px solid var(--separator); border-radius: var(--r-md);
 }
-.imp-venc-row { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); font-weight: 500; }
-.imp-venc-row input { width: 20px; height: 20px; flex: 0 0 auto; }
-.imp-venc input[type="date"] { display: block; width: 100%; margin-top: var(--sp-3); padding: 7px 8px; font-size: var(--fs-sm); }
+.imp-venc-row { display: flex; align-items: center; gap: var(--sp-3); }
+/* Quem encolhe (e quebra em duas linhas) é o rótulo, nunca o campo: data
+   cortada seria pior que rótulo em duas linhas. */
+.imp-venc-lbl {
+  display: flex; align-items: center; gap: var(--sp-2);
+  flex: 1 1 auto; min-width: 0;
+  font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+}
+.imp-venc input[type="date"] { flex: 0 0 auto; width: auto; padding: var(--sp-2); font-size: var(--fs-sm); }
 .imp-venc input[type="date"]:disabled { opacity: .45; }
 .imp-venc small { display: block; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; margin-top: var(--sp-2); }
 
 /* Lista rola por dentro; cabeçalho e rodapé ficam. */
 .imp-list {
-  list-style: none; margin: 0 -18px; padding: 0;
-  max-height: 52vh; overflow-y: auto;
+  list-style: none; margin: 0 calc(-1 * var(--sp-4)); padding: 0;
+  overflow-y: auto;
   border-top: 1px solid var(--separator);
+  /* O .sheet é limitado a 85vh. Pedindo 52vh sem descontar o cabeçalho, a
+     soma passava de 85vh e o sheet passava a rolar TAMBÉM — dois scrolls
+     aninhados, e o "cabeçalho e rodapé ficam" deixava de valer. A constante é
+     o chrome medido acima da lista; o max() impede que ela suma numa tela
+     curta (aí sim vale o sheet rolar um pouco). */
+  max-height: max(180px, min(52vh, calc(85vh - 320px)));
 }
+/* Modo fatura: o bloco de vencimento entra antes da lista e come mais 120px. */
+.imp-venc ~ .imp-list { max-height: max(180px, min(52vh, calc(85vh - 440px))); }
 .imp-row {
   display: flex; gap: var(--sp-3); align-items: flex-start;
-  padding: 12px 18px; border-bottom: 1px solid var(--separator);
+  padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--separator);
   cursor: pointer; transition: opacity .15s;
 }
 /* Não-incluídas ficam esmaecidas pra separar do que vai entrar. */
-.imp-row:not(.on) { opacity: .45; }
+.imp-row:not(.on) { opacity: .5; }
 .imp-check {
-  flex: 0 0 24px; width: 24px; height: 24px; margin-top: 1px; padding: 0;
+  flex: 0 0 24px; width: 24px; height: 24px; padding: 0;
+  /* centra o círculo contra a altura do campo de nome (40px) */
+  margin-top: var(--sp-2);
   border-radius: 50%; border: 2px solid var(--separator);
   background: transparent; color: transparent; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   position: relative;
 }
 /* Área de toque maior que o círculo (invisível), pra facilitar o tap sem
-   crescer o visual. Fica à esquerda, longe dos campos de nome/tags. */
-.imp-check::after { content: ''; position: absolute; inset: -9px -6px -9px -12px; }
-.imp-row.on .imp-check { background: var(--green); border-color: var(--green); color: #fff; }
+   crescer o visual. Fica à esquerda, longe dos campos de nome/tags — por isso
+   a folga da direita para exatamente onde a margem negativa do nome começa. */
+.imp-check::after {
+  content: ''; position: absolute;
+  inset: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3));
+}
+/* Marcado é ESTADO de seleção, como o toggle acima: azul, não verde. */
+.imp-row.on .imp-check { background: var(--tint); border-color: var(--tint); color: #fff; }
 .imp-main { flex: 1; min-width: 0; }
 .imp-line1 { display: flex; align-items: center; gap: var(--sp-3); }
-/* Nome parece texto até receber foco — editável sem poluir visualmente. */
+/* Nome parece texto até receber foco — editável sem poluir visualmente. Altura
+   de 40px em vez dos 44px padrão dos campos: o alvo ocupa a linha inteira, a
+   largura já garante o toque, e 4px por linha conta numa fatura de 26 linhas. */
 .imp-name {
-  flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: 500; color: var(--text);
+  flex: 1; min-width: 0; min-height: 40px;
+  font-size: var(--fs-md); font-weight: 500; color: var(--text);
   background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
-  padding: 4px 6px; margin: -4px -6px;
+  padding: var(--sp-1) var(--sp-2);
+  margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2));
 }
 .imp-name:focus { border-color: var(--tint); background: var(--bg-elev); outline: none; }
 .imp-name[readonly] { color: var(--text-2); }
@@ -1576,25 +1615,42 @@ label.field span .info-btn svg,
 .imp-amount.pos { color: var(--green); }
 .imp-sub { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-1); color: var(--text-2); font-size: var(--fs-sm); }
 /* Categoria e tags cada uma em sua própria linha (respiram melhor). */
-.imp-cat  { display: block; width: 100%; margin-top: var(--sp-2); padding: 7px 8px; font-size: var(--fs-sm); }
+.imp-cat  { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2); font-size: var(--fs-sm); }
 .imp-tagwrap { margin-top: var(--sp-2); }
-.imp-tags { display: block; width: 100%; padding: 7px 8px; font-size: var(--fs-sm); }
+.imp-tags { display: block; width: 100%; padding: var(--sp-2); font-size: var(--fs-sm); }
+/* Categoria e tags só na linha MARCADA (e nunca em receita, que não tem
+   categoria). Quem não vai ser importado não precisa de controle: eram 96px
+   de campo por linha desmarcada — e numa fatura em que quase tudo já está no
+   app, isso era a maior parte da lista. A linha cai de ~195px pra ~99px.
+   Depende só da classe .on, que o JS já alterna por DOM direto: sem
+   re-render, sem religar a delegação. */
+.imp-row:not(.on) .imp-cat,
+.imp-row:not(.on) .imp-tagwrap,
+.imp-row.tipo-receita .imp-cat,
+.imp-row.tipo-receita .imp-tagwrap { display: none; }
 /* Chips de tags frequentes sob o campo em foco. */
 .imp-tagchips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
 /* Chip de tag sugerida: é tocável, então usa a cor de interação. */
 .imp-tagchip {
-  border: 0; cursor: pointer; font-size: var(--fs-sm); padding: 5px 11px; border-radius: var(--r-full);
+  border: 0; cursor: pointer; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-3); border-radius: var(--r-full);
   background: rgba(10,132,255,.14); color: var(--tint);
 }
 .imp-tagchip:active { background: rgba(10,132,255,.28); }
-.tag.dup     { background: rgba(10,132,255,.15);  color: var(--tint); }
+/* "já importado", "repetido no arquivo" e "transferência" CLASSIFICAM a linha
+   — são metadado, e herdam o neutro do .tag. "já importado" azul repetia a
+   cor de interação em toda linha da lista. */
+.tag.dup,
+.tag.transfer { /* neutro herdado */ }
+/* Crédito é dinheiro que entrou: polaridade real. "Confira" pede ação. */
 .tag.credito { background: rgba(48,209,88,.15);   color: var(--green); }
 .tag.manual  { background: rgba(255,159,10,.15);  color: var(--orange); }
 
+/* Sangra até a borda do sheet e gruda no fundo dele: as duas medidas saem do
+   padding do .sheet (lateral --sp-4, inferior --sp-5 + safe-area). */
 .imp-footer {
-  position: sticky; bottom: calc(-1 * (20px + var(--safe-bottom)));
-  display: flex; gap: var(--sp-3); margin: 12px -18px 0;
-  padding: 12px 18px calc(12px + var(--safe-bottom));
+  position: sticky; bottom: calc(-1 * (var(--sp-5) + var(--safe-bottom)));
+  display: flex; gap: var(--sp-3); margin: var(--sp-3) calc(-1 * var(--sp-4)) 0;
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + var(--safe-bottom));
   background: var(--bg-elev); border-top: 1px solid var(--separator);
 }
 .imp-footer button { flex: 1; }

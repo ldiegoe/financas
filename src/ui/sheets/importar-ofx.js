@@ -71,7 +71,7 @@ export const createSheetImportarOFX = (deps) => {
           <div class="imp-main">
             <div class="imp-line1">
               <input class="imp-name" data-i="${i}" value="${escapeAttr(r.descricao)}" ${editavel ? '' : 'readonly'} aria-label="Descrição" />
-              <span class="imp-amount ${editavel ? 'neg' : 'pos'}">${fmtBRL(t.valor)}</span>
+              <span class="imp-amount${editavel ? '' : ' pos'}">${fmtBRL(t.valor)}</span>
             </div>
             <div class="imp-sub"><span>${fmtDate(t.data)}</span> ${parcela} ${MOTIVO_BADGE[r.motivo] || ''}</div>
             ${editavel ? catBlock(r, i) : ''}
@@ -83,7 +83,7 @@ export const createSheetImportarOFX = (deps) => {
     // aparecem em despesa (via classe .tipo-*). Transferências vêm desmarcadas.
     const rowExtrato = (r, i) => {
       const t = r.txn;
-      const badge = r.transferencia ? '<span class="tag manual">transferência</span>' : (MOTIVO_BADGE[r.motivo] || '');
+      const badge = r.transferencia ? '<span class="tag transfer">transferência</span>' : (MOTIVO_BADGE[r.motivo] || '');
       return `
         <li class="imp-row tipo-${r.tipo} ${r.incluir ? 'on' : ''}" data-i="${i}">
           <button class="imp-check" type="button" aria-label="${r.incluir ? 'Não importar' : 'Importar'}">${checkSvg}</button>
@@ -116,28 +116,32 @@ export const createSheetImportarOFX = (deps) => {
       return { count: r.incluir, right: fmtBRL(r.somaIncluir), disabled: r.incluir === 0 };
     };
 
+    // Chips do cabeçalho: todos são CONTAGEM, então todos são neutros — o
+    // estilo vem só de `.imp-chip` (ver a política de cor no :root).
+    const chip = (n, singular, plural = singular + 's') =>
+      n ? `<span class="imp-chip">${n} ${n === 1 ? singular : plural}</span>` : '';
+
     const headerChips = () => {
       if (kind === 'extrato') {
         const r = resumoExtrato(rows);
         return [
-          r.despesas ? `<span class="imp-chip desp">${r.despesas} despesa${r.despesas === 1 ? '' : 's'}</span>` : '',
-          r.receitas ? `<span class="imp-chip receita">${r.receitas} receita${r.receitas === 1 ? '' : 's'}</span>` : '',
-          r.transferencias ? `<span class="imp-chip credito">${r.transferencias} transferência${r.transferencias === 1 ? '' : 's'}</span>` : '',
-          r.duplicatas ? `<span class="imp-chip dup">${r.duplicatas} já no app</span>` : '',
+          chip(r.despesas, 'despesa'),
+          chip(r.receitas, 'receita'),
+          chip(r.transferencias, 'transferência', 'transferências'),
+          r.duplicatas ? `<span class="imp-chip">${r.duplicatas} já no app</span>` : '',
         ].filter(Boolean).join('');
       }
       const r = resumoRows(rows);
-      const novas = r.novas + r.manuais;
       return [
-        novas ? `<span class="imp-chip nova">${novas} nova${novas === 1 ? '' : 's'}</span>` : '',
-        r.duplicatas ? `<span class="imp-chip dup">${r.duplicatas} já no app</span>` : '',
-        r.creditos ? `<span class="imp-chip credito">${r.creditos} crédito${r.creditos === 1 ? '' : 's'}</span>` : '',
+        chip(r.novas + r.manuais, 'nova'),
+        r.duplicatas ? `<span class="imp-chip">${r.duplicatas} já no app</span>` : '',
+        chip(r.creditos, 'crédito'),
       ].filter(Boolean).join('');
     };
 
     const conteudo = () => {
       if (etapa === 'lendo') {
-        return `<p style="text-align:center;padding:24px 0;color:var(--text-2);">Lendo o arquivo…</p>`;
+        return `<p class="imp-loading">Lendo o arquivo…</p>`;
       }
 
       if (etapa === 'feito') {
@@ -165,7 +169,7 @@ export const createSheetImportarOFX = (deps) => {
             </div>
             <div class="imp-file">${escapeHTML(meta.arquivo)}</div>
             <div class="imp-chips">${headerChips()}</div>
-            ${meta.aviso ? `<p class="boleto-aviso" style="margin-top:10px;">${escapeHTML(meta.aviso)}</p>` : ''}
+            ${meta.aviso ? `<p class="boleto-aviso">${escapeHTML(meta.aviso)}</p>` : ''}
           </div>
 
           <div class="imp-toolbar">
@@ -181,11 +185,15 @@ export const createSheetImportarOFX = (deps) => {
 
           ${kind === 'fatura' ? `
             <div class="imp-venc">
-              <label class="imp-venc-row">
-                <input type="checkbox" id="venc-on" ${vencOn ? 'checked' : ''}/>
-                <span>Lançar tudo no vencimento da fatura</span>
-              </label>
-              <input type="date" id="venc-date" value="${escapeAttr(vencDate || '')}" ${vencOn ? '' : 'disabled'}/>
+              <div class="imp-venc-row">
+                <!-- O campo de data fica FORA do label: dentro dele, tocar na
+                     data alternaria a checkbox. -->
+                <label class="imp-venc-lbl">
+                  <input type="checkbox" id="venc-on" ${vencOn ? 'checked' : ''}/>
+                  <span>Lançar no vencimento</span>
+                </label>
+                <input type="date" id="venc-date" value="${escapeAttr(vencDate || '')}" ${vencOn ? '' : 'disabled'} aria-label="Data de vencimento"/>
+              </div>
               <small>
                 ${meta.fechamento ? `A fatura fecha em <strong>${fmtDate(meta.fechamento)}</strong>. ` : ''}Ajuste
                 para o dia em que você paga. A data de cada compra fica guardada.
