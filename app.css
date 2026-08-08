@@ -42,6 +42,18 @@
   --r-md:   12px;
   --r-lg:   16px;
   --r-full: 999px;
+
+  /* Geometria da barra flutuante. A tabbar é fixed e o conteúdo passa POR
+     BAIXO dela; FAB e padding do #view derivam daqui pra tudo continuar
+     coerente se a altura mudar. */
+  --tabbar-h:   62px;                                   /* altura da cápsula */
+  --tabbar-gap: 8px;                                    /* folga até a borda */
+  --tabbar-off: calc(var(--tabbar-gap) + var(--safe-bottom));  /* base da cápsula */
+  --fab-size:   56px;
+
+  /* Superfície translúcida da barra (vidro). Um por tema — o blur precisa de
+     um fundo semitransparente pra ter o que borrar. */
+  --glass: rgba(255,255,255,.72);
 }
 
 /* Tema escuro forçado pelo usuário (Ajustes → Aparência → Escuro) */
@@ -51,6 +63,7 @@
   --text: #ffffff;
   --text-2: #98989d;
   --separator: #38383a;
+  --glass: rgba(28,28,30,.72);
 }
 
 /* Tema do sistema: aplica escuro só se o usuário não tiver forçado claro */
@@ -61,6 +74,7 @@
     --text: #ffffff;
     --text-2: #98989d;
     --separator: #38383a;
+    --glass: rgba(28,28,30,.72);
   }
 }
 
@@ -72,6 +86,7 @@
   --text: #ffffff;
   --text-2: #8e8e93;
   --separator: #1f1f1f;
+  --glass: rgba(10,10,10,.76);
 }
 :root[data-theme="oled"] .card { border: 1px solid var(--separator); }
 
@@ -212,10 +227,13 @@ html.text-large { zoom: 1.1; }
 
 main#view {
   flex: 1;
-  /* padding-bottom generoso pra a ultima linha das listas conseguir rolar pra
-     cima do FAB (botao + flutuante) — assim ele nunca sobrepoe conteudo
-     interativo (swipe de editar/excluir, setas de reordenar, etc). */
-  padding: 8px 16px 92px;
+  /* O #view agora vai até o fim da tela (a tabbar é fixed e flutua por cima).
+     O padding inferior soma: base da cápsula + altura dela + folga + o FAB —
+     assim a última linha das listas rola até acima do FAB e nada de
+     interativo (swipe, setas de reordenar) fica coberto. */
+  padding: var(--sp-2) var(--sp-4)
+           calc(var(--tabbar-off) + var(--tabbar-h) + var(--sp-3)
+                + var(--fab-size) + var(--sp-3));
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -243,21 +261,30 @@ main#view {
 .nav-card-sub { font-size: var(--fs-sm); color: var(--text-2); }
 .nav-card-caret { flex: 0 0 auto; color: var(--text-2); font-size: var(--fs-xl); line-height: 1; }
 
-/* Barra de navegação flutuante (cápsula descolada das bordas).
-   Continua NO FLUXO FLEX, não em position:fixed — o comentário do #view
-   explica: fixed faz a barra "andar" no meio da tela no PWA do iOS. O efeito
-   flutuante vem de margin + raio + sombra, sem reintroduzir aquele bug.
-   A safe-area vira MARGEM (e não padding interno) pra a cápsula ficar acima
-   do indicador de home, não colada nele. */
+/* Barra de navegação flutuante em vidro: `position: fixed`, com o conteúdo
+   passando POR BAIXO enquanto rola.
+   Sobre o bug antigo — havia um aviso de que `fixed` fazia a barra "andar" no
+   PWA do iOS. Aquilo era efeito do scroll do DOCUMENTO; hoje o documento não
+   rola (`html, body { overflow: hidden }`) e o scroll acontece dentro do
+   #view, então a causa não existe mais. Se a barra voltar a tremer no iOS,
+   é aqui que se olha primeiro. */
 .tabbar {
-  flex: 0 0 auto;
+  position: fixed;
+  left: var(--sp-2); right: var(--sp-2);
+  bottom: var(--tabbar-off);
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-  background: var(--bg-elev);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
   border-radius: var(--r-full);
-  margin: 0 var(--sp-2) calc(var(--sp-2) + var(--safe-bottom));
   padding: var(--sp-1);
   box-shadow: 0 2px 8px rgba(0,0,0,.10), 0 8px 28px rgba(0,0,0,.16);
   z-index: 10;
+}
+/* Sem suporte a backdrop-filter o fundo semitransparente deixaria o conteúdo
+   vazar por trás e ficar ilegível — aí volta a ser opaco. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar { background: var(--bg-elev); }
 }
 .tabbar a {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -601,10 +628,11 @@ main#view {
 .chip.active { background: var(--tint); color: white; border-color: var(--tint); }
 
 .fab {
-  /* +8px em relação à tabbar antiga: a cápsula ganhou margem inferior, então
-     o FAB sobe junto pra manter o mesmo respiro entre os dois. */
-  position: fixed; right: 18px; bottom: calc(84px + var(--safe-bottom));
-  width: 56px; height: 56px; border-radius: var(--r-full);
+  /* Empilhado logo acima da cápsula, derivando da mesma geometria — se a
+     altura da tabbar mudar, o FAB acompanha sozinho. */
+  position: fixed; right: 18px;
+  bottom: calc(var(--tabbar-off) + var(--tabbar-h) + var(--sp-3));
+  width: var(--fab-size); height: var(--fab-size); border-radius: var(--r-full);
   background: var(--tint); color: white;
   display: flex; align-items: center; justify-content: center;
   font-size: var(--fs-2xl);
