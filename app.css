@@ -438,6 +438,10 @@ main#view {
 .list > li { display: flex; align-items: center; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--separator); gap: var(--sp-3); }
 .list > li:last-child { border-bottom: 0; }
 .list .swatch { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+/* Receita não tem categoria, então o marcador é fixo: verde de polaridade, o
+   mesmo do valor à direita. Estava como `#30d158` cru em `style=` no template
+   — cor do sistema não mora no JS. */
+.list .swatch.pos { background: var(--green); }
 .list .grow { flex: 1; min-width: 0; }
 .list .grow .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list .grow .s { color: var(--text-2); font-size: var(--fs-sm); }
@@ -474,9 +478,9 @@ main#view {
 
 .empty {
   text-align: center;
-  /* 36px fora da escala, de propósito por ora: `.empty` é global (6 telas) e
-     este refator é escopado à aba Despesas. Tokenizar aqui mexeria no estado
-     vazio de telas que ainda não foram revisadas. Fica pra passada global. */
+  /* 36px fora da escala, de propósito por ora: `.empty` é global e Dashboard,
+     Investimentos e Objetivos ainda não passaram pela repaginação. Tokenizar
+     aqui mexeria no estado vazio delas sem validação. Fica pra quando fecharem. */
   padding: 36px var(--sp-4);
   color: var(--text-2);
 }
@@ -947,7 +951,9 @@ label.field span .info-btn svg,
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 
 .progress {
-  height: 6px; background: var(--separator); border-radius: 3px;
+  /* Metade da altura já arredondava a barra em pílula; --r-full diz a mesma
+     coisa pelo token e continua correto se a altura mudar. */
+  height: 6px; background: var(--separator); border-radius: var(--r-full);
   overflow: hidden; margin-top: var(--sp-2);
 }
 .progress > i {
@@ -960,7 +966,10 @@ label.field span .info-btn svg,
 
 .drag-handle {
   flex: 0 0 auto;
-  padding: 8px 6px;
+  /* 6px lateral fora da escala, mantido por ora: a alça é compartilhada com a
+     lista "Ordem dos cards" em Ajustes, que ainda não passou pela repaginação.
+     Vira `--sp-2` quando aquela tela for revisada. */
+  padding: var(--sp-2) 6px;
   margin-left: var(--sp-1);
   color: var(--text-2);
   font-size: 22px;

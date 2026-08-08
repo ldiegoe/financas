@@ -1821,7 +1821,7 @@ views.carteira = (root) => {
       <ul class="list">
         ${[...porFonte.entries()].sort((a,b)=>b[1]-a[1]).map(([fonte, valor]) => `
           <li>
-            <span class="swatch" style="background:#30d158"></span>
+            <span class="swatch pos"></span>
             <div class="grow"><div class="t">${escapeHTML(fonte)}</div></div>
             <div class="amount pos">${fmtBRL(valor)}</div>
           </li>
@@ -1831,15 +1831,15 @@ views.carteira = (root) => {
 
     <div class="section-title">Lançamentos</div>
     ${rendasPeriod.length === 0 ? `
-      <div class="empty"><span class="ico">${icon('wallet', 48)}</span>Nenhuma receita no período.<br/><br/>
-        <button class="primary" id="add-renda">Adicionar receita</button></div>
+      <div class="empty"><span class="ico">${icon('wallet', 48)}</span>Nenhuma receita no período.
+        <div class="empty-action"><button class="primary" id="add-renda">Adicionar receita</button></div></div>
     ` : `
       <ul class="list">
         ${rendasPeriod.sort((a,b)=>b.data.localeCompare(a.data)).map(r => {
           const prog = r.data > hoje;
           return `
           <li class="swipe-row${prog ? ' is-prog' : ''}" data-id="${r.id}" data-data="${r.data}" data-real="${!r._virtual}">
-            <span class="swatch" style="background:#30d158"></span>
+            <span class="swatch pos"></span>
             <div class="grow">
               <div class="t">${escapeHTML(r.fonte || 'Receita')}
                 ${r.recorrente ? '<span class="tag recurring">Mensal</span>' : ''}
