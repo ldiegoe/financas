@@ -21,7 +21,7 @@ export const createSheetRenda = (deps) => {
         <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(r.valor)}" required />
       </label>
       <label class="field"><span>Data</span>
-        <input id="f-data" type="date" value="${r.data}" required />
+        <input id="f-data" type="date" value="${escapeAttr(r.data)}" required />
         <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
           A receita só conta a partir deste dia. Datas futuras ficam como "programado".
         </small>
@@ -36,7 +36,7 @@ export const createSheetRenda = (deps) => {
       <label class="field" id="row-dur" ${r.recorrente ? '' : 'hidden'}>
         <span>Por quantos meses?</span>
         <input id="f-dur" type="number" min="1" max="600" inputmode="numeric"
-               placeholder="Deixe vazio para sem fim" value="${r.duracaoMeses || ''}" />
+               placeholder="Deixe vazio para sem fim" value="${escapeAttr(r.duracaoMeses || '')}" />
         <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
           Para rendas temporárias (seguro-desemprego, bolsa, contrato). Vazio = recebe todo mês sem fim.
         </small>

@@ -8,7 +8,7 @@
 // especificador mudou de './src/ui/pdf-text.js' para '../pdf-text.js' ao sair
 // do app.js. Especificador errado só falharia em runtime, ao escolher o PDF.
 
-import { escapeHTML } from '../escape.js';
+import { escapeHTML, escapeAttr } from '../escape.js';
 import { fmtDate } from '../../helpers/format.js';
 import { todayISO } from '../../helpers/parse.js';
 import { cobreMes, parcelaDoMes } from '../../domain/despesa.js';
@@ -97,7 +97,7 @@ export const createSheetImportarBoletos = (deps) => {
           <label class="field"><span>Vincular à despesa</span>
             <select id="f-despesa">
               ${opcoes.map(({ d, score }) => `
-                <option value="${d.id}" ${d.id === despesaId ? 'selected' : ''}>
+                <option value="${escapeAttr(d.id)}" ${d.id === despesaId ? 'selected' : ''}>
                   ${escapeHTML(rotuloDespesa(d))}${score >= 200 ? ' ✓' : ''}
                 </option>`).join('')}
             </select>

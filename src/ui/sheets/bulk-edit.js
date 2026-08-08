@@ -6,7 +6,7 @@
 // Recebe `exitSelection` (não o objeto `selection`): o sheet só precisa sair
 // do modo de seleção, não ler o estado dele.
 
-import { escapeHTML } from '../escape.js';
+import { escapeHTML, escapeAttr } from '../escape.js';
 
 export const createSheetBulkEdit = (deps) => {
   const {
@@ -28,11 +28,11 @@ export const createSheetBulkEdit = (deps) => {
           <option value="__none">— manter atual —</option>
           <option value="">Sem categoria</option>
           <optgroup label="Despesa">
-            ${despesasCats.map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+            ${despesasCats.map(c => `<option value="${escapeAttr(c.id)}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
           </optgroup>
           ${investCats.length > 0 ? `
             <optgroup label="Investimento">
-              ${investCats.map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+              ${investCats.map(c => `<option value="${escapeAttr(c.id)}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
             </optgroup>
           ` : ''}
         </select>

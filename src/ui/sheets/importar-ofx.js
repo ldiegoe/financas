@@ -48,7 +48,7 @@ export const createSheetImportarOFX = (deps) => {
     const catOptions = (selected) =>
       `<option value="">— sem categoria —</option>` +
       catsExpense().map(c =>
-        `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`
+        `<option value="${escapeAttr(c.id)}" ${c.id === selected ? 'selected' : ''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`
       ).join('');
 
     const checkSvg = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
@@ -175,7 +175,7 @@ export const createSheetImportarOFX = (deps) => {
             </div>
             <select id="bulk-cat" class="imp-bulkcat" aria-label="Categoria para as marcadas">
               <option value="">Categoria em massa…</option>
-              ${catsExpense().map(c => `<option value="${c.id}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+              ${catsExpense().map(c => `<option value="${escapeAttr(c.id)}">${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
             </select>
           </div>
 
@@ -185,7 +185,7 @@ export const createSheetImportarOFX = (deps) => {
                 <input type="checkbox" id="venc-on" ${vencOn ? 'checked' : ''}/>
                 <span>Lançar tudo no vencimento da fatura</span>
               </label>
-              <input type="date" id="venc-date" value="${vencDate || ''}" ${vencOn ? '' : 'disabled'}/>
+              <input type="date" id="venc-date" value="${escapeAttr(vencDate || '')}" ${vencOn ? '' : 'disabled'}/>
               <small>
                 ${meta.fechamento ? `A fatura fecha em <strong>${fmtDate(meta.fechamento)}</strong>. ` : ''}Ajuste
                 para o dia em que você paga. A data de cada compra fica guardada.

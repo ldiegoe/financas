@@ -12,11 +12,11 @@ import {
   isoToDate, todayISO,
 } from './src/helpers/parse.js';
 import {
-  clampDay, periodMatches, monthsInPeriod,
+  monthsInPeriod,
   previousPeriod, labelOfPeriod,
 } from './src/domain/period.js';
 import {
-  sumAmount, hasOccurrences, expandWithRecurring,
+  sumAmount, expandWithRecurring,
   computeTogglePagoPatch, setOcorrenciaPagaPatch,
 } from './src/domain/despesa.js';
 import {
@@ -24,7 +24,6 @@ import {
   objetivoAtual as objetivoAtualPure,
 } from './src/domain/objetivo.js';
 import {
-  HEALTH_META_DEFAULTS,
   healthMetas as healthMetasPure,
   scoreOf,
   colorClass,
@@ -38,7 +37,7 @@ import {
 import {
   computeAlerts as computeAlertsPure,
 } from './src/domain/alerts.js';
-import { createProfileStore, initialMeta } from './src/storage/profile-store.js';
+import { createProfileStore } from './src/storage/profile-store.js';
 import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
 import { createSyncStateStore } from './src/storage/sync-state.js';
 import {
@@ -46,8 +45,6 @@ import {
   createDropboxClient,
 } from './src/sync/dropbox-client.js';
 import {
-  META_FILE_PATH,
-  profileFilePath,
   createSyncEngine,
   syncRelativeTime as syncRelativeTimePure,
 } from './src/sync/engine.js';
@@ -387,8 +384,6 @@ const fmtBRL = (cents) => {
   if (state && state.config && state.config.valuesHidden) return 'R$ ••••';
   return fmtBRLPure(cents);
 };
-
-// Detecta se a string parece uma expressão matemática (tem operador entre
 
 // Wrappers que injetam state nos cálculos puros do domínio.
 const healthMetas = () => healthMetasPure(state.config);

@@ -70,7 +70,7 @@ export const createSheetsProfiles = (deps) => {
     openSheet('Perfis', () => `
       <ul class="list" style="margin-bottom:14px;">
         ${meta.list.map(p => `
-          <li class="profile-row" data-id="${p.id}" style="cursor:pointer;">
+          <li class="profile-row" data-id="${escapeAttr(p.id)}" style="cursor:pointer;">
             <div class="grow">
               <div class="t">${escapeHTML(p.name)}</div>
             </div>

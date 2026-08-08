@@ -23,7 +23,7 @@ export const createSheetObjetivo = (deps) => {
         <input id="o-alvo" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(o.alvo)}" required />
       </label>
       <label class="field"><span>Prazo (opcional)</span>
-        <input id="o-prazo" type="date" value="${o.prazo || ''}" />
+        <input id="o-prazo" type="date" value="${escapeAttr(o.prazo || '')}" />
       </label>
       <label class="field"><span>Categorias que contam pra esse objetivo</span>
         <div class="check-list" id="o-cats">
@@ -31,7 +31,7 @@ export const createSheetObjetivo = (deps) => {
             ? '<p style="color:var(--text-2);font-size:13px;margin:0;">Crie uma categoria marcada como "É investimento" primeiro.</p>'
             : investCats.map(c => `
               <label class="check-item">
-                <input type="checkbox" data-cat="${c.id}" ${linkedSet.has(c.id) ? 'checked' : ''}/>
+                <input type="checkbox" data-cat="${escapeAttr(c.id)}" ${linkedSet.has(c.id) ? 'checked' : ''}/>
                 ${catEmoji(c) ? `<span class="cat-emoji" style="background:${c.cor}22;">${catEmoji(c)}</span>` : `<span class="swatch" style="background:${c.cor}"></span>`}
                 <span>${escapeHTML(c.nome)}</span>
               </label>`).join('')}
@@ -41,7 +41,7 @@ export const createSheetObjetivo = (deps) => {
         </small>
       </label>
       <label class="field"><span>Contar lançamentos a partir de (opcional)</span>
-        <input id="o-desde" type="date" value="${o.desde || ''}" />
+        <input id="o-desde" type="date" value="${escapeAttr(o.desde || '')}" />
         <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
           Vazio = conta tudo o que já existe nessas categorias.
         </small>

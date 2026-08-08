@@ -41,9 +41,9 @@ export const createSheetDespesa = (deps) => {
       ${!isEdit && !investimento && getState().templates.length > 0 ? `
         <div class="templates-row">
           ${getState().templates.map(t => `
-            <button class="template-chip" data-tpl="${t.id}" type="button">
+            <button class="template-chip" data-tpl="${escapeAttr(t.id)}" type="button">
               ${escapeHTML(t.nome)}
-              <span class="template-chip-x" data-del="${t.id}">×</span>
+              <span class="template-chip-x" data-del="${escapeAttr(t.id)}">×</span>
             </button>`).join('')}
         </div>
       ` : ''}
@@ -54,13 +54,13 @@ export const createSheetDespesa = (deps) => {
         <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(d.valor)}" required />
       </label>
       <label class="field"><span>Data de pagamento${tipoInicial==='parcelada'?' (1ª parcela)':(tipoInicial==='mensal'?' (1º mês)':'')}</span>
-        <input id="f-data" type="date" value="${d.data}" required />
+        <input id="f-data" type="date" value="${escapeAttr(d.data)}" required />
         <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
           Quando o pagamento será feito (vencimento da fatura, dia do débito, data da compra à vista).
         </small>
       </label>
       <label class="field"><span>Data de cadastro</span>
-        <input id="f-criado" type="date" value="${d.criadoEm || todayISO()}" required />
+        <input id="f-criado" type="date" value="${escapeAttr(d.criadoEm || todayISO())}" required />
         <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
           Quando a despesa aconteceu/foi registrada. Padrão: hoje. Ajuste se estiver cadastrando algo de outro dia.
         </small>
@@ -68,7 +68,7 @@ export const createSheetDespesa = (deps) => {
       <label class="field"><span>Categoria${investimento ? ' (de investimento)' : ''}</span>
         <select id="f-cat">
           ${investimento ? '' : '<option value="">— Sem categoria —</option>'}
-          ${cats.map(c => `<option value="${c.id}" ${c.id===d.categoriaId?'selected':''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
+          ${cats.map(c => `<option value="${escapeAttr(c.id)}" ${c.id===d.categoriaId?'selected':''}>${catEmoji(c) ? catEmoji(c) + ' ' : ''}${escapeHTML(c.nome)}</option>`).join('')}
         </select>
       </label>
       <label class="field"><span>Tipo</span>
@@ -81,7 +81,7 @@ export const createSheetDespesa = (deps) => {
       <label class="field" id="row-parcelas" ${tipoInicial==='parcelada'?'':'hidden'}>
         <span>Número de parcelas</span>
         <input id="f-parcelas" type="number" min="2" max="360" inputmode="numeric"
-               value="${(d.parcelas && d.parcelas > 1) ? d.parcelas : 10}" />
+               value="${escapeAttr((d.parcelas && d.parcelas > 1) ? d.parcelas : 10)}" />
         <small id="parcelas-info" style="display:block;color:var(--text-2);margin-top:6px;font-size:13px;"></small>
       </label>
       <label class="field"><span>Tags (separadas por vírgula)</span>
