@@ -12,30 +12,28 @@ export const createSheetApagarTudo = (deps) => {
     syncDisconnect, syncPushProfile, syncPushMeta, getActiveProfileId,
   } = deps;
 
+  // O card É o botão: título + a consequência em uma linha. Nada de caixa de
+  // texto seguida de botão repetindo o mesmo rótulo.
+  const chevron = `<svg class="ac-chevron" viewBox="0 0 12 12" width="16" height="16" aria-hidden="true">
+      <path d="M4.5 2.5L8 6l-3.5 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+  const card = (id, cls, titulo, sub) => `
+    <button type="button" class="action-card ${cls}" id="${id}">
+      <span class="ac-body">
+        <span class="ac-title">${titulo}</span>
+        <span class="ac-sub">${sub}</span>
+      </span>
+      ${chevron}
+    </button>`;
+
   return () => {
-    const optStyle = 'border:1px solid var(--separator);border-radius:12px;padding:12px 14px;margin-bottom:10px;';
     openSheet('Apagar tudo', () => `
-      <p style="color:var(--text-2);font-size:14px;line-height:1.5;margin:0 0 14px;">
-        O Dropbox está conectado. Escolha o que apagar:
-      </p>
-      <div style="${optStyle}">
-        <strong>Só neste aparelho</strong>
-        <p style="color:var(--text-2);font-size:13px;line-height:1.45;margin:6px 0 0;">
-          Desconecta o Dropbox e apaga os dados só aqui. Sua cópia na nuvem e nos
-          outros aparelhos fica intacta — dá pra recuperar reconectando.
-        </p>
-      </div>
-      <div style="${optStyle}">
-        <strong style="color:var(--red);">Apagar em todo lugar</strong>
-        <p style="color:var(--text-2);font-size:13px;line-height:1.45;margin:6px 0 0;">
-          Apaga aqui e também no Dropbox e nos seus outros aparelhos.
-          Não dá pra desfazer.
-        </p>
-      </div>
+      ${card('scope-local', '', 'Só neste aparelho',
+        'A cópia no Dropbox e nos outros aparelhos fica intacta.')}
+      ${card('scope-all', 'danger', 'Apagar em todo lugar',
+        'Apaga também no Dropbox e nos outros aparelhos. Não dá pra desfazer.')}
       <div class="actions" style="flex-direction:column;">
-        <button class="secondary" id="scope-local">Só neste aparelho</button>
-        <button class="danger"    id="scope-all">Apagar em todo lugar</button>
-        <button class="link"      id="scope-cancel" style="margin-top:4px;">Cancelar</button>
+        <button class="link" id="scope-cancel">Cancelar</button>
       </div>
     `, (body) => {
       body.querySelector('#scope-cancel').addEventListener('click', closeSheet);

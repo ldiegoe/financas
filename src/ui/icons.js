@@ -22,6 +22,7 @@ export const ICONS = {
   barcode:   '<path d="M3 5v14"/><path d="M7 5v14"/><path d="M11 5v9"/><path d="M15 5v14"/><path d="M19 5v9"/>',
   sort:      '<polyline points="7 4 7 20"/><polyline points="4 8 7 4 10 8"/><polyline points="17 20 17 4"/><polyline points="14 16 17 20 20 16"/>',
   copy:      '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  info:      '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="7.5" x2="12.01" y2="7.5"/>',
 };
 
 // Render do SVG completo (envelope + path). Nomes desconhecidos viram SVG vazio.

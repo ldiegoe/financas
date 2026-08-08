@@ -608,6 +608,64 @@ button.link { background: none; border: 0; color: var(--tint); font-size: 15px; 
 .checkbox-row input { width: auto; }
 .checkbox-row label { font-size: 15px; }
 
+/* Info popover — substitui os parágrafos de explicação fixos na tela.
+   O "i" fica colado no rótulo; o balão é montado no body (position: fixed)
+   pra não ser cortado pelo overflow do sheet nem pelo card. */
+.info-btn {
+  appearance: none; background: none; border: 0; padding: 0;
+  width: 30px; height: 30px; margin: -6px 0; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2); cursor: pointer; vertical-align: middle;
+}
+.info-btn:active { opacity: .45; }
+.info-btn[aria-expanded="true"] { color: var(--tint); }
+/* Rótulos que ganham um "i" precisam virar flex pra alinhar no baseline. */
+.card h2.with-info, label.field span.with-info, .subsection-h span.with-info {
+  display: flex; align-items: center; gap: 2px;
+}
+/* Em rótulos pequenos (13px) o ícone no tamanho padrão pesa demais. */
+.card h2 .info-btn svg,
+label.field span .info-btn svg,
+.subsection-h .info-btn svg { width: 15px; height: 15px; }
+
+.info-pop {
+  position: fixed; z-index: 990;
+  background: var(--text); color: var(--bg-elev);
+  padding: 10px 12px; border-radius: 10px;
+  font-size: 13px; line-height: 1.45; font-weight: 400;
+  letter-spacing: normal; text-transform: none;
+  box-shadow: 0 6px 24px rgba(0,0,0,.3);
+  animation: fadeIn .12s ease;
+}
+.info-pop::after {
+  content: ''; position: absolute;
+  left: var(--arrow-x); margin-left: -6px;
+  border: 6px solid transparent;
+  top: -12px; border-bottom-color: var(--text);
+}
+.info-pop.above::after {
+  top: auto; bottom: -12px;
+  border-bottom-color: transparent; border-top-color: var(--text);
+}
+
+/* Card de ação — a explicação da opção É o botão, em vez de caixa de texto
+   seguida de uma fileira de botões repetindo os mesmos rótulos. */
+.action-card {
+  appearance: none; width: 100%; text-align: left;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--separator); border-radius: 12px;
+  padding: 14px; margin-bottom: 10px;
+  font-family: inherit; cursor: pointer;
+}
+.action-card:active { opacity: .55; }
+.action-card .ac-body { flex: 1; min-width: 0; }
+.action-card .ac-title { display: block; font-size: 16px; font-weight: 600; }
+.action-card .ac-sub { display: block; color: var(--text-2); font-size: 13px; line-height: 1.4; margin-top: 3px; }
+.action-card .ac-chevron { color: var(--text-2); flex: 0 0 auto; }
+.action-card.danger { background: var(--bg); border-color: rgba(255,69,58,.45); }
+.action-card.danger .ac-title { color: var(--red); }
+
 /* Painel de saude financeira — indicadores com cor (verde bom, vermelho ruim) */
 .health-list { list-style: none; margin: 0; padding: 0; }
 .health-list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--separator); }

@@ -51,6 +51,7 @@ import {
 import { escapeHTML, escapeAttr } from './src/ui/escape.js';
 import { ICONS, icon } from './src/ui/icons.js';
 import { createToast, createSheet } from './src/ui/dom.js';
+import { infoBtn, mountInfoPopover } from './src/ui/info-popover.js';
 import { createSheetRenda } from './src/ui/sheets/renda.js';
 import { createSheetApagarTudo } from './src/ui/sheets/apagar-tudo.js';
 import { createSheetAlerts } from './src/ui/sheets/alerts.js';
@@ -514,12 +515,12 @@ const collapseHeader = (key, title) => `
 
 // Sub-secao colapsavel dentro de um card (usada pra organizar "Personalizar
 // dashboard"). Reaproveita o mesmo mecanismo de collapse (dashCollapsed).
-const subSection = (key, title, contentHtml) => {
+const subSection = (key, title, contentHtml, info) => {
   const col = isCollapsed(key);
   return `
     <div class="subsection">
       <div class="subsection-h" data-collapse="${key}">
-        <span>${escapeHTML(title)}</span>
+        <span class="${info ? 'with-info' : ''}">${escapeHTML(title)}${info ? infoBtn(info) : ''}</span>
         <svg class="chevron ${col?'collapsed':''}" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
           <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
@@ -1024,6 +1025,9 @@ const periodLabel = () => labelOfPeriod(period);
 const _sheet = createSheet(document.getElementById('modal-root'), { escapeHTML });
 const openSheet  = (title, contentFn, onMount) => _sheet.open(title, contentFn, onMount);
 const closeSheet = () => _sheet.close();
+
+// Handler global do "i" — delegado, montado uma vez (as views trocam innerHTML).
+mountInfoPopover(document);
 
 // --------------------------- Views -----------------------------------------
 const views = {};
@@ -2566,11 +2570,8 @@ views.config = (root) => {
         <button data-t="dark"   class="${tema==='dark'?'active':''}">Escuro</button>
         <button data-t="oled"   class="${tema==='oled'?'active':''}">OLED</button>
       </div>
-      <p style="color:var(--text-2);font-size:13px;margin:10px 2px 14px;">
-        "Sistema" segue o tema do dispositivo automaticamente.
-      </p>
 
-      <label class="field" style="margin-bottom:14px;">
+      <label class="field" style="margin-top:14px;margin-bottom:14px;">
         <span>Tamanho do texto</span>
         <div class="segmented" id="text-size">
           <button data-size="small"  class="${textSize==='small' ?'active':''}">Pequeno</button>
@@ -2582,10 +2583,8 @@ views.config = (root) => {
       <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
         <input id="f-cat-icons" type="checkbox" ${iconsEnabled()?'checked':''}/>
         <label for="f-cat-icons">Mostrar ícones das categorias</label>
+        ${infoBtn('Quando desligado, mostra só a cor da categoria — sem o emoji.')}
       </div>
-      <p style="color:var(--text-2);font-size:13px;margin:6px 2px 0;">
-        Quando desligado, mostra só a cor da categoria (sem o emoji).
-      </p>
     </div>
 
     <div class="card">
@@ -2594,11 +2593,8 @@ views.config = (root) => {
         <div class="checkbox-row">
           <input id="f-lock" type="checkbox" ${lockEnabled() ? 'checked' : ''}/>
           <label for="f-lock">Exigir biometria/PIN ao abrir o app</label>
+          ${infoBtn('Usa o desbloqueio nativo do aparelho (Face ID, Touch ID, digital ou PIN). Nenhum dado sai daqui.')}
         </div>
-        <p style="color:var(--text-2);font-size:13px;margin:8px 2px 14px;">
-          Usa o desbloqueio nativo do dispositivo (Face ID, Touch ID, digital ou PIN).
-          Nenhum dado sai daqui.
-        </p>
       ` : `
         <p style="color:var(--text-2);font-size:14px;margin:6px 2px 14px;">
           Este navegador não suporta biometria via WebAuthn.
@@ -2607,12 +2603,9 @@ views.config = (root) => {
 
       <div class="checkbox-row" style="border-top:1px solid var(--separator);padding-top:14px;margin-top:0;">
         <input id="f-hide" type="checkbox" ${state.config.valuesHidden?'checked':''}/>
-        <label for="f-hide">Ocultar valores em R$ por padrão</label>
+        <label for="f-hide">Ocultar valores em R$</label>
+        ${infoBtn('Mostra R$ •••• no lugar dos valores em toda a tela. Dá pra alternar rapidinho pelo ícone de olho na barra do topo.')}
       </div>
-      <p style="color:var(--text-2);font-size:13px;margin:6px 2px 0;">
-        Substitui valores por <code>R$ ••••</code> em toda a tela. Você pode alternar
-        rapidinho pelo ícone de olho na barra do topo.
-      </p>
     </div>
 
     <div class="card">
@@ -2621,19 +2614,12 @@ views.config = (root) => {
         <div class="checkbox-row">
           <input id="f-notif" type="checkbox" ${state.config.notifEnabled===true?'checked':''}/>
           <label for="f-notif">Notificações de vencimento</label>
+          ${infoBtn('Avisa quando há contas atrasadas ou perto de vencer. Como o app não tem servidor, a checagem roda quando você abre — é preciso abrir o app ao menos uma vez no dia.')}
         </div>
-        <p style="color:var(--text-2);font-size:13px;margin:6px 2px 12px;">
-          Recebe um aviso do sistema quando há contas atrasadas ou perto de vencer.
-          Como o app não tem servidor, a checagem roda quando você abre — ou seja,
-          é preciso abrir o app pelo menos uma vez no dia.
-        </p>
-        <label class="field" style="margin-bottom:6px;">
-          <span>Lembrar quantos dias antes do vencimento</span>
+        <label class="field" style="margin:12px 0 6px;">
+          <span class="with-info">Lembrar quantos dias antes${infoBtn('0 = só no dia do vencimento · 1 = hoje ou amanhã · 7 = próximos 7 dias.')}</span>
           <input id="f-notif-days" type="number" min="0" max="14" inputmode="numeric"
                  value="${state.config.notifDaysAhead ?? 1}" />
-          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-            0 = só no dia · 1 = hoje ou amanhã · 7 = próximos 7 dias.
-          </small>
         </label>
         <button class="secondary" id="notif-test" style="margin-top:6px;">Testar notificação</button>
       ` : `
@@ -2645,7 +2631,7 @@ views.config = (root) => {
     </div>
 
     <div class="card">
-      <h2>Sincronização</h2>
+      <h2 class="with-info">Sincronização${infoBtn('Cada perfil sincroniza num arquivo separado, dentro de uma pasta privada (/Apps/Financas/) na sua Dropbox.')}</h2>
       ${syncState.provider === 'dropbox' ? `
         <p style="color:var(--text-2);font-size:14px;margin:6px 2px 4px;">
           Conectado: <strong>${escapeHTML(syncState.accountEmail || '—')}</strong>
@@ -2656,19 +2642,15 @@ views.config = (root) => {
         <div class="checkbox-row">
           <input id="f-sync-auto" type="checkbox" ${syncState.autoSync !== false ? 'checked' : ''}/>
           <label for="f-sync-auto">Sincronização automática</label>
+          ${infoBtn('Mudanças sobem em até 5 s. O app baixa novidades ao abrir e ao voltar pro primeiro plano.')}
         </div>
-        <p style="color:var(--text-2);font-size:12px;margin:4px 2px 10px;">
-          Mudanças sobem em até 5 s. O app baixa novidades ao abrir e ao voltar pro foreground.
-        </p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
           <button class="primary"   id="sync-now">Sincronizar agora</button>
           <button class="secondary" id="sync-disconnect">Desconectar</button>
         </div>
       ` : `
         <p style="color:var(--text-2);font-size:14px;margin:6px 2px 12px;">
-          Conecte sua conta Dropbox para manter os dados em sincronia entre dispositivos.
-          Cada perfil sincroniza em um arquivo separado, dentro de uma pasta privada
-          (<code>/Apps/Financas/</code>) na sua Dropbox.
+          Mantenha os dados em sincronia entre seus aparelhos.
         </p>
         <button class="primary" id="sync-connect-dropbox">Conectar Dropbox</button>
       `}
@@ -2718,16 +2700,12 @@ views.config = (root) => {
             <label for="f-dash-tag-show">Exibir card de despesas por tag</label>
           </div>
           <label class="field" style="margin:10px 0 0;">
-            <span>Como contar despesas com várias tags</span>
+            <span class="with-info">Despesas com várias tags${infoBtn('"Dividir": despesa de R$ 100 com 2 tags vira R$ 50 em cada, e a soma bate com o total real. "Contar em cada": cada tag recebe o valor inteiro, então a soma pode passar do total.')}</span>
             <div class="segmented" id="dash-tag-split">
               <button data-mode="split" class="${tagSplitMode==='split'?'active':''}">Dividir entre tags</button>
               <button data-mode="each"  class="${tagSplitMode==='each' ?'active':''}">Contar em cada tag</button>
             </div>
           </label>
-          <p style="color:var(--text-2);font-size:13px;margin:8px 2px 0;">
-            "Dividir": despesa de R$100 com 2 tags vira R$50 em cada (soma bate com total real).
-            "Contar em cada": cada tag recebe o valor inteiro (a soma pode passar do total).
-          </p>
         </div>`;
 
       const cardsControls = `
@@ -2756,10 +2734,9 @@ views.config = (root) => {
           <label for="f-dash-invest-show">Investimentos por categoria</label>
         </div>
         <div style="border-top:1px solid var(--separator);padding-top:14px;margin-top:14px;">
-          <div style="font-weight:600;font-size:14px;margin:0 2px 2px;">Ordem dos cards</div>
-          <p style="color:var(--text-2);font-size:13px;margin:0 2px 10px;">
-            Arraste pelo ≡ pra mudar a ordem em que aparecem. O card de saldo fica sempre fixo no topo.
-          </p>
+          <div class="with-info" style="display:flex;align-items:center;gap:2px;font-weight:600;font-size:14px;margin:0 2px 8px;">
+            Ordem dos cards${infoBtn('Arraste pelo ≡ pra mudar a ordem em que aparecem no dashboard. O card de saldo fica sempre fixo no topo.')}
+          </div>
           <ul class="list" id="dash-order-list">
             ${dashCardOrder().map(k => `
               <li class="dash-order-row" data-key="${k}">
@@ -2772,24 +2749,17 @@ views.config = (root) => {
 
       const hm = healthMetas();
       const healthControls = `
-        <p style="color:var(--text-2);font-size:13px;margin:0 2px 14px;">
-          Definem a cor dos indicadores e a nota do índice. A linha de "atenção" é derivada da meta.
-        </p>
-        <label class="field"><span>Taxa de investimento — meta mínima (%)</span>
+        <label class="field"><span class="with-info">Taxa de investimento — meta mínima (%)${infoBtn('Quanto da renda você quer guardar ou investir. Atingir ou passar a meta = verde.')}</span>
           <input id="f-health-invest" type="number" min="1" max="100" inputmode="numeric" value="${hm.invest}" />
-          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Quanto da renda você quer guardar/investir. Atingir ou passar = verde.</small>
         </label>
-        <label class="field"><span>Gastos / renda — limite ideal (%)</span>
+        <label class="field"><span class="with-info">Gastos / renda — limite ideal (%)${infoBtn('Até quanto da renda os gastos podem consumir. Ficar abaixo do limite = verde.')}</span>
           <input id="f-health-gastos" type="number" min="1" max="100" inputmode="numeric" value="${hm.gastos}" />
-          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Até quanto da renda os gastos podem consumir. Ficar abaixo = verde.</small>
         </label>
-        <label class="field"><span>Custo fixo / renda — limite ideal (%)</span>
+        <label class="field"><span class="with-info">Custo fixo / renda — limite ideal (%)${infoBtn('Peso das despesas recorrentes (não-investimento) na renda.')}</span>
           <input id="f-health-fixo" type="number" min="1" max="100" inputmode="numeric" value="${hm.fixo}" />
-          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Peso das despesas recorrentes (não-investimento) na renda.</small>
         </label>
-        <label class="field" style="margin-bottom:6px;"><span>Reserva de emergência — meses ideais</span>
+        <label class="field" style="margin-bottom:6px;"><span class="with-info">Reserva de emergência — meses ideais${infoBtn('Quantos meses de custo fixo a reserva deveria cobrir. Só aparece se houver categoria de reserva.')}</span>
           <input id="f-health-reserva" type="number" min="1" max="60" inputmode="numeric" value="${hm.reserva}" />
-          <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Quantos meses de custo fixo a reserva deveria cobrir. Só aparece se houver categoria de reserva.</small>
         </label>
         <button class="link" id="health-reset" style="padding:4px 0 0;">Restaurar padrões (20% / 70% / 50% / 6 meses)</button>
       `;
@@ -2797,11 +2767,9 @@ views.config = (root) => {
       return `
         <div class="card">
           <h2>Dashboard</h2>
-          <p style="color:var(--text-2);font-size:14px;margin:6px 0 0;">
-            Personalize cards, ordem, metas e gráficos. Toque numa seção pra expandir.
-          </p>
           ${subSection('ajGrpCards',  'Cards do dashboard', cardsControls)}
-          ${subSection('ajGrpHealth', 'Metas da saúde financeira', healthControls)}
+          ${subSection('ajGrpHealth', 'Metas da saúde financeira', healthControls,
+            'Definem a cor dos indicadores e a nota do índice. A linha de "atenção" é derivada da meta.')}
           ${subSection('ajGrpCat',    'Gráfico de despesas por categoria', dashControls('Cat', 'cat'))}
           ${subSection('ajGrpInvest', 'Gráfico de investimentos por categoria', dashControls('Invest', 'invest'))}
           ${subSection('ajGrpTag',    'Despesas por tag', dashControls('Tag', 'tag', tagExtra))}
@@ -2813,11 +2781,7 @@ views.config = (root) => {
       const meta = profileStore.meta();
       return `
         <div class="card">
-          <h2>Perfis</h2>
-          <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-            Cada perfil tem dados, categorias e backups separados. Bloqueio
-            biométrico e preferências visuais são compartilhados entre perfis.
-          </p>
+          <h2 class="with-info">Perfis${infoBtn('Cada perfil tem dados, categorias e backups separados. Bloqueio biométrico e preferências visuais são compartilhados entre todos.')}</h2>
           <ul class="list" style="box-shadow:none;">
             ${meta.list.map(p => `
               <li data-pid="${p.id}">
@@ -2835,23 +2799,14 @@ views.config = (root) => {
     })()}
 
     <div class="card">
-      <h2>Importar OFX</h2>
-      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-        Traga a fatura do cartão ou o extrato da conta em arquivo OFX. O app lê
-        as transações, marca o que já existe e deixa você conferir antes de gerar
-        despesas e receitas.
-      </p>
+      <h2 class="with-info">Importar OFX${infoBtn('Traga a fatura do cartão ou o extrato da conta em arquivo OFX. O app lê as transações, marca o que já existe e deixa você conferir antes de gerar despesas e receitas.')}</h2>
       <button class="secondary" id="import-fatura" style="width:100%;">
         ${icon('download', 16)} Importar fatura ou extrato (OFX)
       </button>
     </div>
 
     <div class="card">
-      <h2>Dados e backup</h2>
-      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-        Os dados ficam apenas neste dispositivo. Faça backup regularmente
-        para não perder histórico.
-      </p>
+      <h2 class="with-info">Dados e backup${infoBtn('Os dados ficam apenas neste aparelho. Exporte de tempos em tempos para não perder histórico.')}</h2>
       <ul class="list" style="box-shadow:none;margin:0 0 14px;">
         <li><div class="grow">Receitas</div><div class="amount">${state.rendas.length}</div></li>
         <li><div class="grow">Despesas</div><div class="amount">${state.despesas.length}</div></li>
@@ -2876,7 +2831,7 @@ views.config = (root) => {
 
       <div style="margin-top:16px;border-top:1px solid var(--separator);padding-top:14px;">
         <label class="field" style="margin-bottom:0;">
-          <span>Lembrete de backup</span>
+          <span class="with-info">Lembrete de backup${infoBtn('O navegador não permite que o app salve arquivos sozinho no aparelho, mas o dashboard vai avisar quando estiver na hora de exportar.')}</span>
           <select id="backup-reminder">
             <option value="0"  ${(state.config.backupReminderDays|0)===0?'selected':''}>Desativado</option>
             <option value="7"  ${(state.config.backupReminderDays|0)===7?'selected':''}>A cada 7 dias</option>
@@ -2884,19 +2839,12 @@ views.config = (root) => {
             <option value="30" ${(state.config.backupReminderDays|0)===30?'selected':''}>A cada 30 dias</option>
           </select>
         </label>
-        <p style="color:var(--text-2);font-size:13px;margin:8px 0 0;">
-          O navegador não permite que o app salve arquivos sozinho no aparelho,
-          mas o dashboard vai avisar quando estiver na hora de exportar.
-        </p>
       </div>
     </div>
 
     <div class="card">
       <h2>Sobre e suporte</h2>
-      <p style="margin:4px 0 4px;font-weight:600;font-size:16px;">Finanças PWA</p>
-      <p style="color:var(--text-2);font-size:14px;margin:0 0 12px;">
-        Sem servidor — todos os dados ficam neste aparelho.
-      </p>
+      <p style="margin:4px 0 10px;font-weight:600;font-size:16px;">Finanças PWA</p>
       <ul class="list" style="box-shadow:none;">
         <li><div class="grow">Versão</div><div class="amount">${APP_VERSION}</div></li>
         <li><div class="grow">Lançamentos</div><div class="amount">${state.rendas.length + state.despesas.length}</div></li>
@@ -2909,22 +2857,16 @@ views.config = (root) => {
         })()}
       </ul>
       <button class="link" id="replay-onboarding" style="padding:8px 0 0;">Ver tutorial novamente</button>
-      <div style="margin-top:14px;border-top:1px solid var(--separator);padding-top:14px;">
-        <p style="color:var(--text-2);font-size:14px;margin:0 0 12px;">
-          Limpa o cache do app e recarrega — útil se algo travou ou se a versão
-          nova não chegou. Seus dados não são afetados.
-        </p>
+      <div style="margin-top:14px;border-top:1px solid var(--separator);padding-top:14px;display:flex;align-items:center;gap:4px;">
         <button class="secondary" id="force-refresh">Forçar atualização do app</button>
+        ${infoBtn('Limpa o cache do app e recarrega — útil se algo travou ou se a versão nova não chegou. Seus dados não são afetados.')}
       </div>
     </div>
 
     <div class="card">
-      <h2>Zona perigosa</h2>
-      <p style="color:var(--text-2);font-size:14px;margin:6px 0 12px;">
-        Apaga os dados deste dispositivo. ${syncState.provider === 'dropbox'
-          ? 'Com o Dropbox conectado, você escolhe se apaga também na nuvem e nos outros aparelhos.'
-          : ''} Faça backup antes.
-      </p>
+      <h2 class="with-info">Zona perigosa${infoBtn(`Apaga os dados deste aparelho. ${syncState.provider === 'dropbox'
+        ? 'Com o Dropbox conectado, você escolhe se apaga também na nuvem e nos outros aparelhos.'
+        : ''} Faça backup antes.`)}</h2>
       <button class="danger" id="reset">Apagar tudo</button>
     </div>
   `;
