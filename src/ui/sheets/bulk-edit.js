@@ -7,6 +7,7 @@
 // do modo de seleção, não ler o estado dele.
 
 import { escapeHTML, escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 
 export const createSheetBulkEdit = (deps) => {
   const {
@@ -20,9 +21,6 @@ export const createSheetBulkEdit = (deps) => {
     const despesasCats = getState().categorias.filter(c => !c.poupanca);
     const investCats   = getState().categorias.filter(c => c.poupanca);
     openSheet(`Editar ${n} ${n === 1 ? 'despesa' : 'despesas'}`, () => `
-      <p style="color:var(--text-2);font-size:13px;margin:0 2px 14px;">
-        A ação selecionada é aplicada a todas as ${n} ${n === 1 ? 'despesa' : 'despesas'} selecionadas.
-      </p>
       <label class="field"><span>Mudar categoria</span>
         <select id="bulk-cat">
           <option value="__none">— manter atual —</option>
@@ -37,9 +35,8 @@ export const createSheetBulkEdit = (deps) => {
           ` : ''}
         </select>
       </label>
-      <label class="field"><span>Adicionar tag</span>
+      <label class="field"><span class="with-info">Adicionar tag${infoBtn('Se a despesa já tiver essa tag, ela é ignorada — não duplica.')}</span>
         <input id="bulk-tag-add" type="text" placeholder="Ex.: viagem" autocapitalize="none" autocorrect="off" />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">Se já existir naquela despesa, ignora.</small>
       </label>
       <label class="field"><span>Remover tag</span>
         <input id="bulk-tag-rem" type="text" placeholder="Ex.: provisória" autocapitalize="none" autocorrect="off" />

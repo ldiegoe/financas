@@ -3,6 +3,7 @@
 
 import { bindCurrencyInput } from '../currency-input.js';
 import { escapeHTML, escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 import { formatCentsDisplay } from '../../helpers/format.js';
 import { parseAmount } from '../../helpers/parse.js';
 
@@ -25,7 +26,7 @@ export const createSheetObjetivo = (deps) => {
       <label class="field"><span>Prazo (opcional)</span>
         <input id="o-prazo" type="date" value="${escapeAttr(o.prazo || '')}" />
       </label>
-      <label class="field"><span>Categorias que contam pra esse objetivo</span>
+      <label class="field"><span class="with-info">Categorias que contam pra esse objetivo${infoBtn('Só aparecem aqui as categorias marcadas como "É investimento".')}</span>
         <div class="check-list" id="o-cats">
           ${investCats.length === 0
             ? '<p style="color:var(--text-2);font-size:13px;margin:0;">Crie uma categoria marcada como "É investimento" primeiro.</p>'
@@ -36,15 +37,9 @@ export const createSheetObjetivo = (deps) => {
                 <span>${escapeHTML(c.nome)}</span>
               </label>`).join('')}
         </div>
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          Só aparecem categorias marcadas como investimento.
-        </small>
       </label>
-      <label class="field"><span>Contar lançamentos a partir de (opcional)</span>
+      <label class="field"><span class="with-info">Contar lançamentos a partir de (opcional)${infoBtn('Vazio = conta tudo o que já existe nessas categorias.')}</span>
         <input id="o-desde" type="date" value="${escapeAttr(o.desde || '')}" />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          Vazio = conta tudo o que já existe nessas categorias.
-        </small>
       </label>
       <div class="actions">
         <button class="secondary" id="cancel">Cancelar</button>

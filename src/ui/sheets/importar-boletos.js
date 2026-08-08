@@ -9,6 +9,7 @@
 // do app.js. Especificador errado só falharia em runtime, ao escolher o PDF.
 
 import { escapeHTML, escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 import { fmtDate } from '../../helpers/format.js';
 import { todayISO } from '../../helpers/parse.js';
 import { cobreMes, parcelaDoMes } from '../../domain/despesa.js';
@@ -94,17 +95,13 @@ export const createSheetImportarBoletos = (deps) => {
                                  : `${fmtBRL(r.valorMin)} a ${fmtBRL(r.valorMax)}`}</div>
           </div>
 
-          <label class="field"><span>Vincular à despesa</span>
+          <label class="field"><span class="with-info">Vincular à despesa${infoBtn('Cada boleto entra no mês do seu vencimento. Reimportar o mesmo carnê não duplica nada.')}</span>
             <select id="f-despesa">
               ${opcoes.map(({ d, score }) => `
                 <option value="${escapeAttr(d.id)}" ${d.id === despesaId ? 'selected' : ''}>
                   ${escapeHTML(rotuloDespesa(d))}${score >= 200 ? ' ✓' : ''}
                 </option>`).join('')}
             </select>
-            <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-              Cada boleto entra no mês do seu vencimento. Reimportar o mesmo carnê
-              não duplica nada.
-            </small>
           </label>
 
           ${valorDiverge ? `
@@ -140,9 +137,8 @@ export const createSheetImportarBoletos = (deps) => {
       // etapa 'escolher'
       return `
         <p style="color:var(--text-2);font-size:14px;margin:0 2px 16px;line-height:1.5;">
-          Escolha o PDF do carnê. O app lê os códigos de barras, descobre o
-          vencimento e o valor de cada parcela e guarda só os códigos —
-          o arquivo não é armazenado.
+          Escolha o PDF do carnê — o arquivo não é armazenado.
+          ${infoBtn('O app lê os códigos de barras do PDF, descobre o vencimento e o valor de cada parcela, e guarda só os códigos.')}
         </p>
         ${erro ? `<p class="boleto-aviso">${escapeHTML(erro)}</p>` : ''}
         <input id="f-pdf" type="file" accept="application/pdf,.pdf" hidden />

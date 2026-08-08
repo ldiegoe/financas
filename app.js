@@ -2277,9 +2277,6 @@ views.categorias = (root) => {
   }
 
   root.innerHTML = `
-    <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
-      Toque numa categoria pra ver o histórico. Segure o ≡ para arrastar e reordenar; arraste a linha pra esquerda para editar/excluir.
-    </p>
     ${state.categorias.length === 0 ? `
       <div class="empty"><span class="ico">${icon('tag', 48)}</span>Nenhuma categoria.</div>
     ` : `
@@ -2485,9 +2482,6 @@ const renderObjetivosSub = (root, seg) => {
   const objetivos = state.objetivos || [];
   root.innerHTML = `
     ${seg}
-    <p style="color:var(--text-2);margin:4px 4px 14px;font-size:14px;">
-      Defina metas de investimento e linke as categorias que contam pra cada uma. Arraste a linha pra esquerda pra editar/excluir.
-    </p>
     ${objetivos.length === 0 ? `
       <div class="empty"><span class="ico">${icon('target', 48)}</span>Nenhum objetivo ainda.<br/><br/>
         <button class="primary" id="add-obj">Criar objetivo</button></div>
@@ -3307,6 +3301,13 @@ function bindSwipe(root) {
 
 // --------------------------- Router & init ---------------------------------
 const tabs = ['dashboard','carteira','despesas','investimentos','categorias','config'];
+// Gestos e regras que não se descobrem olhando a tela. Viram um "i" no título
+// da aba em vez de um parágrafo fixo no topo da lista, visto a cada visita.
+const TAB_INFO = {
+  categorias: 'Toque numa categoria pra ver o histórico. Segure o ≡ pra arrastar e reordenar. Arraste a linha pra esquerda pra editar ou excluir.',
+  investimentos: 'Arraste a linha pra esquerda pra editar ou excluir. Em Objetivos, você define metas e vincula as categorias que contam pra cada uma.',
+};
+
 const titles = {
   dashboard: 'Dashboard',
   carteira: 'Carteira',
@@ -3328,7 +3329,9 @@ const setTab = (name) => {
   document.querySelectorAll('.tabbar a').forEach(a => {
     a.classList.toggle('active', a.dataset.tab === name);
   });
-  document.getElementById('title').textContent = titles[name];
+  const titleEl = document.getElementById('title');
+  titleEl.innerHTML = escapeHTML(titles[name]) + (TAB_INFO[name] ? infoBtn(TAB_INFO[name]) : '');
+  titleEl.classList.toggle('with-info', !!TAB_INFO[name]);
   render();
 };
 

@@ -14,9 +14,6 @@ export const createSheetInsights = (deps) => {
     const insights = computeInsights();
     if (insights.length === 0) return false;
     openSheet('Insights', () => `
-      <p style="color:var(--text-2);font-size:14px;margin:0 2px 14px;">
-        Coisas que merecem sua atenção desde a última vez.
-      </p>
       <ul class="insights-list">
         ${insights.map(i => `
           <li class="insight-item ${i.severity}">

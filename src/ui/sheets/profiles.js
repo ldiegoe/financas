@@ -7,6 +7,7 @@
 // em seguida. Intencional.
 
 import { escapeHTML, escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 
 export const createSheetsProfiles = (deps) => {
   const {
@@ -16,12 +17,9 @@ export const createSheetsProfiles = (deps) => {
 
   const sheetNewProfile = () => {
     openSheet('Novo perfil', () => `
-      <label class="field"><span>Nome</span>
+      <label class="field"><span class="with-info">Nome${infoBtn('O perfil começa vazio, com as categorias padrão. Dá pra trocar de perfil a qualquer momento pelo nome no topo da tela.')}</span>
         <input id="f-pname" type="text" placeholder="Ex.: Empresa, Família, Viagem" required />
       </label>
-      <p style="color:var(--text-2);font-size:13px;margin:0;">
-        Vai começar vazio com as categorias padrão. Você troca entre perfis a qualquer momento pelo nome no topo.
-      </p>
       <div class="actions">
         <button class="secondary" id="cancel">Cancelar</button>
         <button class="primary"   id="create">Criar</button>

@@ -6,6 +6,7 @@
 
 import { escapeHTML } from '../escape.js';
 import { icon } from '../icons.js';
+import { infoBtn } from '../info-popover.js';
 import { fmtDate } from '../../helpers/format.js';
 import { todayISO } from '../../helpers/parse.js';
 import { partsOf } from '../../domain/period.js';
@@ -41,11 +42,8 @@ export const createSheetsDetalhes = (deps) => {
         ${escapeHTML(desp.descricao || 'Despesa parcelada')} — ${total}x de ${fmtBRL(desp.valor)}.
         Você está na parcela ${parcelaAtual} de ${total}.
       </p>
-      <label class="field"><span>Quantas parcelas você antecipou?</span>
+      <label class="field"><span class="with-info">Quantas parcelas você antecipou?${infoBtn(`Antecipar reduz o total de parcelas da despesa. Nesta dá pra antecipar até ${maxAntecipar}.`)}</span>
         <input id="f-antecipar" type="number" min="1" max="${maxAntecipar}" inputmode="numeric" value="1" />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          Isso reduz o total de parcelas. Pode antecipar até ${maxAntecipar}.
-        </small>
       </label>
       <div id="antecipar-preview" style="font-size:15px;color:var(--text);margin:2px 2px 4px;"></div>
       <div class="actions">
@@ -123,8 +121,8 @@ export const createSheetsDetalhes = (deps) => {
       </ul>
 
       ${d._virtual ? `
-        <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
-          Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original; "Marcar como paga/pendente" afeta apenas esta ocorrência.
+        <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;display:flex;align-items:center;gap:2px;">
+          Ocorrência projetada${infoBtn('Editar e Excluir afetam o lançamento original, em todos os meses. "Marcar como paga/pendente" afeta apenas esta ocorrência.')}
         </p>
       ` : ''}
 
@@ -247,8 +245,8 @@ export const createSheetsDetalhes = (deps) => {
       </ul>
 
       ${r._virtual ? `
-        <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;">
-          Esta é uma ocorrência projetada — Editar/Excluir afetam o lançamento original.
+        <p style="color:var(--text-2);font-size:13px;margin:14px 0 0;display:flex;align-items:center;gap:2px;">
+          Ocorrência projetada${infoBtn('Editar e Excluir afetam o lançamento original, em todos os meses.')}
         </p>
       ` : ''}
 

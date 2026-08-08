@@ -206,9 +206,6 @@ export const createSheetImportarOFX = (deps) => {
 
       // etapa 'escolher' — dois caminhos
       return `
-        <p style="color:var(--text-2);font-size:14px;margin:0 2px 14px;line-height:1.5;">
-          Importe um arquivo <strong>OFX</strong> do seu banco. Escolha o tipo:
-        </p>
         ${erro ? `<p class="boleto-aviso">${escapeHTML(erro)}</p>` : ''}
         <input id="f-ofx" type="file" accept=".ofx,application/x-ofx,application/octet-stream" hidden />
         <button class="imp-choice" id="pick-fatura" type="button">

@@ -4,6 +4,7 @@
 
 import { bindCurrencyInput } from '../currency-input.js';
 import { escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 import { formatCentsDisplay } from '../../helpers/format.js';
 import { parseAmount, todayISO } from '../../helpers/parse.js';
 
@@ -20,11 +21,8 @@ export const createSheetRenda = (deps) => {
       <label class="field"><span>Valor (R$)</span>
         <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(r.valor)}" required />
       </label>
-      <label class="field"><span>Data</span>
+      <label class="field"><span class="with-info">Data${infoBtn('A receita só conta a partir deste dia. Datas futuras ficam como "programado".')}</span>
         <input id="f-data" type="date" value="${escapeAttr(r.data)}" required />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          A receita só conta a partir deste dia. Datas futuras ficam como "programado".
-        </small>
       </label>
       <label class="field"><span>Descrição (opcional)</span>
         <input id="f-desc" type="text" value="${escapeAttr(r.descricao || '')}" />
@@ -34,12 +32,9 @@ export const createSheetRenda = (deps) => {
         <label for="f-rec">Receita mensal recorrente</label>
       </div>
       <label class="field" id="row-dur" ${r.recorrente ? '' : 'hidden'}>
-        <span>Por quantos meses?</span>
+        <span class="with-info">Por quantos meses?${infoBtn('Para rendas temporárias: seguro-desemprego, bolsa, contrato. Vazio = recebe todo mês, sem fim.')}</span>
         <input id="f-dur" type="number" min="1" max="600" inputmode="numeric"
                placeholder="Deixe vazio para sem fim" value="${escapeAttr(r.duracaoMeses || '')}" />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          Para rendas temporárias (seguro-desemprego, bolsa, contrato). Vazio = recebe todo mês sem fim.
-        </small>
       </label>
       <div class="actions">
         <button class="secondary" id="cancel">Cancelar</button>

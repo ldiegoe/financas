@@ -8,6 +8,7 @@
 
 import { bindCurrencyInput } from '../currency-input.js';
 import { escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 import { formatCentsDisplay } from '../../helpers/format.js';
 import { parseAmount } from '../../helpers/parse.js';
 
@@ -46,14 +47,13 @@ export const createSheetCategoria = (deps) => {
       <label class="field"><span>Ícone (opcional)</span>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <input id="f-icone" type="text" maxlength="4" style="width:64px;text-align:center;font-size:20px;" placeholder="—" value="${escapeAttr(c.icone || '')}" />
-          <span style="color:var(--text-2);font-size:12px;">digite um emoji ou escolha abaixo</span>
         </div>
         <div class="emoji-picker" id="f-emojis">
           <button type="button" class="emoji-pick ${!c.icone?'active':''}" data-emoji="">—</button>
           ${EMOJI_CHOICES.map(e => `<button type="button" class="emoji-pick ${c.icone===e?'active':''}" data-emoji="${e}">${e}</button>`).join('')}
         </div>
       </label>
-      <label class="field"><span>Cor</span>
+      <label class="field"><span class="with-info">Cor${infoBtn('O ponto indica cores já usadas em outras categorias.')}</span>
         <div class="color-picker" id="f-cores">
           ${palette.map(p => {
             const cls = ['swatch-pick'];
@@ -63,9 +63,6 @@ export const createSheetCategoria = (deps) => {
             return `<div class="${cls.join(' ')}" data-cor="${p}" style="background:${p}"${title}></div>`;
           }).join('')}
         </div>
-        <small style="display:block;color:var(--text-2);margin-top:8px;font-size:12px;">
-          O ponto indica cores já usadas em outras categorias.
-        </small>
       </label>
       <label class="field"><span>Meta mensal (R$, opcional)</span>
         <input id="f-meta" type="text" inputmode="numeric" placeholder="Deixe vazio para sem meta"
@@ -75,17 +72,13 @@ export const createSheetCategoria = (deps) => {
       <div class="checkbox-row">
         <input id="f-poupanca" type="checkbox" ${c.poupanca?'checked':''}/>
         <label for="f-poupanca">É investimento</label>
+        ${infoBtn('Despesas nessa categoria contam como "guardado", não como gasto, no resumo do dashboard.')}
       </div>
-      <small style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 0;">
-        Despesas nessa categoria contam como "guardado", não como gasto, no resumo do dashboard.
-      </small>
       <div class="checkbox-row" id="row-reserva" ${c.poupanca ? '' : 'hidden'}>
         <input id="f-reserva" type="checkbox" ${c.reserva?'checked':''}/>
         <label for="f-reserva">É reserva de emergência</label>
+        ${infoBtn('Conta na "Reserva de emergência" da saúde financeira — quantos meses de custo fixo estão cobertos.')}
       </div>
-      <small id="reserva-hint" style="display:block;color:var(--text-2);font-size:12px;margin:-4px 2px 0;" ${c.poupanca ? '' : 'hidden'}>
-        Conta na "Reserva de emergência" da saúde financeira (meses de custo fixo cobertos).
-      </small>
       <div class="actions">
         <button class="secondary" id="cancel">Cancelar</button>
         <button class="primary"   id="save">${isEdit ? 'Salvar' : 'Adicionar'}</button>
@@ -125,12 +118,10 @@ export const createSheetCategoria = (deps) => {
       const poupEl = body.querySelector('#f-poupanca');
       const metaHint = body.querySelector('#meta-hint');
       const reservaRow = body.querySelector('#row-reserva');
-      const reservaHint = body.querySelector('#reserva-hint');
       const reservaEl = body.querySelector('#f-reserva');
       const updatePoup = () => {
         const on = poupEl.checked;
         reservaRow.hidden = !on;
-        reservaHint.hidden = !on;
         if (!on) reservaEl.checked = false;
         metaHint.textContent = on
           ? 'Meta de quanto guardar por mês — atingir é bom.'

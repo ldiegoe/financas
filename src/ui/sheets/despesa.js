@@ -12,6 +12,7 @@
 
 import { bindCurrencyInput } from '../currency-input.js';
 import { escapeHTML, escapeAttr } from '../escape.js';
+import { infoBtn } from '../info-popover.js';
 import { formatCentsDisplay, yyyyMmFromDate } from '../../helpers/format.js';
 import { parseAmount, parseTags, todayISO, isoToDate } from '../../helpers/parse.js';
 
@@ -53,17 +54,11 @@ export const createSheetDespesa = (deps) => {
       <label class="field"><span>Valor (R$)${tipoInicial==='parcelada'?' — valor de cada parcela':''}</span>
         <input id="f-valor" type="text" inputmode="numeric" placeholder="0,00" value="${formatCentsDisplay(d.valor)}" required />
       </label>
-      <label class="field"><span>Data de pagamento${tipoInicial==='parcelada'?' (1ª parcela)':(tipoInicial==='mensal'?' (1º mês)':'')}</span>
+      <label class="field"><span class="with-info">Data de pagamento${tipoInicial==='parcelada'?' (1ª parcela)':(tipoInicial==='mensal'?' (1º mês)':'')}${infoBtn('Quando o pagamento será feito: vencimento da fatura, dia do débito, data da compra à vista.')}</span>
         <input id="f-data" type="date" value="${escapeAttr(d.data)}" required />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          Quando o pagamento será feito (vencimento da fatura, dia do débito, data da compra à vista).
-        </small>
       </label>
-      <label class="field"><span>Data de cadastro</span>
+      <label class="field"><span class="with-info">Data de cadastro${infoBtn('Quando a despesa aconteceu ou foi registrada. Padrão: hoje. Ajuste se estiver cadastrando algo de outro dia.')}</span>
         <input id="f-criado" type="date" value="${escapeAttr(d.criadoEm || todayISO())}" required />
-        <small style="display:block;color:var(--text-2);font-size:12px;margin-top:6px;">
-          Quando a despesa aconteceu/foi registrada. Padrão: hoje. Ajuste se estiver cadastrando algo de outro dia.
-        </small>
       </label>
       <label class="field"><span>Categoria${investimento ? ' (de investimento)' : ''}</span>
         <select id="f-cat">
