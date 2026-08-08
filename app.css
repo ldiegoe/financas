@@ -12,6 +12,36 @@
   --shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
   --safe-top: env(safe-area-inset-top);
   --safe-bottom: env(safe-area-inset-bottom);
+
+  /* ---------- Escalas ----------
+     O que faz uma interface parecer "limpa" é ritmo consistente, não efeito
+     visual. Antes destas escalas o CSS usava 13 tamanhos de fonte, 13 raios e
+     praticamente todo inteiro de 2 a 18px de espaçamento — passos vizinhos
+     indistinguíveis a olho, mas cujo desalinhamento acumulado aparece.
+     Regra: só use valor fora da escala com um bom motivo (ex.: alinhar com um
+     ícone de tamanho fixo). */
+
+  /* Espaçamento — base 4. Padding, margin e gap saem daqui. */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* Tipografia — 6 passos com separação suficiente para o olho distinguir. */
+  --fs-xs:  11px;   /* micro: tags, badges */
+  --fs-sm:  13px;   /* meta, texto de apoio */
+  --fs-md:  15px;   /* corpo */
+  --fs-lg:  17px;   /* ênfase, título de item, botões */
+  --fs-xl:  20px;   /* título de seção */
+  --fs-2xl: 28px;   /* número herói (saldo) */
+
+  /* Raio */
+  --r-sm:    8px;
+  --r-md:   12px;
+  --r-lg:   16px;
+  --r-full: 999px;
 }
 
 /* Tema escuro forçado pelo usuário (Ajustes → Aparência → Escuro) */
@@ -214,10 +244,10 @@ main#view {
 
 .card {
   background: var(--bg-elev);
-  border-radius: 14px;
-  padding: 16px;
+  border-radius: var(--r-lg);
+  padding: var(--sp-4);
   box-shadow: var(--shadow);
-  margin-bottom: 16px;
+  margin-bottom: var(--sp-3);
   min-width: 0;
   animation: cardFadeIn .15s ease both;
 }
@@ -320,20 +350,24 @@ main#view {
 .summary-row-main .summary-label { color: var(--text); font-weight: 600; font-size: 15px; }
 .summary-row-main .summary-value { font-size: 24px; font-weight: 700; letter-spacing: -.4px; }
 
-.list { list-style: none; margin: 0; padding: 0; background: var(--bg-elev); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
-.list > li { display: flex; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--separator); gap: 12px; }
+.list { list-style: none; margin: 0; padding: 0; background: var(--bg-elev); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+/* Padding lateral igual ao do .card: o conteúdo da lista alinha na mesma
+   coluna do conteúdo dos cards, o que sustenta o ritmo vertical da tela. */
+.list > li { display: flex; align-items: center; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--separator); gap: var(--sp-3); }
 .list > li:last-child { border-bottom: 0; }
 .list .swatch { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
 .list .grow { flex: 1; min-width: 0; }
 .list .grow .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list .grow .s { color: var(--text-2); font-size: 13px; }
+.list .grow .s { color: var(--text-2); font-size: var(--fs-sm); }
 .list .amount { font-variant-numeric: tabular-nums; font-weight: 600; }
 .list .amount.neg { color: var(--red); }
 .list .amount.pos { color: var(--green); }
 
+/* O respiro ACIMA do título é o que separa um bloco do anterior — por isso é
+   bem maior que o de baixo, que apenas cola o título no seu conteúdo. */
 .section-title {
-  margin: 18px 4px 8px;
-  font-size: 13px; text-transform: uppercase; letter-spacing: .5px;
+  margin: var(--sp-5) var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .5px;
   color: var(--text-2);
   font-weight: 600;
 }
@@ -549,8 +583,8 @@ main#view {
 .sheet {
   background: var(--bg-elev);
   width: 100%; max-width: 520px;
-  border-radius: 18px 18px 0 0;
-  padding: 16px 18px calc(20px + var(--safe-bottom));
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding: var(--sp-4) var(--sp-4) calc(var(--sp-5) + var(--safe-bottom));
   max-height: 85vh; overflow-y: auto;
   animation: slideUp .25s ease;
 }
@@ -595,9 +629,10 @@ select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w
 
 button.primary, button.secondary, button.danger {
   appearance: none; border: 0;
-  padding: 12px 16px; border-radius: 10px;
-  font-size: 16px; font-weight: 600;
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md);
+  font-size: var(--fs-lg); font-weight: 600;
   cursor: pointer;
+  min-height: 44px;   /* alvo de toque mínimo confortável */
 }
 button.primary { background: var(--tint); color: white; }
 button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--separator); }
