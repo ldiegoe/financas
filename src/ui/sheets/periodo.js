@@ -35,6 +35,10 @@ export const createSheetPeriodo = (deps) => {
     const atual = getPeriod();
     let rascunho = { type: atual.type, year: atual.year, value: atual.value };
 
+    const gradeHTML = () => valoresDoTipo(rascunho.type).map(o => `
+      <button class="pk-op ${rascunho.value === o.v ? 'active' : ''}" data-valor="${o.v}">${o.rotulo}</button>
+    `).join('');
+
     const conteudo = () => `
       <div class="segmented" id="pk-tipo">
         ${TIPOS.map(t => `
@@ -44,17 +48,11 @@ export const createSheetPeriodo = (deps) => {
 
       <div class="pk-ano">
         <button class="pk-ano-btn" id="pk-ano-prev" type="button" aria-label="Ano anterior">‹</button>
-        <span class="pk-ano-valor">${rascunho.year}</span>
+        <span class="pk-ano-valor" id="pk-ano-valor">${rascunho.year}</span>
         <button class="pk-ano-btn" id="pk-ano-next" type="button" aria-label="Próximo ano">›</button>
       </div>
 
-      ${rascunho.type === 'year' ? '' : `
-        <div class="pk-grade" id="pk-valor">
-          ${valoresDoTipo(rascunho.type).map(o => `
-            <button class="pk-op ${rascunho.value === o.v ? 'active' : ''}" data-valor="${o.v}">${o.rotulo}</button>
-          `).join('')}
-        </div>
-      `}
+      <div class="pk-grade" id="pk-valor" ${rascunho.type === 'year' ? 'hidden' : ''}>${gradeHTML()}</div>
 
       <div class="actions">
         <button class="secondary" id="pk-hoje">Hoje</button>
@@ -62,40 +60,56 @@ export const createSheetPeriodo = (deps) => {
       </div>
     `;
 
-    const abrir = () => openSheet('Escolher período', conteudo, (body) => {
-      // Trocar de tipo reposiciona o valor: um índice de mês (1..12) não faz
-      // sentido como trimestre. Mantém o que couber, senão volta pro primeiro.
-      body.querySelectorAll('#pk-tipo button').forEach(b => {
-        b.addEventListener('click', () => {
-          rascunho.type = b.dataset.tipo;
+    // O sheet é montado UMA vez. Trocar tipo/ano atualiza o DOM no lugar — se
+    // reabrisse via openSheet a cada toque, a animação de entrada tocaria de
+    // novo e daria uma piscada a cada interação. (Regra da skill
+    // nova-tela-sheet: abrir() só pra troca de etapa; update fino é DOM direto.)
+    openSheet('Escolher período', conteudo, (body) => {
+      const grade = body.querySelector('#pk-valor');
+      const anoEl = body.querySelector('#pk-ano-valor');
+
+      const pintarTipo = () => body.querySelectorAll('#pk-tipo button')
+        .forEach(b => b.classList.toggle('active', b.dataset.tipo === rascunho.type));
+      const pintarGrade = () => {
+        grade.hidden = rascunho.type === 'year';
+        grade.innerHTML = gradeHTML();
+      };
+
+      // Delegação no corpo do sheet: os handlers são ligados uma vez só e
+      // sobrevivem à troca do innerHTML da grade.
+      body.addEventListener('click', (e) => {
+        const tipoBtn = e.target.closest('#pk-tipo button');
+        if (tipoBtn) {
+          rascunho.type = tipoBtn.dataset.tipo;
+          // Reposiciona o valor: um índice de mês (1..12) não faz sentido como
+          // trimestre. Mantém o que couber, senão volta pro primeiro.
           const max = rascunho.type === 'month' ? 12 : (rascunho.type === 'quarter' ? 4 : 2);
           if (!rascunho.value || rascunho.value > max) rascunho.value = 1;
-          abrir();
-        });
-      });
+          pintarTipo();
+          pintarGrade();
+          return;
+        }
 
-      body.querySelector('#pk-ano-prev').addEventListener('click', () => { rascunho.year--; abrir(); });
-      body.querySelector('#pk-ano-next').addEventListener('click', () => { rascunho.year++; abrir(); });
+        if (e.target.closest('#pk-ano-prev')) { rascunho.year--; anoEl.textContent = rascunho.year; return; }
+        if (e.target.closest('#pk-ano-next')) { rascunho.year++; anoEl.textContent = rascunho.year; return; }
 
-      // Tocar no valor já confirma — é o caminho mais comum e evita o toque
-      // extra no "Ver período".
-      body.querySelectorAll('#pk-valor .pk-op').forEach(b => {
-        b.addEventListener('click', () => {
-          rascunho.value = parseInt(b.dataset.valor, 10);
+        // Tocar no valor já confirma — é o caminho mais comum e evita o toque
+        // extra no "Ver período".
+        const op = e.target.closest('.pk-op');
+        if (op) { rascunho.value = parseInt(op.dataset.valor, 10); aplicar(); return; }
+
+        if (e.target.closest('#pk-hoje')) {
+          const hoje = new Date();
+          rascunho.year = hoje.getFullYear();
+          if (rascunho.type === 'month')    rascunho.value = hoje.getMonth() + 1;
+          if (rascunho.type === 'quarter')  rascunho.value = Math.floor(hoje.getMonth() / 3) + 1;
+          if (rascunho.type === 'semester') rascunho.value = hoje.getMonth() <= 5 ? 1 : 2;
           aplicar();
-        });
-      });
+          return;
+        }
 
-      body.querySelector('#pk-hoje').addEventListener('click', () => {
-        const hoje = new Date();
-        rascunho.year = hoje.getFullYear();
-        if (rascunho.type === 'month')    rascunho.value = hoje.getMonth() + 1;
-        if (rascunho.type === 'quarter')  rascunho.value = Math.floor(hoje.getMonth() / 3) + 1;
-        if (rascunho.type === 'semester') rascunho.value = hoje.getMonth() <= 5 ? 1 : 2;
-        aplicar();
+        if (e.target.closest('#pk-ok')) aplicar();
       });
-
-      body.querySelector('#pk-ok').addEventListener('click', aplicar);
     });
 
     const aplicar = () => {
@@ -103,7 +117,5 @@ export const createSheetPeriodo = (deps) => {
       closeSheet();
       render();
     };
-
-    abrir();
   };
 };
