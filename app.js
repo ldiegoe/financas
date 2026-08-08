@@ -2074,7 +2074,7 @@ views.despesas = (root) => {
             ${icon('filter', 14)}
             <span>Filtros${filterCount > 0 ? ` · ${filterCount}` : ''}</span>
           </button>
-          ${hasFilter ? `<button class="link" id="clear-filters-inline" style="padding:0;">Limpar tudo</button>` : ''}
+          ${hasFilter ? `<button class="link" id="clear-filters-inline">Limpar tudo</button>` : ''}
         </div>
         ${pills.length > 0 ? `
           <div class="active-pills">
@@ -2089,7 +2089,7 @@ views.despesas = (root) => {
       `;
     })()}
 
-    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+    <div class="section-title with-action">
       ${(selection.mode || despesasPeriod.length === 0)
         ? `<span>Lançamentos</span>`
         : `<button class="sort-toggle" id="sort-toggle" type="button" aria-label="Alterar ordenação">
@@ -2099,13 +2099,13 @@ views.despesas = (root) => {
         ? (() => {
             const realIds = despesasPeriod.filter(d => !d._virtual).map(d => d.id);
             const allSel = realIds.length > 0 && realIds.every(id => selection.ids.has(id));
-            return `<button class="link" id="select-all" style="padding:4px 0;">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`;
+            return `<button class="link" id="select-all">${allSel ? 'Desmarcar todas' : 'Selecionar todas'}</button>`;
           })()
-        : `<button class="link" id="enter-select" style="padding:4px 0;">Selecionar</button>`)}
+        : `<button class="link" id="enter-select">Selecionar</button>`)}
     </div>
     ${despesasPeriod.length === 0 ? `
-      <div class="empty"><span class="ico">${icon('card', 48)}</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}<br/><br/>
-        <button class="primary" id="add-desp">Adicionar despesa</button></div>
+      <div class="empty"><span class="ico">${icon('card', 48)}</span>${hasFilter ? 'Nenhuma despesa para os filtros aplicados.' : 'Nenhuma despesa no período.'}
+        <div class="empty-action"><button class="primary" id="add-desp">Adicionar despesa</button></div></div>
     ` : `
       <ul class="list ${selection.mode ? 'selecting' : ''}">
         ${sortedDespesas.map(d => {
@@ -2155,8 +2155,8 @@ views.despesas = (root) => {
       <div class="select-bar">
         <span class="count">${selection.ids.size} selecionada${selection.ids.size === 1 ? '' : 's'}</span>
         <button class="link" id="cancel-select">Cancelar</button>
-        <button class="primary" id="bulk-edit" style="padding:8px 14px;" ${selection.ids.size === 0 ? 'disabled' : ''}>Editar</button>
-        <button class="danger" id="delete-select" style="padding:8px 14px;" ${selection.ids.size === 0 ? 'disabled' : ''}>Apagar</button>
+        <button class="primary" id="bulk-edit" ${selection.ids.size === 0 ? 'disabled' : ''}>Editar</button>
+        <button class="danger" id="delete-select" ${selection.ids.size === 0 ? 'disabled' : ''}>Apagar</button>
       </div>
     ` : `<button class="fab" id="fab-desp" aria-label="Adicionar despesa">+</button>`}
   `;
