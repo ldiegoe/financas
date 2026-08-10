@@ -15,9 +15,25 @@
   <script>
     // Aplica o tema escolhido o mais cedo possível, antes do CSS pintar a tela,
     // para nao haver flash de cor errada quando o usuario forca claro/escuro.
+    //
+    // A fonte de verdade do tema é 'financas:device-config' (DEVICE_CONFIG_KEY
+    // no app.js): objeto PLANO, device-wide, onde `tema` fica ao lado de
+    // textSize. As duas leituras seguintes são fallback pra quem escolheu o
+    // tema antes dessa chave existir — o state do perfil ativo e, por último,
+    // a chave legada. Ler só a legada era o bug: depois da migração pra
+    // perfis, ela ficou congelada e o OLED voltava pro escuro do sistema.
+    //
+    // Isto aqui é só anti-flash: o initApp() chama applyTheme() a partir do
+    // state, que é quem manda de verdade. tests/theme-boot.test.js prende as
+    // chaves deste script às constantes do app.js.
     try {
-      var raw = localStorage.getItem('financas:v1');
-      var tema = raw ? (JSON.parse(raw).config || {}).tema : null;
+      var read = function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+      var tema = (read('financas:device-config') || {}).tema;
+      if (!tema) {
+        var meta = read('financas:profiles');
+        var cur  = (meta && meta.current) ? read('financas:profile:' + meta.current) : null;
+        tema = ((cur || {}).config || {}).tema || ((read('financas:v1') || {}).config || {}).tema;
+      }
       if (tema === 'light' || tema === 'dark' || tema === 'oled') {
         document.documentElement.setAttribute('data-theme', tema);
       }

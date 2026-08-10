@@ -3532,6 +3532,12 @@ const showOnboarding = () => {
 
 // Init
 const initApp = () => {
+  // O tema é reaplicado a partir do state (que já tem o overlay device-wide),
+  // não só pelo script inline do index.html: aquele existe só pra evitar o
+  // flash de cor errada e lê o localStorage cru. Sem esta linha, qualquer
+  // divergência entre os dois deixava o tema escolhido sem efeito até o
+  // usuário tocar no botão em Ajustes de novo — foi o que aconteceu com o OLED.
+  applyTheme(state.config.tema);
   applyTextSize(state.config.textSize);
   applyValuesVisibility();
   applyProfileChip();
