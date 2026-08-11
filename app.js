@@ -38,6 +38,8 @@ import {
   computeAlerts as computeAlertsPure,
 } from './src/domain/alerts.js';
 import { createProfileStore } from './src/storage/profile-store.js';
+import { viewRenderPlan } from './src/ui/view-transition.js';
+import { createCountUp } from './src/ui/count-up.js';
 import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
 import { createSyncStateStore } from './src/storage/sync-state.js';
 import {
@@ -1121,6 +1123,7 @@ const mountDistribuicaoChart = (canvas, data, prefix) => {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
+        animation: chartAnim(),
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -1152,6 +1155,7 @@ const mountDistribuicaoChart = (canvas, data, prefix) => {
     const donutOptions = {
       responsive: true,
       maintainAspectRatio: false,
+      animation: chartAnim(),
       cutout: dashType === 'pie' ? 0 : '62%',
       plugins: {
         legend: { display: false },
@@ -1415,7 +1419,11 @@ views.dashboard = (root) => {
       <div class="summary-divider"></div>
       <div class="summary-row summary-row-main">
         <span class="summary-label">Saldo</span>
-        <span class="summary-value ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</span>
+        <!-- data-cents guarda o saldo em centavos pro contador saber de onde
+             e até onde ir; o texto já vem formatado pra tela nunca depender
+             do JS de animação ter rodado. -->
+        <span id="saldo-valor" data-cents="${saldo}"
+              class="summary-value ${saldo >= 0 ? 'positive' : 'negative'}">${fmtBRL(saldo)}</span>
       </div>
       <div class="summary-sub end">
         ${rendaProgramada > 0 ? `<span>A receber <strong>${fmtBRL(rendaProgramada)}</strong></span>` : ''}
@@ -1759,6 +1767,7 @@ views.dashboard = (root) => {
 const chartOpts = () => ({
   responsive: true,
   maintainAspectRatio: false,
+  animation: chartAnim(),
   plugins: {
     legend: { position: 'bottom', labels: { color: getCSS('--text'), font: { size: 11 } } },
     tooltip: {
@@ -1778,6 +1787,62 @@ const chartOpts = () => ({
 });
 
 const getCSS = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// Duração de um token de movimento, em ms, lida do CSS. O JS não repete o
+// número: se `--dur-base` mudar no :root, o Chart.js e a contagem do saldo
+// acompanham sozinhos. Aceita "200ms" e "0.2s".
+const durMs = (token) => {
+  const v = getCSS(token);
+  const n = parseFloat(v);
+  if (!Number.isFinite(n)) return 0;
+  return v.endsWith('ms') ? n : n * 1000;
+};
+
+// O usuário pediu menos movimento no sistema: tudo abaixo respeita.
+const reduzMovimento = () =>
+  window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const countUp = createCountUp({
+  raf: (fn) => requestAnimationFrame(fn),
+  now: () => performance.now(),
+});
+
+// True enquanto pinta uma ENTRADA de aba. Gráfico e contador consultam pra
+// saber se animam: repintura por mutação de dado (marcar paga, excluir) não
+// pode replayar nada. Setado pelo render, logo antes de chamar a view.
+let entrandoNaAba = false;
+
+// Último saldo pintado, em centavos. `null` = não viemos do dashboard, então
+// não há de onde contar.
+let ultimoSaldo = null;
+
+// Conta o saldo do valor anterior até o novo — só quando ele muda com o
+// usuário olhando. Entrar na aba mostra o número pronto: contar toda vez que
+// a tela abre atrasa a leitura do dado que a pessoa veio ver.
+const animarSaldo = (root) => {
+  const el = root.querySelector('#saldo-valor');
+  if (!el) { ultimoSaldo = null; return; }   // saímos do dashboard
+  const atual = Number(el.dataset.cents);
+  const de = ultimoSaldo;
+  ultimoSaldo = Number.isFinite(atual) ? atual : null;
+  // Com "Ocultar valores" ligado o fmtBRL devolve a máscara: contar seria
+  // reescrever "R$ ••••" vinte vezes sem nada mudar na tela.
+  if (state.config.valuesHidden) return;
+  if (entrandoNaAba || de === null || de === atual || !Number.isFinite(atual)) return;
+  countUp(el, {
+    de, para: atual,
+    duracao: reduzMovimento() ? 0 : durMs('--dur-slow'),
+    formatar: fmtBRL,
+  });
+};
+
+// Opções de animação do Chart.js na mesma regra do resto: desenha ao entrar na
+// aba, instantâneo ao repintar. Sem isto vale o default da biblioteca (1s), e
+// cada "marcar como paga" replayava um segundo de gráfico.
+const chartAnim = () =>
+  (entrandoNaAba && !reduzMovimento())
+    ? { duration: durMs('--dur-slow'), easing: 'easeOutQuart' }
+    : false;
 
 // ----- Carteira -----
 views.carteira = (root) => {
@@ -3371,22 +3436,20 @@ const setTab = (name) => {
 // A flag .no-anim continua "grudenta" de propósito: alternar entre `none` e a
 // animação no mesmo frame causa pisca-pisca, então ela só sai quando queremos
 // animar de verdade.
+// A decisão de classes/scroll vive em src/ui/view-transition.js, testada lá.
+// Aqui só se aplica o plano — inclusive a REMOÇÃO da classe de direção, que
+// precisa acontecer em todo render: os filhos do #view são recriados a cada
+// innerHTML e uma classe grudada faz a regra de entrada casar de novo,
+// deslizando a tela inteira a cada toque.
 const render = (opts = {}) => {
   const root = document.getElementById('view');
-  if (opts.enter) {
-    root.scrollTop = 0;
-    root.classList.remove('no-anim');
-    // Os filhos são recriados pelo innerHTML logo abaixo, então a animação
-    // reinicia sozinha — não precisa forçar reflow pra "rearmar" a classe.
-    root.classList.remove('view-in-right', 'view-in-left');
-    if (opts.dir) root.classList.add(opts.dir > 0 ? 'view-in-right' : 'view-in-left');
-  } else {
-    // Mutação de dado mantém o scrollTop = 0 de antes: esta leva mexe em
-    // ANIMAÇÃO, não em comportamento de rolagem.
-    if (!opts.preserveScroll) root.scrollTop = 0;
-    root.classList.add('no-anim');
-  }
+  const plano = viewRenderPlan(opts);
+  if (plano.resetScroll) root.scrollTop = 0;
+  root.classList.remove(...plano.remove);
+  if (plano.add.length) root.classList.add(...plano.add);
+  entrandoNaAba = plano.anima;
   views[currentTab](root);
+  animarSaldo(root);
   applyAlertBadge();
 };
 

@@ -26,8 +26,8 @@ const cssComum = css.replace(RE_REDUCE, '');
 
 // Declarações de transition/animation, sem as definições de token do :root.
 const declaracoes = () =>
-  [...cssComum.matchAll(/^\s*(transition|animation)(-duration)?:\s*([^;]+);/gm)]
-    .map((m) => ({ prop: m[1], valor: m[3].replace(/\s+/g, ' ').trim() }))
+  [...cssComum.matchAll(/^\s*(transition|animation)(-duration|-delay)?:\s*([^;]+);/gm)]
+    .map((m) => ({ prop: m[1] + (m[2] || ''), valor: m[3].replace(/\s+/g, ' ').trim() }))
     .filter((d) => !raiz.includes(d.valor));
 
 describe('app.css — escala de movimento', () => {

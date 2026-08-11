@@ -78,6 +78,11 @@
   /* Passa um pouco do alvo e volta. Só para o que "chega" na tela — sheet e
      FAB. Usado em muita coisa vira enjoativo. */
   --ease-spring: cubic-bezier(.34, 1.32, .64, 1);
+  /* Passo do escalonamento de entrada dos cards. Curto de propósito: o que dá
+     a sensação de "um depois do outro" é a defasagem existir, não ela ser
+     longa. Com teto de 4 passos, o último card espera 160ms — acima disso a
+     tela parece travada em vez de fluida. */
+  --stagger: 40ms;
 
   /* Geometria da barra flutuante. A tabbar é fixed e o conteúdo passa POR
      BAIXO dela; FAB e padding do #view derivam daqui pra tudo continuar
@@ -306,12 +311,26 @@ main#view {
    Estas regras ganham do `cardFadeIn` do .card por especificidade — de
    propósito: uma entrada só, não duas empilhadas. */
 main#view.view-in-right > *:not(.fab):not(.select-bar),
-main#view.view-in-left  > *:not(.fab):not(.select-bar) {
+main#view.view-in-left  > *:not(.fab):not(.select-bar),
+main#view.view-in-fade  > *:not(.fab):not(.select-bar) {
   animation: viewIn var(--dur-base) var(--ease-out) both;
 }
 main#view.view-in-left > *:not(.fab):not(.select-bar) { animation-name: viewInLeft; }
+main#view.view-in-fade > *:not(.fab):not(.select-bar) { animation-name: viewInFade; }
 @keyframes viewIn     { from { opacity: 0; transform: translateX(14px)  } to { opacity: 1; transform: none } }
 @keyframes viewInLeft { from { opacity: 0; transform: translateX(-14px) } to { opacity: 1; transform: none } }
+/* Sem direção (primeira pintura, deep link a frio): sobe em vez de vir do
+   lado — não veio de aba nenhuma, então não há lado de onde vir. */
+@keyframes viewInFade { from { opacity: 0; transform: translateY(8px)   } to { opacity: 1; transform: none } }
+
+/* Escalonamento: cada bloco entra um passo depois do anterior, com TETO no
+   quarto. Escalonar a lista inteira é o erro clássico — numa tela de 8 cards
+   o último esperaria 320ms e pareceria travado. O `[class*=view-in-]` casa as
+   três direções sem repetir o seletor três vezes. */
+main#view[class*="view-in-"] > *:nth-child(2):not(.fab):not(.select-bar)   { animation-delay: var(--stagger); }
+main#view[class*="view-in-"] > *:nth-child(3):not(.fab):not(.select-bar)   { animation-delay: calc(var(--stagger) * 2); }
+main#view[class*="view-in-"] > *:nth-child(4):not(.fab):not(.select-bar)   { animation-delay: calc(var(--stagger) * 3); }
+main#view[class*="view-in-"] > *:nth-child(n+5):not(.fab):not(.select-bar) { animation-delay: calc(var(--stagger) * 4); }
 
 /* Card de navegação: leva a outra tela mostrando um dado, em vez de ser um
    botão vazio. Usado na Carteira pra entrar em Investimentos. */
@@ -789,7 +808,10 @@ main#view.view-in-left > *:not(.fab):not(.select-bar) { animation-name: viewInLe
 .fab {
   /* Empilhado logo acima da cápsula, derivando da mesma geometria — se a
      altura da tabbar mudar, o FAB acompanha sozinho. */
-  position: fixed; right: 18px;
+  /* A folga lateral sai da escala e é a MESMA do padding do #view, então o
+     FAB alinha com a borda direita dos cards. Era 18px cru, 2px fora de
+     qualquer coisa. */
+  position: fixed; right: var(--sp-4);
   bottom: calc(var(--tabbar-off) + var(--tabbar-h) + var(--sp-3));
   width: var(--fab-size); height: var(--fab-size); border-radius: var(--r-full);
   background: var(--tint); color: white;
