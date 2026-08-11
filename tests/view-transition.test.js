@@ -57,9 +57,20 @@ describe('viewRenderPlan — repintura', () => {
     expect(p.resetScroll).toBe(false);
   });
 
-  it('mutação de dado mantém o scroll no topo, como antes da escala de movimento', () => {
-    // Esta leva mexe em ANIMAÇÃO, não em comportamento de rolagem.
-    expect(viewRenderPlan().resetScroll).toBe(true);
+  it('mutação de dado NÃO sobe o scroll', () => {
+    // Marcar uma despesa no fim de uma lista longa jogava a tela pro topo e
+    // fazia perder o lugar a cada toque.
+    expect(viewRenderPlan().resetScroll).toBe(false);
+  });
+
+  it('só entrar na aba sobe o scroll', () => {
+    expect(viewRenderPlan({ enter: true, dir: 1 }).resetScroll).toBe(true);
+    expect(viewRenderPlan({ enter: true, dir: 0 }).resetScroll).toBe(true);
+  });
+
+  it('preserveScroll virou o padrão: mesmo plano com e sem a flag', () => {
+    // Trava a equivalência. Se um dos dois caminhos mudar sozinho, aqui acusa.
+    expect(viewRenderPlan({ preserveScroll: true })).toEqual(viewRenderPlan());
   });
 });
 

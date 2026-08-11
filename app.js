@@ -40,6 +40,7 @@ import {
 import { createProfileStore } from './src/storage/profile-store.js';
 import { viewRenderPlan } from './src/ui/view-transition.js';
 import { createCountUp } from './src/ui/count-up.js';
+import { createRowLeave } from './src/ui/row-leave.js';
 import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
 import { createSyncStateStore } from './src/storage/sync-state.js';
 import {
@@ -1807,6 +1808,16 @@ const countUp = createCountUp({
   now: () => performance.now(),
 });
 
+const rowLeave = createRowLeave({
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (t) => clearTimeout(t),
+});
+
+// Deixa a(s) linha(s) saírem e SÓ ENTÃO apaga o dado e repinta. Com "reduzir
+// movimento" a duração é 0 e o módulo apaga na hora.
+const sairLinhasEntao = (elementos, depois) =>
+  rowLeave(elementos, { duracao: reduzMovimento() ? 0 : durMs('--dur-base') }, depois);
+
 // True enquanto pinta uma ENTRADA de aba. Gráfico e contador consultam pra
 // saber se animam: repintura por mutação de dado (marcar paga, excluir) não
 // pode replayar nada. Setado pelo render, logo antes de chamar a view.
@@ -2252,10 +2263,19 @@ views.despesas = (root) => {
       const n = selection.ids.size;
       if (n === 0) return;
       if (!confirm(`Apagar ${n} despesa${n === 1 ? '' : 's'}? Recorrentes/parceladas marcadas serão removidas por completo.`)) return;
-      for (const id of selection.ids) db.removeDespesa(id);
-      exitSelection();
-      toast(`${n} despesa${n === 1 ? '' : 's'} excluída${n === 1 ? '' : 's'}`);
-      render();
+      // Todas as selecionadas saem juntas antes de sumirem do dado.
+      const ids = [...selection.ids];
+      // querySelectorAll, não querySelector: recorrentes e parceladas expandem
+      // em várias ocorrências com o MESMO data-id, e o confirm avisa que elas
+      // saem por completo — então todas as linhas daquele id têm que sair.
+      const linhas = ids.flatMap(id =>
+        [...root.querySelectorAll(`.select-row[data-id="${CSS.escape(id)}"]`)]);
+      sairLinhasEntao(linhas, () => {
+        for (const id of ids) db.removeDespesa(id);
+        exitSelection();
+        toast(`${n} despesa${n === 1 ? '' : 's'} excluída${n === 1 ? '' : 's'}`);
+        render();
+      });
     });
     const bulkEditBtn = root.querySelector('#bulk-edit');
     if (bulkEditBtn) bulkEditBtn.addEventListener('click', () => {
@@ -2282,8 +2302,12 @@ views.despesas = (root) => {
       sheetDespesa(state.despesas.find(x => x.id === id));
     }));
     root.querySelectorAll('[data-action="del-desp"]').forEach(b => b.addEventListener('click', (e) => {
-      const id = e.target.closest('[data-id]').dataset.id;
-      if (confirm('Excluir esta despesa?')) { db.removeDespesa(id); toast('Despesa excluída'); render(); }
+      const linha = e.target.closest('[data-id]');
+      const id = linha.dataset.id;
+      if (!confirm('Excluir esta despesa?')) return;
+      // A linha sai da tela antes de o dado sumir — some seca, o usuário só vê
+      // o resultado e não o que aconteceu.
+      sairLinhasEntao(linha, () => { db.removeDespesa(id); toast('Despesa excluída'); render(); });
     }));
     // Swipe → "Marcar paga / Marcar pendente" sem abrir o sheet de detalhes.
     // Para recorrentes/parceladas, alterna só esta ocorrência via toggleDespesaPago.
@@ -2534,8 +2558,10 @@ const renderAportesSub = (root, seg) => {
     sheetDespesa(state.despesas.find(x => x.id === id), { investimento: true });
   }));
   root.querySelectorAll('[data-action="del-invest"]').forEach(b => b.addEventListener('click', (e) => {
-    const id = e.target.closest('[data-id]').dataset.id;
-    if (confirm('Excluir este investimento?')) { db.removeDespesa(id); toast('Investimento excluído'); render(); }
+    const linha = e.target.closest('[data-id]');
+    const id = linha.dataset.id;
+    if (!confirm('Excluir este investimento?')) return;
+    sairLinhasEntao(linha, () => { db.removeDespesa(id); toast('Investimento excluído'); render(); });
   }));
   // Swipe → marcar aporte como pago/pendente (recorrentes/parceladas alteram só esta ocorrência).
   root.querySelectorAll('[data-action="toggle-pago-swipe"]').forEach(b => b.addEventListener('click', (e) => {
@@ -3444,11 +3470,17 @@ const setTab = (name) => {
 const render = (opts = {}) => {
   const root = document.getElementById('view');
   const plano = viewRenderPlan(opts);
-  if (plano.resetScroll) root.scrollTop = 0;
+  // Guarda ANTES do innerHTML: quando o conteúdo novo é mais curto (excluir a
+  // última linha de uma lista longa), o browser zera o scroll sozinho. Só
+  // "não forçar zero" não bastava — restaurar explicitamente é o que faz a
+  // tela ficar onde estava. A atribuição já satura sozinha se o conteúdo
+  // encolheu além da posição antiga.
+  const scroll = plano.resetScroll ? 0 : root.scrollTop;
   root.classList.remove(...plano.remove);
   if (plano.add.length) root.classList.add(...plano.add);
   entrandoNaAba = plano.anima;
   views[currentTab](root);
+  if (root.scrollTop !== scroll) root.scrollTop = scroll;
   animarSaldo(root);
   applyAlertBadge();
 };

@@ -39,7 +39,14 @@ export const viewRenderPlan = ({ enter = false, dir = 0, preserveScroll = false 
   return {
     add,
     remove,
-    resetScroll: enter || !preserveScroll,
+    // SÓ entrar na aba sobe o scroll. Mutação de dado (marcar paga, excluir,
+    // importar) mantém a posição: subir pro topo ao marcar uma despesa no fim
+    // de uma lista longa fazia perder o lugar a cada toque.
+    //
+    // Com isso `preserveScroll` virou o padrão e não muda mais nada — segue
+    // aceito porque documenta a intenção nos ~19 pontos que o usam, e porque
+    // trocá-los seria churn sem ganho.
+    resetScroll: enter,
     // Quem monta gráfico/contador consulta isto pra saber se é entrada de aba
     // ou repintura de dado — os dois não animam igual.
     anima: enter,
