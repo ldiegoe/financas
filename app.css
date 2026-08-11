@@ -42,8 +42,17 @@
      — e o olho perde a capacidade de achar o que importa.
 
        verde / vermelho  → POLARIDADE DE DINHEIRO (entrou/saiu, saldo +/−)
-       azul (--tint)     → INTERAÇÃO (tocável, ativo, selecionado)
-       laranja           → ATENÇÃO REAL (atrasado, aviso que exige ação)
+       vermelho          → e também AÇÃO DESTRUTIVA (excluir, apagar tudo).
+                           Está escrito aqui porque é a única exceção à regra
+                           de polaridade, e sem isso alguém "corrige" um botão
+                           de excluir achando que é violação.
+       azul (--tint)     → INTERAÇÃO (tocável, ativo, selecionado). Ícone só
+                           fica azul se ELE ou o que o contém responde ao
+                           toque; ícone ilustrativo é neutro, senão o azul
+                           para de querer dizer "isto responde".
+       laranja           → ATENÇÃO REAL (atrasado, aviso que exige ação).
+                           Não é o "meio" de uma escala: um valor médio não
+                           pede nada do usuário, então é neutro.
        neutro            → TODO O RESTO (metadado, contagem, rótulo, tag)
 
      Antes desta regra o laranja acumulava cinco papéis (parcela, pendente,
@@ -83,6 +92,22 @@
      longa. Com teto de 4 passos, o último card espera 160ms — acima disso a
      tela parece travada em vez de fluida. */
   --stagger: 40ms;
+
+  /* ---------- Opacidade ----------
+     Última dimensão que ainda estava no estado "13 valores": havia NOVE forças
+     de esmaecimento (.3 .35 .4 .45 .5 .55 .6 .62 .7). Passos vizinhos são
+     indistinguíveis a olho, mas o desalinhamento acumulado aparece — texto
+     apagado em nove intensidades diferentes na mesma tela. */
+  --o-faint: .35;   /* desabilitado, indisponível */
+  --o-muted: .5;    /* inativo, não selecionado */
+  --o-soft:  .65;   /* atenuado, ainda legível */
+
+  /* ---------- Tracking ----------
+     Eram seis valores para dois usos. Negativo aperta número grande (que fica
+     largo demais no padrão); positivo abre rótulo em CAIXA ALTA (que fica
+     apertado demais). Dois usos, dois valores. */
+  --track-tight: -.4px;   /* número herói, título grande */
+  --track-caps:   .6px;   /* rótulo em caixa alta */
 
   /* Geometria da barra flutuante. A tabbar é fixed e o conteúdo passa POR
      BAIXO dela; FAB e padding do #view derivam daqui pra tudo continuar
@@ -172,7 +197,7 @@ body {
   justify-content: space-between;
   padding: 12px 16px 8px;
 }
-.topbar h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.4px; }
+.topbar h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: var(--track-tight); }
 .topbar h1.with-info { display: flex; align-items: center; gap: 2px; }
 .topbar h1 .info-btn { width: 32px; height: 32px; }
 .topbar h1 .info-btn svg { width: 19px; height: 19px; }
@@ -181,7 +206,7 @@ body {
   appearance: none; border: 0;
   background: var(--tint); color: white;
   width: 36px; height: 36px; border-radius: var(--r-full);
-  font-size: 22px; font-weight: 500;
+  font-size: var(--fs-xl); font-weight: 500;
   cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
@@ -204,7 +229,7 @@ body {
   background: var(--text);
   transform: rotate(-25deg);
   transform-origin: center;
-  border-radius: 2px;
+  border-radius: var(--r-full);
 }
 /* Bolinha vermelha indicando notificacoes nao lidas no botao do sino. */
 .icon-btn-ghost .badge {
@@ -373,11 +398,13 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   box-shadow: var(--shadow);
   font-family: inherit; color: var(--text);
 }
-.nav-card:active { opacity: .7; }
+.nav-card:active { opacity: var(--o-soft); }
 .nav-card-ico {
   flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
   width: 40px; height: 40px; border-radius: var(--r-full);
-  background: rgba(48,209,88,.14); color: var(--green);
+  /* O cartão inteiro é um botão: azul diz "isto leva a algum lugar".
+     Verde diria "entrou dinheiro", que não é o caso. */
+  background: rgba(10,132,255,.14); color: var(--tint);
 }
 .nav-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .nav-card-title { font-size: var(--fs-lg); font-weight: 600; }
@@ -415,6 +442,10 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   border-radius: var(--r-full);
   text-decoration: none;
   color: var(--text-2);
+  /* ÚNICO font-size fora da escala no arquivo, e de propósito: são 6 rótulos
+     em colunas iguais, e "Investimentos" já corta com reticências aqui. Em
+     --fs-xs (11px) corta mais. É o caso que o :root chama de "bom motivo".
+     tests/scales.test.js conhece esta exceção pelo nome. */
   font-size: 10.5px;
   gap: 2px;
   min-width: 0;
@@ -457,7 +488,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
    ele também é recriado a cada innerHTML e pipocaria a cada toque. */
 .no-anim .card,
 .no-anim .fab { animation: none; }
-.card h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .7px; color: var(--text-2); font-weight: 600; }
+.card h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: var(--track-caps); color: var(--text-2); font-weight: 600; }
 /* Cabecalho minimizavel: clique alterna o estado do card. Chevron rotaciona
    pra "->" quando o card esta colapsado (so o titulo aparece). */
 .card h2.collapsible-h {
@@ -470,7 +501,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   margin-bottom: 0;
 }
 .card h2.collapsible-h + * { margin-top: var(--sp-2); }
-.card h2.collapsible-h:active { opacity: .6; }
+.card h2.collapsible-h:active { opacity: var(--o-soft); }
 .chevron {
   flex: 0 0 auto;
   color: var(--text-2);
@@ -489,15 +520,15 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   font-size: var(--fs-sm);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .6px;
+  letter-spacing: var(--track-caps);
   color: var(--text-2);
 }
-.subsection-h:active { opacity: .6; }
+.subsection-h:active { opacity: var(--o-soft); }
 .subsection-body { margin-top: var(--sp-3); }
 .card .big {
   font-size: clamp(26px, 8.5vw, 36px);
   font-weight: 700;
-  letter-spacing: -.5px;
+  letter-spacing: var(--track-tight);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -512,7 +543,8 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   display: flex; align-items: center; gap: var(--sp-2);
   margin-top: var(--sp-2);
   font-size: var(--fs-sm);
-  color: var(--orange);
+  /* Renda futura é INFORMAÇÃO, não alerta: nada aqui exige ação. */
+  color: var(--text-2);
 }
 .card .big-sub .ico { display: inline-flex; }
 .card .big-sub strong { font-variant-numeric: tabular-nums; }
@@ -554,7 +586,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
 .summary-row-main .summary-label { color: var(--text); font-weight: 600; font-size: var(--fs-md); }
 /* O saldo é o número herói da tela — o maior elemento tipográfico do app,
    junto do título da página. Dado acima de navegação. */
-.summary-row-main .summary-value { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.4px; }
+.summary-row-main .summary-value { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: var(--track-tight); }
 
 .list { list-style: none; margin: 0; padding: 0; background: var(--bg-elev); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
 /* Padding lateral igual ao do .card: o conteúdo da lista alinha na mesma
@@ -585,7 +617,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
    bem maior que o de baixo, que apenas cola o título no seu conteúdo. */
 .section-title {
   margin: var(--sp-5) var(--sp-1) var(--sp-2);
-  font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .5px;
+  font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: var(--track-caps);
   color: var(--text-2);
   font-weight: 600;
 }
@@ -616,11 +648,11 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
 .sort-toggle {
   display: inline-flex; align-items: center; gap: var(--sp-2);
   background: none; border: 0; cursor: pointer; padding: 0;
-  font: inherit; text-transform: uppercase; letter-spacing: .5px;
+  font: inherit; text-transform: uppercase; letter-spacing: var(--track-caps);
   color: var(--text-2); font-weight: 600;
 }
 .sort-toggle svg { color: var(--tint); }
-.sort-toggle:active { opacity: .6; }
+.sort-toggle:active { opacity: var(--o-soft); }
 
 .empty {
   text-align: center;
@@ -637,7 +669,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   justify-content: center;
   margin-bottom: var(--sp-3);
   color: var(--text-2);
-  opacity: .55;
+  opacity: var(--o-muted);
 }
 
 /* Cabecalho de periodo (Dashboard, Carteira, Despesas): titulo grande
@@ -664,7 +696,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   color: var(--text); font-family: inherit; cursor: pointer;
   flex: 1; min-width: 0;
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
-  font-size: var(--fs-xl); font-weight: 700; letter-spacing: -.4px;
+  font-size: var(--fs-xl); font-weight: 700; letter-spacing: var(--track-tight);
   padding: var(--sp-2); border-radius: var(--r-md);
 }
 .period-current svg { color: var(--text-2); flex: 0 0 auto; }
@@ -801,7 +833,7 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   font-weight: 600;
   color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: var(--track-caps);
   margin: 0 2px 6px;
 }
 
@@ -941,7 +973,7 @@ input[type="checkbox"], input[type="radio"] {
    diferente — normaliza para alinhar com os demais campos. */
 input[type="date"] { text-align: left; }
 input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 1.4em; }
-input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: var(--o-soft); }
 select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23999' d='M6 8 0 0h12z'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 32px; }
 
 button.primary, button.secondary, button.danger {
@@ -967,7 +999,7 @@ button.primary { background: var(--tint); color: white; }
 button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--separator); }
 button.danger { background: var(--red); color: white; }
 button.link { background: none; border: 0; color: var(--tint); font-size: var(--fs-md); cursor: pointer; padding: var(--sp-2); }
-button.link:active { opacity: .55; }
+button.link:active { opacity: var(--o-muted); }
 
 .toggle { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .toggle input { width: auto; }
@@ -1047,7 +1079,7 @@ label.field.tight { margin-bottom: 0; }   /* vence a margem própria do campo */
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-2); cursor: pointer; vertical-align: middle;
 }
-.info-btn:active { opacity: .45; }
+.info-btn:active { opacity: var(--o-muted); }
 .info-btn[aria-expanded="true"] { color: var(--tint); }
 /* Rótulos que ganham um "i" precisam virar flex pra alinhar no baseline. */
 .card h2.with-info, label.field span.with-info, .subsection-h span.with-info {
@@ -1088,7 +1120,7 @@ label.field span .info-btn svg,
   padding: var(--sp-4); margin-bottom: var(--sp-3);
   font-family: inherit; cursor: pointer;
 }
-.action-card:active { opacity: .55; }
+.action-card:active { opacity: var(--o-muted); }
 .action-card .ac-body { flex: 1; min-width: 0; }
 .action-card .ac-title { display: block; font-size: var(--fs-lg); font-weight: 600; }
 .action-card .ac-sub { display: block; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4; margin-top: 3px; }
@@ -1133,7 +1165,9 @@ label.field span .info-btn svg,
    status ao lado. A cor do anel/segue o nível (good/neutro/bad). */
 .health-score { display: flex; align-items: center; gap: var(--sp-4); padding: 4px 0 14px; }
 .hs-ring {
-  --c: var(--orange);
+  /* Score médio é neutro: laranja é pra atenção real, e uma saúde mediana
+     não pede nada do usuário. .good e .bad seguem com polaridade. */
+  --c: var(--text-2);
   position: relative; flex: 0 0 auto;
   width: 66px; height: 66px; border-radius: 50%;
   background: conic-gradient(var(--c) calc(var(--p) * 3.6deg), var(--separator) 0);
@@ -1142,9 +1176,9 @@ label.field span .info-btn svg,
 .hs-ring.good { --c: var(--green); }
 .hs-ring.bad  { --c: var(--red); }
 .hs-ring::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--bg-elev); }
-.hs-num { position: relative; z-index: 1; font-weight: 800; font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
+.hs-num { position: relative; z-index: 1; font-weight: 700; font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
 .hs-meta { min-width: 0; }
-.hs-status { font-size: var(--fs-lg); font-weight: 700; color: var(--orange); }
+.hs-status { font-size: var(--fs-lg); font-weight: 700; color: var(--text-2); }
 .hs-status.good { color: var(--green); }
 .hs-status.bad  { color: var(--red); }
 .hs-sub { color: var(--text-2); font-size: var(--fs-sm); margin-top: 2px; }
@@ -1156,7 +1190,9 @@ label.field span .info-btn svg,
   background: var(--separator); border-radius: var(--r-md);
   font-size: var(--fs-sm); color: var(--text); line-height: 1.4;
 }
-.health-tip .ico { flex: 0 0 auto; display: inline-flex; color: var(--tint); margin-top: 1px; }
+/* Ilustrativo: a dica não é tocável, então o ícone não usa a cor de
+   interação — azul em tudo faz o azul parar de significar "toque aqui". */
+.health-tip .ico { flex: 0 0 auto; display: inline-flex; color: var(--text-2); margin-top: 1px; }
 
 /* Lista de checkboxes (ex: categorias que contam pra um objetivo) */
 .check-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; border: 1px solid var(--separator); border-radius: var(--r-md); }
@@ -1229,7 +1265,7 @@ label.field span .info-btn svg,
   padding: var(--sp-2);
   margin-left: var(--sp-1);
   color: var(--text-2);
-  font-size: 22px;
+  font-size: var(--fs-xl);
   line-height: 1;
   cursor: grab;
   user-select: none;
@@ -1241,7 +1277,7 @@ label.field span .info-btn svg,
 .drag-handle:active { cursor: grabbing; }
 
 /* Feedback visual durante o drag-and-drop (Sortable) */
-.sortable-ghost   { opacity: .35; }
+.sortable-ghost   { opacity: var(--o-faint); }
 .sortable-chosen  { background: var(--separator); }
 
 .swipe-row { position: relative; overflow: hidden; }
@@ -1252,10 +1288,15 @@ label.field span .info-btn svg,
 }
 .swipe-row.open .swipe-actions { transform: translateX(0); }
 .swipe-actions button { border: 0; padding: 0 var(--sp-4); color: white; font-size: var(--fs-sm); cursor: pointer; }
-.swipe-actions .edit { background: var(--orange); }
+/* Só as duas ações com significado ficam coloridas: excluir (destrutiva) e
+   marcar paga (confirmação). "Editar" e "Pendente" são ações comuns — o
+   cinza é fixo, e não um token de tema, porque o rótulo é sempre branco.
+   O divisor separa dois botões neutros vizinhos sem recorrer a mais cor. */
+.swipe-actions .edit,
+.swipe-actions .undo { background: #636366; }
+.swipe-actions button + button { border-left: 1px solid rgba(255,255,255,.18); }
 .swipe-actions .del { background: var(--red); }
 .swipe-actions .pago { background: var(--green); }
-.swipe-actions .undo { background: #636366; }
 
 /* Aviso de backup atrasado, no topo do Dashboard. Laranja é ATENÇÃO REAL: os
    dados estão sem cópia há dias e isso pede ação do usuário. A faixa lateral
@@ -1382,7 +1423,7 @@ label.field span .info-btn svg,
   margin-right: 2px;
 }
 .select-circle.checked { background: var(--tint); border-color: var(--tint); color: #fff; }
-.select-circle.disabled { opacity: .3; }
+.select-circle.disabled { opacity: var(--o-faint); }
 .select-bar {
   /* Empilhada acima da cápsula pela MESMA fórmula do FAB — ela ocupa o lugar
      dele no modo seleção. O valor antigo era `60px` cru, herdado da tabbar
@@ -1403,7 +1444,7 @@ label.field span .info-btn svg,
   z-index: 8;
 }
 .select-bar .count { flex: 1; font-weight: 600; }
-.select-bar .danger[disabled] { opacity: .4; cursor: default; }
+.select-bar .danger[disabled] { opacity: var(--o-faint); cursor: default; }
 /* Botões da barra são compactos: a barra já é estreita e leva 4 elementos.
    O `min-height: 44px` de button.primary/danger garante o alvo de toque. */
 .select-bar button.primary,
@@ -1424,14 +1465,16 @@ label.field span .info-btn svg,
 .tag.atrasado    { background: rgba(255,69,58,.15);   color: var(--red); }
 
 /* POLARIDADE / INTERAÇÃO — significado real de cor. */
-.tag.poupanca    { background: rgba(48,209,88,.15);   color: var(--green); }
-.tag.reserva     { background: rgba(10,132,255,.15);  color: var(--tint); }
+/* "poupança" e "reserva" CLASSIFICAM o lançamento — metadado, herda o
+   neutro do .tag. A polaridade continua no valor, ao lado. */
+.tag.poupanca,
+.tag.reserva { /* neutro herdado */ }
 /* "atual" marca o perfil ativo: estado selecionado, portanto azul. */
 .tag.atual       { background: rgba(10,132,255,.15);  color: var(--tint); }
 
 /* Lançamento de renda com data futura: ainda não entrou no caixa, então
    aparece levemente esmaecido na lista da Carteira. */
-.swipe-row.is-prog { opacity: .62; }
+.swipe-row.is-prog { opacity: var(--o-soft); }
 
 /* Picker de emoji no form de categoria — faixa horizontal rolavel pra nao
    ocupar varias linhas (eram ~5 com flex-wrap). */
@@ -1476,7 +1519,7 @@ label.field span .info-btn svg,
   border-top: 1px solid var(--separator);
 }
 .venc-actions .count { flex: 1; font-weight: 600; font-size: var(--fs-sm); }
-.venc-actions .primary[disabled] { opacity: .4; cursor: default; }
+.venc-actions .primary[disabled] { opacity: var(--o-faint); cursor: default; }
 /* Compacto pelo mesmo motivo da `.select-bar`: a linha leva três elementos e o
    `min-height: 44px` de button.primary já garante o alvo de toque. */
 .venc-actions button.primary { padding: var(--sp-2) var(--sp-4); }
@@ -1503,7 +1546,7 @@ label.field span .info-btn svg,
 }
 .onb-dots { display: flex; gap: var(--sp-2); }
 .onb-dot {
-  width: 6px; height: 6px; border-radius: 3px;
+  width: 6px; height: 6px; border-radius: var(--r-full);
   background: var(--separator);
   transition: width var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
 }
@@ -1532,7 +1575,7 @@ label.field span .info-btn svg,
   color: var(--tint);
   display: flex; align-items: center; justify-content: center;
 }
-.onb-title { margin: 0; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.3px; }
+.onb-title { margin: 0; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: var(--track-tight); }
 .onb-body { margin: 0; color: var(--text-2); font-size: var(--fs-lg); line-height: 1.5; max-width: 320px; }
 .onb-nav { display: flex; gap: var(--sp-3); padding: 14px 0; }
 
@@ -1562,7 +1605,7 @@ label.field span .info-btn svg,
   margin: 0 0 6px;
   font-size: var(--fs-2xl);
   font-weight: 700;
-  letter-spacing: -.4px;
+  letter-spacing: var(--track-tight);
   color: var(--text);
   text-transform: none;
 }
@@ -1726,7 +1769,7 @@ label.field span .info-btn svg,
   font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
 }
 .imp-venc input[type="date"] { flex: 0 0 auto; width: auto; padding: var(--sp-2); font-size: var(--fs-sm); }
-.imp-venc input[type="date"]:disabled { opacity: .45; }
+.imp-venc input[type="date"]:disabled { opacity: var(--o-muted); }
 .imp-venc small { display: block; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; margin-top: var(--sp-2); }
 
 /* Lista rola por dentro; cabeçalho e rodapé ficam. */
@@ -1749,7 +1792,7 @@ label.field span .info-btn svg,
   cursor: pointer; transition: opacity var(--dur-fast) var(--ease-out);
 }
 /* Não-incluídas ficam esmaecidas pra separar do que vai entrar. */
-.imp-row:not(.on) { opacity: .5; }
+.imp-row:not(.on) { opacity: var(--o-muted); }
 .imp-check {
   flex: 0 0 24px; width: 24px; height: 24px; padding: 0;
   /* centra o círculo contra a altura do campo de nome (40px) */
