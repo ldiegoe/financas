@@ -879,6 +879,22 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
   max-height: 85vh; overflow-y: auto;
   animation: slideUp var(--dur-base) var(--ease-spring);
 }
+/* Saída: o sheet desce e o fundo apaga junto. A classe entra SÓ no backdrop —
+   uma marcação, duas animações. Entrava com mola e saía como interruptor.
+   Quem garante que o modal é limpo de qualquer jeito (e que fechar-e-abrir em
+   seguida não apaga o sheet novo) é src/ui/dom.js, não esta animação. */
+.sheet-backdrop.sheet-leaving {
+  animation: fadeOut var(--dur-base) var(--ease-out) both;
+  /* Saindo, nada mais aceita toque — inclusive o que está DENTRO do sheet.
+     Sem isto o sheet fica visível e clicável por 200ms depois de fechado, e
+     dá pra tocar em "Salvar" uma segunda vez. */
+  pointer-events: none;
+}
+.sheet-backdrop.sheet-leaving .sheet { animation: slideDown var(--dur-base) var(--ease-out) both; }
+@keyframes fadeOut   { from { opacity: 1 } to { opacity: 0 } }
+/* Desce mais do que subiu (40px) pra sumir de vez antes do fundo apagar. */
+@keyframes slideDown { from { transform: none } to { transform: translateY(48px); opacity: 0 } }
+
 .sheet h3 { margin: 0 0 14px; font-size: var(--fs-xl); }
 .sheet .actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-4); }
 .sheet .actions button { flex: 1; }
@@ -903,8 +919,15 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   -webkit-appearance: none;
   appearance: none;
   min-height: 44px;
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--tint); outline-offset: -1px; }
+/* A borda esquenta até o azul junto com o outline — o campo focado "acende"
+   em vez de pular de estado. Só `border-color` entra na transição: animar
+   `outline` tem suporte irregular no Safari. */
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--tint); outline-offset: -1px;
+  border-color: var(--tint);
+}
 
 /* Restaura visual nativo do checkbox/radio (foi quebrado pelo
    appearance: none que aplicamos nos demais inputs). */
@@ -927,11 +950,24 @@ button.primary, button.secondary, button.danger {
   font-size: var(--fs-lg); font-weight: 600;
   cursor: pointer;
   min-height: 44px;   /* alvo de toque mínimo confortável */
+  transition: transform var(--dur-fast) var(--ease-out),
+              filter var(--dur-fast) var(--ease-out);
+}
+/* Os botões de ação de todo formulário e sheet não tinham retorno de toque
+   nenhum. `transform` não reflui, e `filter` escurece qualquer um dos três
+   sem precisar de uma cor de :active por variante. */
+button.primary:active, button.secondary:active, button.danger:active {
+  transform: scale(.97);
+  filter: brightness(.92);
+}
+button.primary:disabled, button.secondary:disabled, button.danger:disabled {
+  transform: none; filter: none;
 }
 button.primary { background: var(--tint); color: white; }
 button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--separator); }
 button.danger { background: var(--red); color: white; }
 button.link { background: none; border: 0; color: var(--tint); font-size: var(--fs-md); cursor: pointer; padding: var(--sp-2); }
+button.link:active { opacity: .55; }
 
 .toggle { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .toggle input { width: auto; }

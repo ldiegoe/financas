@@ -18,10 +18,20 @@ export const createToast = (el, durationMs = 2000) => {
 
 // Factory de sheet/modal: o elemento `root` recebe o markup do sheet.
 // `contentFn`/`onMount` mantêm a mesma assinatura do openSheet original.
+//
+// `leave` e `duracaoSaida` são injetados: o sheet ENTRA animado (slideUp) e
+// antes saía como interruptor. `duracaoSaida()` é função porque a resposta
+// muda em tempo de execução — volta 0 quando o usuário pede menos movimento.
+//
 // Retorna { open, close }.
-export const createSheet = (root, { escapeHTML }) => {
+export const createSheet = (root, { escapeHTML, leave = null, duracaoSaida = () => 0 }) => {
+  // Conta quantos sheets já foram abertos. É o que distingue "este sheet ainda
+  // é o meu" de "outro tomou o lugar enquanto eu saía" — ver o guard no close.
+  let geracao = 0;
+
   const open = (title, contentFn, onMount) => {
     if (!root) return;
+    geracao++;
     root.innerHTML = `
       <div class="sheet-backdrop" data-close>
         <div class="sheet" role="dialog" aria-modal="true">
@@ -36,6 +46,26 @@ export const createSheet = (root, { escapeHTML }) => {
     });
     if (onMount) onMount(body);
   };
-  const close = () => { if (root) root.innerHTML = ''; };
+
+  const close = () => {
+    if (!root) return;
+    const backdrop = root.querySelector('.sheet-backdrop');
+    const duracao = duracaoSaida();
+    // Sem nada aberto, sem animação disponível ou com movimento desligado:
+    // limpa na hora, como sempre foi.
+    if (!backdrop || !leave || !(duracao > 0)) { root.innerHTML = ''; return; }
+
+    const minhaGeracao = geracao;
+    // A classe vai só no backdrop; o CSS anima ele e o .sheet lá dentro.
+    leave([backdrop], { duracao, classe: 'sheet-leaving' }, () => {
+      // GUARD: se outro sheet abriu enquanto este saía, o innerHTML já é dele
+      // e limpar aqui apagaria a tela nova. Não é hipótese — o app faz
+      // `closeSheet(); sheetX()` em pelo menos dois lugares (detalhes.js e
+      // categoria-historico.js).
+      if (geracao !== minhaGeracao) return;
+      root.innerHTML = '';
+    });
+  };
+
   return { open, close };
 };

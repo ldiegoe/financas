@@ -40,7 +40,7 @@ import {
 import { createProfileStore } from './src/storage/profile-store.js';
 import { viewRenderPlan } from './src/ui/view-transition.js';
 import { createCountUp } from './src/ui/count-up.js';
-import { createRowLeave } from './src/ui/row-leave.js';
+import { createLeave } from './src/ui/leave.js';
 import { createDeviceConfig, DEVICE_CONFIG_KEYS } from './src/storage/device-config.js';
 import { createSyncStateStore } from './src/storage/sync-state.js';
 import {
@@ -1033,9 +1033,22 @@ const period = {
 
 const periodLabel = () => labelOfPeriod(period);
 
+// Saída animada de elemento (linha de despesa ao excluir, sheet ao fechar),
+// com a garantia de que o callback roda exatamente uma vez. Ver src/ui/leave.js.
+const leave = createLeave({
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (t) => clearTimeout(t),
+});
+
 // --------------------------- Sheet/Modal -----------------------------------
 // Sheet/modal: usa o factory de ./src/ui/dom.js sobre o #modal-root.
-const _sheet = createSheet(document.getElementById('modal-root'), { escapeHTML });
+// `duracaoSaida` é função porque a resposta muda em runtime: volta 0 quando o
+// usuário liga "reduzir movimento", e aí o sheet fecha na hora.
+const _sheet = createSheet(document.getElementById('modal-root'), {
+  escapeHTML,
+  leave,
+  duracaoSaida: () => (reduzMovimento() ? 0 : durMs('--dur-base')),
+});
 const openSheet  = (title, contentFn, onMount) => _sheet.open(title, contentFn, onMount);
 const closeSheet = () => _sheet.close();
 
@@ -1808,15 +1821,13 @@ const countUp = createCountUp({
   now: () => performance.now(),
 });
 
-const rowLeave = createRowLeave({
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-  clearTimeout: (t) => clearTimeout(t),
-});
-
 // Deixa a(s) linha(s) saírem e SÓ ENTÃO apaga o dado e repinta. Com "reduzir
 // movimento" a duração é 0 e o módulo apaga na hora.
 const sairLinhasEntao = (elementos, depois) =>
-  rowLeave(elementos, { duracao: reduzMovimento() ? 0 : durMs('--dur-base') }, depois);
+  leave(elementos, {
+    duracao: reduzMovimento() ? 0 : durMs('--dur-base'),
+    classe: 'row-leaving',
+  }, depois);
 
 // True enquanto pinta uma ENTRADA de aba. Gráfico e contador consultam pra
 // saber se animam: repintura por mutação de dado (marcar paga, excluir) não
