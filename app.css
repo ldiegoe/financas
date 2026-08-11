@@ -56,6 +56,29 @@
   --r-lg:   16px;
   --r-full: 999px;
 
+  /* ---------- Movimento ----------
+     Mesma história das escalas acima: havia SEIS durações (.12/.15/.18/.2/
+     .25/.3) e nenhum easing declarado — tudo no `ease` do browser, que
+     desacelera cedo demais e faz a interface responder mole. Três durações e
+     dois easings cobrem o app inteiro.
+
+     Regra de qual usar:
+       --dur-fast  o que responde ao dedo (toque, cor, chevron)
+       --dur-base  o que entra ou sai da tela (sheet, view, toast)
+       --dur-slow  só o que percorre distância (barra de progresso)
+
+     Movimento é significado, como a cor: se tudo anima, nada chama atenção.
+     Nada aqui passa de 320ms — acima disso o usuário espera a interface. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  /* Arranca rápido e assenta devagar: é o que dá sensação de resposta
+     imediata. Padrão pra praticamente tudo. */
+  --ease-out:    cubic-bezier(.2, .8, .2, 1);
+  /* Passa um pouco do alvo e volta. Só para o que "chega" na tela — sheet e
+     FAB. Usado em muita coisa vira enjoativo. */
+  --ease-spring: cubic-bezier(.34, 1.32, .64, 1);
+
   /* Geometria da barra flutuante. A tabbar é fixed e o conteúdo passa POR
      BAIXO dela; FAB e padding do #view derivam daqui pra tudo continuar
      coerente se a altura mudar. */
@@ -105,6 +128,19 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
+
+/* Acessibilidade: quem pediu "reduzir movimento" no iOS recebe as MESMAS
+   telas, sem o percurso. Zeramos a duração em vez de `animation: none` de
+   propósito — assim o estado final continua valendo e qualquer código que
+   dependa de `animationend`/`transitionend` continua disparando. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 /* overflow:hidden no body para que o scroll aconteca dentro do #view e nao
    no documento. Em iOS Safari/PWA o scroll do documento bagunca elementos
    com position:fixed (tabbar "andando" no meio da tela), entao tiramos o
@@ -252,9 +288,30 @@ main#view {
            calc(var(--tabbar-off) + var(--tabbar-h) + var(--sp-3)
                 + var(--fab-size) + var(--sp-3));
   overflow-y: auto;
+  /* A entrada de aba desloca os filhos 14px na horizontal; sem isto o
+     `overflow-y: auto` computa `overflow-x: auto` e aparece barra lateral
+     durante os 200ms. Conteúdo nenhum aqui deve rolar na horizontal. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+/* --- Entrada de aba -------------------------------------------------------
+   Quem se move são os FILHOS do #view, não o #view. Transformar o container
+   criaria containing block pros descendentes `position: fixed` — o `.fab` e a
+   `.select-bar` são renderizados DENTRO dele e sairiam do lugar durante a
+   animação. Animando os filhos em bloco o efeito é o mesmo e dá pra excluir
+   justamente esses dois, que devem ficar parados.
+
+   Estas regras ganham do `cardFadeIn` do .card por especificidade — de
+   propósito: uma entrada só, não duas empilhadas. */
+main#view.view-in-right > *:not(.fab):not(.select-bar),
+main#view.view-in-left  > *:not(.fab):not(.select-bar) {
+  animation: viewIn var(--dur-base) var(--ease-out) both;
+}
+main#view.view-in-left > *:not(.fab):not(.select-bar) { animation-name: viewInLeft; }
+@keyframes viewIn     { from { opacity: 0; transform: translateX(14px)  } to { opacity: 1; transform: none } }
+@keyframes viewInLeft { from { opacity: 0; transform: translateX(-14px) } to { opacity: 1; transform: none } }
 
 /* Card de navegação: leva a outra tela mostrando um dado, em vez de ser um
    botão vazio. Usado na Carteira pra entrar em Investimentos. */
@@ -312,13 +369,24 @@ main#view {
   font-size: 10.5px;
   gap: 2px;
   min-width: 0;
-  transition: background-color .18s ease, color .18s ease;
+  transition: background-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
 }
+/* Afunda sob o dedo. É o retorno de toque mais barato que existe: nada
+   reflui, porque `transform` não afeta o layout. */
+.tabbar a:active { transform: scale(.94); }
 .tabbar a span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Ativo ganha uma "pílula" de fundo além da cor — o destaque fica legível
    mesmo de relance, sem depender só de matiz (ajuda em daltonismo). */
 .tabbar a.active { color: var(--tint); background: rgba(10,132,255,.16); }
-.tabbar a .ico { width: 22px; height: 22px; }
+/* O ícone da aba ativa sobe e cresce de leve, com spring. Confirma qual aba
+   respondeu ao toque sem precisar olhar a cor. */
+.tabbar a .ico {
+  width: 22px; height: 22px;
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.tabbar a.active .ico { transform: translateY(-1px) scale(1.08); }
 
 .card {
   background: var(--bg-elev);
@@ -327,15 +395,19 @@ main#view {
   box-shadow: var(--shadow);
   margin-bottom: var(--sp-3);
   min-width: 0;
-  animation: cardFadeIn .15s ease both;
+  animation: cardFadeIn var(--dur-fast) var(--ease-out) both;
 }
 @keyframes cardFadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 /* Renders leves (toggle de collapse, etc) marcam o container com .no-anim
-   pra evitar pisca-pisca quando o usuario interage rapido. */
-.no-anim .card { animation: none; }
+   pra evitar pisca-pisca quando o usuario interage rapido. Hoje isso vale
+   também pra QUALQUER mutação de dado na mesma aba (marcar paga, excluir,
+   importar): só entrar na aba replaya a entrada. O FAB entra na lista porque
+   ele também é recriado a cada innerHTML e pipocaria a cada toque. */
+.no-anim .card,
+.no-anim .fab { animation: none; }
 .card h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .7px; color: var(--text-2); font-weight: 600; }
 /* Cabecalho minimizavel: clique alterna o estado do card. Chevron rotaciona
    pra "->" quando o card esta colapsado (so o titulo aparece). */
@@ -353,7 +425,7 @@ main#view {
 .chevron {
   flex: 0 0 auto;
   color: var(--text-2);
-  transition: transform .15s ease;
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 .chevron.collapsed { transform: rotate(-90deg); }
 
@@ -725,6 +797,18 @@ main#view {
   font-size: var(--fs-2xl);
   box-shadow: 0 4px 14px rgba(10,132,255,.4);
   border: 0; cursor: pointer; z-index: 6;
+  /* Fica de fora da entrada de aba (é `position: fixed`), então tem a sua:
+     "chega" com spring ao trocar de tela. É o único botão com destaque
+     próprio na tela — é onde o movimento se paga. */
+  animation: fabIn var(--dur-base) var(--ease-spring) both;
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+@keyframes fabIn { from { opacity: 0; transform: scale(.8) } to { opacity: 1; transform: scale(1) } }
+/* Afunda e a sombra encolhe junto, como se encostasse na superfície. */
+.fab:active {
+  transform: scale(.92);
+  box-shadow: 0 2px 8px rgba(10,132,255,.34);
 }
 
 /* Modal / Sheet */
@@ -733,7 +817,7 @@ main#view {
   position: fixed; inset: 0; background: rgba(0,0,0,.4);
   z-index: 100;
   display: flex; align-items: flex-end; justify-content: center;
-  animation: fadeIn .2s ease;
+  animation: fadeIn var(--dur-base) var(--ease-out);
 }
 .sheet {
   background: var(--bg-elev);
@@ -741,7 +825,7 @@ main#view {
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   padding: var(--sp-4) var(--sp-4) calc(var(--sp-5) + var(--safe-bottom));
   max-height: 85vh; overflow-y: auto;
-  animation: slideUp .25s ease;
+  animation: slideUp var(--dur-base) var(--ease-spring);
 }
 .sheet h3 { margin: 0 0 14px; font-size: var(--fs-xl); }
 .sheet .actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-4); }
@@ -893,7 +977,7 @@ label.field span .info-btn svg,
   font-size: var(--fs-sm); line-height: 1.45; font-weight: 400;
   letter-spacing: normal; text-transform: none;
   box-shadow: 0 6px 24px rgba(0,0,0,.3);
-  animation: fadeIn .12s ease;
+  animation: fadeIn var(--dur-fast) var(--ease-out);
 }
 .info-pop::after {
   content: ''; position: absolute;
@@ -1029,7 +1113,7 @@ label.field span .info-btn svg,
   padding: 10px 16px; border-radius: var(--r-md);
   font-size: var(--fs-sm);
   opacity: 0; pointer-events: none;
-  transition: opacity .25s, transform .25s;
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
   z-index: 200;
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
@@ -1043,7 +1127,7 @@ label.field span .info-btn svg,
 .progress > i {
   display: block; height: 100%;
   background: var(--green);
-  transition: width .3s;
+  transition: width var(--dur-slow) var(--ease-out);
 }
 .progress > i.warn { background: var(--orange); }
 .progress > i.over { background: var(--red); }
@@ -1076,7 +1160,7 @@ label.field span .info-btn svg,
 .swipe-actions {
   position: absolute; top: 0; right: 0; bottom: 0;
   display: flex; align-items: stretch;
-  transform: translateX(100%); transition: transform .2s;
+  transform: translateX(100%); transition: transform var(--dur-base) var(--ease-out);
 }
 .swipe-row.open .swipe-actions { transform: translateX(0); }
 .swipe-actions button { border: 0; padding: 0 var(--sp-4); color: white; font-size: var(--fs-sm); cursor: pointer; }
@@ -1321,9 +1405,8 @@ label.field span .info-btn svg,
   display: flex;
   flex-direction: column;
   padding: var(--safe-top) 20px var(--safe-bottom);
-  animation: fadeIn .2s ease;
+  animation: fadeIn var(--dur-base) var(--ease-out);
 }
-@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
 .onb-header {
   display: flex;
   align-items: center;
@@ -1334,7 +1417,7 @@ label.field span .info-btn svg,
 .onb-dot {
   width: 6px; height: 6px; border-radius: 3px;
   background: var(--separator);
-  transition: width .2s, background .2s;
+  transition: width var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
 }
 .onb-dot.active { background: var(--tint); width: 18px; }
 .onb-skip {
@@ -1575,7 +1658,7 @@ label.field span .info-btn svg,
 .imp-row {
   display: flex; gap: var(--sp-3); align-items: flex-start;
   padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--separator);
-  cursor: pointer; transition: opacity .15s;
+  cursor: pointer; transition: opacity var(--dur-fast) var(--ease-out);
 }
 /* Não-incluídas ficam esmaecidas pra separar do que vai entrar. */
 .imp-row:not(.on) { opacity: .5; }

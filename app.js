@@ -3322,6 +3322,8 @@ const titles = {
 };
 
 let currentTab = 'dashboard';
+// A primeira pintura não vem de aba nenhuma: entra sem direção.
+let firstPaint = true;
 
 const setTab = (name) => {
   if (name === 'objetivos') name = 'investimentos'; // alias do hash antigo
@@ -3329,6 +3331,7 @@ const setTab = (name) => {
   // Sair da tela de Despesas cancela o modo seleção (evita estado pendurado).
   if (name !== 'despesas') exitSelection();
   if (name !== 'dashboard') { vencSelMode = false; vencSel.clear(); }
+  const prevIdx = tabs.indexOf(currentTab);
   currentTab = name;
   // Investimentos não tem aba própria (entra pela Carteira), mas continua sendo
   // uma rota válida — deep link, notificação e voltar do histórico funcionam.
@@ -3340,21 +3343,48 @@ const setTab = (name) => {
   const titleEl = document.getElementById('title');
   titleEl.innerHTML = escapeHTML(titles[name]) + (TAB_INFO[name] ? infoBtn(TAB_INFO[name]) : '');
   titleEl.classList.toggle('with-info', !!TAB_INFO[name]);
-  render();
+  // A tela entra pelo lado de onde a aba está: indo pra direita na tabbar, ela
+  // entra pela direita. Sem isso a navegação é troca seca de innerHTML e o
+  // usuário não tem pista de para onde foi. `dir: 0` = sem direção (primeira
+  // pintura e deep link a frio, que não vêm de aba nenhuma).
+  const nextIdx = tabs.indexOf(currentTab);
+  const dir = (firstPaint || prevIdx < 0 || prevIdx === nextIdx) ? 0 : (nextIdx > prevIdx ? 1 : -1);
+  firstPaint = false;
+  render({ enter: true, dir });
 };
 
+// TRÊS intenções de render, não duas:
+//
+//   render({ enter })          entrou na aba: toca a animação de entrada e
+//                              sobe o scroll. Só o setTab pede isso.
+//   render({ preserveScroll }) render leve (colapsar card): não mexe em nada.
+//   render()                   o dado mudou na mesma aba: repinta SEM
+//                              replayar a entrada.
+//
+// Antes só existiam as duas últimas, e o `render()` cru caía no caminho da
+// entrada. Como as ~31 mutações (marcar paga, excluir, importar, salvar) usam
+// `render()` cru, cada uma replayava a animação de todos os cards. Com 150ms
+// de fade isso passava batido; com movimento expressivo viraria a entrada
+// inteira tocando de novo a cada toque — que é como animação boa vira
+// tortura no uso diário.
+//
+// A flag .no-anim continua "grudenta" de propósito: alternar entre `none` e a
+// animação no mesmo frame causa pisca-pisca, então ela só sai quando queremos
+// animar de verdade.
 const render = (opts = {}) => {
   const root = document.getElementById('view');
-  // Renders leves (preserveScroll, ex: toggle de collapse) marcam o container
-  // com .no-anim ANTES do innerHTML pra os cards novos nao animarem. A flag
-  // fica ativa ate o proximo render "fresh" (navegacao de aba) — alternar
-  // entre none e cardFadeIn no mesmo frame causa pisca-pisca, entao soh
-  // removemos a flag quando intencionalmente queremos animar de novo.
-  if (opts.preserveScroll) {
-    root.classList.add('no-anim');
-  } else {
+  if (opts.enter) {
     root.scrollTop = 0;
     root.classList.remove('no-anim');
+    // Os filhos são recriados pelo innerHTML logo abaixo, então a animação
+    // reinicia sozinha — não precisa forçar reflow pra "rearmar" a classe.
+    root.classList.remove('view-in-right', 'view-in-left');
+    if (opts.dir) root.classList.add(opts.dir > 0 ? 'view-in-right' : 'view-in-left');
+  } else {
+    // Mutação de dado mantém o scrollTop = 0 de antes: esta leva mexe em
+    // ANIMAÇÃO, não em comportamento de rolagem.
+    if (!opts.preserveScroll) root.scrollTop = 0;
+    root.classList.add('no-anim');
   }
   views[currentTab](root);
   applyAlertBadge();
