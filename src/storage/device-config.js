@@ -11,6 +11,8 @@ export const DEVICE_CONFIG_KEYS = [
   // Cards/gráficos do dashboard
   'dashCompareShow', 'dashBarsShow', 'dashTagShow', 'dashUpcomingShow',
   'dashGoalsShow', 'dashHealthShow', 'dashCollapsed', 'dashOrder',
+  // Qual eixo (categoria/tag/investimentos) está aberto no bloco de gráfico.
+  'dashDistAtivo',
   'dashInvestShow', 'dashInvestDonutShow', 'dashInvestDonutType',
   'dashInvestDonutInnerPct', 'dashInvestListShow', 'dashInvestListPct',
   'onboardingDone', 'showCategoryIcons',

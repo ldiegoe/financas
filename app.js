@@ -38,6 +38,7 @@ import {
   computeAlerts as computeAlertsPure,
 } from './src/domain/alerts.js';
 import { createProfileStore } from './src/storage/profile-store.js';
+import { ordemDeCards } from './src/domain/dash-order.js';
 import { viewRenderPlan } from './src/ui/view-transition.js';
 import { createCountUp } from './src/ui/count-up.js';
 import { createLeave } from './src/ui/leave.js';
@@ -144,24 +145,30 @@ let activeProfileId = _profilesMeta.current;
 // Cards reordenáveis do dashboard (o card de saldo fica fixo no topo, fora
 // desta lista). DASH_CARD_KEYS é a ordem padrão; o usuário reordena em Ajustes
 // e a ordem fica em state.config.dashOrder.
-const DASH_CARD_KEYS = ['goals','health','upcoming','compare','bars','cat','invest','tag'];
+// 'dist' é o bloco único de distribuição: categoria, tag e investimentos
+// viraram chips dentro dele em vez de três cards empilhados (eram ~1350px de
+// rolagem só de gráfico). A migração de ordens já salvas está em
+// src/domain/dash-order.js.
+const DASH_CARD_KEYS = ['goals','health','upcoming','compare','bars','dist'];
 const DASH_CARD_NAMES = {
   goals: 'Objetivos',
   health: 'Saúde financeira',
   upcoming: 'Vencimentos',
   compare: 'Comparação com mês anterior',
   bars: 'Receitas vs Despesas',
-  cat: 'Despesas por categoria',
-  invest: 'Investimentos por categoria',
-  tag: 'Despesas por tag',
+  dist: 'Gráficos de distribuição',
 };
-// Ordem efetiva: a salva (filtrada pras chaves válidas) + qualquer card ainda
-// não presente, acrescentado no fim (cobre cards novos após uma ordem salva).
-const dashCardOrder = () => {
-  const saved = Array.isArray(state.config.dashOrder)
-    ? state.config.dashOrder.filter(k => DASH_CARD_KEYS.includes(k)) : [];
-  return [...saved, ...DASH_CARD_KEYS.filter(k => !saved.includes(k))];
-};
+
+// Os eixos do bloco de distribuição, na ordem em que viram chips. `prefix` é o
+// namespace das preferências (dashCatDonutType, dashTagListPct, ...), que
+// continuam valendo por eixo.
+const DIST_EIXOS = [
+  { id: 'cat',    chip: 'Categoria',     prefix: 'Cat',    canvas: 'ch-cat' },
+  { id: 'tag',    chip: 'Tag',           prefix: 'Tag',    canvas: 'ch-tag' },
+  { id: 'invest', chip: 'Investimentos', prefix: 'Invest', canvas: 'ch-invest' },
+];
+
+const dashCardOrder = () => ordemDeCards(state.config.dashOrder, DASH_CARD_KEYS);
 
 // Le config namespaced (dashCatDonutShow, dashTagDonutType, ...) com fallback
 // pra chave legacy (dashDonutShow, dashDonutType, ...). Mantem compatibilidade
@@ -1062,19 +1069,16 @@ const views = {};
 // entre "Despesas por categoria" e "Despesas por tag". As preferencias de
 // visualizacao (tipo do grafico, % interna, lista, % na lista) sao
 // compartilhadas entre os dois — usuario configura uma vez.
-const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => {
+// Corpo de um eixo de distribuição: rosca + lista. SEM o wrapper de card e sem
+// cabeçalho — quem embrulha é o bloco de chips, e é justamente por isso que
+// trocar de chip pode substituir só este pedaço, sem re-render da tela.
+const renderDistribuicaoBody = (data, canvasId, prefix) => {
   const showDonut = cfg('DonutShow', prefix) !== false;
   const showList  = cfg('ListShow',  prefix) !== false;
   const showListPct = cfg('ListPct', prefix) !== false;
   if (!showDonut && !showList) return '';
-  const headerHTML = collapseHeader(collapseKey, titulo);
-  if (isCollapsed(collapseKey)) return `<div class="card">${headerHTML}</div>`;
   if (data.length === 0) {
-    return `
-      <div class="card">
-        ${headerHTML}
-        <div class="empty"><span class="ico">${icon('inbox', 48)}</span>Sem dados no período.</div>
-      </div>`;
+    return `<div class="empty"><span class="ico">${icon('inbox', 48)}</span>Sem dados no período.</div>`;
   }
   const total = data.reduce((sum, d) => sum + d.valor, 0);
   const dashType = cfg('DonutType', prefix) || 'donut';
@@ -1107,17 +1111,47 @@ const renderDistribuicaoCard = (titulo, data, canvasId, collapseKey, prefix) => 
           </li>`;
       }).join('')}
     </ul>` : '';
+  return donutHTML + listHTML;
+};
+
+// Quais eixos viram chip. Categoria está sempre; tag é opt-in; investimentos
+// aparece se estiver ligado E houver dado — chip que abre numa lista vazia é
+// só uma promessa quebrada.
+const distEixosVisiveis = (dados) => DIST_EIXOS.filter(({ id }) => {
+  if (id === 'tag')    return !!state.config.dashTagShow;
+  if (id === 'invest') return state.config.dashInvestShow !== false && dados.invest.length > 0;
+  return true;
+});
+
+// Eixo ativo: o último escolhido, se ainda for visível. Se ele sumiu (a pessoa
+// desligou a tag em Ajustes, ou os investimentos ficaram sem dado no mês), cai
+// no primeiro em vez de mostrar um bloco vazio.
+const distEixoAtivo = (visiveis) => {
+  const salvo = state.config.dashDistAtivo;
+  return visiveis.find(e => e.id === salvo) || visiveis[0];
+};
+
+// Bloco único de distribuição: chips no topo, um gráfico por vez. Substituiu
+// três cards empilhados que somavam ~1350px de rolagem.
+const renderDistribuicaoCard = (dados) => {
+  const visiveis = distEixosVisiveis(dados);
+  if (visiveis.length === 0) return '';
+  const ativo = distEixoAtivo(visiveis);
   return `
-    <div class="card">
-      ${headerHTML}
-      ${donutHTML}
-      ${listHTML}
+    <div class="card dist-card">
+      <div class="dist-chips" role="tablist" aria-label="Eixo do gráfico">
+        ${visiveis.map(e => `
+          <button type="button" role="tab" class="dist-chip ${e.id === ativo.id ? 'active' : ''}"
+                  data-eixo="${e.id}" aria-controls="dist-body" aria-selected="${e.id === ativo.id}">${escapeHTML(e.chip)}</button>
+        `).join('')}
+      </div>
+      <div class="dist-body" id="dist-body" role="tabpanel">${renderDistribuicaoBody(dados[ativo.id], ativo.canvas, ativo.prefix)}</div>
     </div>`;
 };
 
 // Instancia Chart.js no canvas correspondente. Tipo (donut/pizza/barras) e
 // opcoes vem das preferencias por grafico (cat/tag) em state.config.
-const mountDistribuicaoChart = (canvas, data, prefix) => {
+const mountDistribuicaoChart = (canvas, data, prefix, animar = false) => {
   if (!canvas || data.length === 0) return;
   const dashType = cfg('DonutType', prefix) || 'donut';
   const chartData = {
@@ -1137,7 +1171,7 @@ const mountDistribuicaoChart = (canvas, data, prefix) => {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
-        animation: chartAnim(),
+        animation: chartAnim(animar),
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -1169,7 +1203,7 @@ const mountDistribuicaoChart = (canvas, data, prefix) => {
     const donutOptions = {
       responsive: true,
       maintainAspectRatio: false,
-      animation: chartAnim(),
+      animation: chartAnim(animar),
       cutout: dashType === 'pie' ? 0 : '62%',
       plugins: {
         legend: { display: false },
@@ -1373,6 +1407,11 @@ views.dashboard = (root) => {
       .map(([k, v]) => ({ id: k, nome: v.name, meta: null, valor: v.valor }))
       .sort((a, b) => b.valor - a.valor)
   );
+
+  // Os três eixos do bloco de distribuição, indexados pelo id do chip. Fica
+  // num objeto só porque o handler de troca de chip precisa alcançar qualquer
+  // um deles depois da tela montada.
+  const dadosDist = { cat: catData, tag: tagData, invest: investData };
 
   // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
   const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
@@ -1679,9 +1718,7 @@ views.dashboard = (root) => {
         ${isCollapsed('bars') ? '' : `<div class="chart-wrap"><canvas id="ch-bars"></canvas></div>`}
       </div>
     ` : '';
-      _cards.cat = renderDistribuicaoCard('Despesas por categoria', catData, 'ch-cat', 'cat', 'Cat');
-      _cards.invest = (state.config.dashInvestShow !== false && investData.length > 0) ? renderDistribuicaoCard('Investimentos por categoria', investData, 'ch-invest', 'invest', 'Invest') : '';
-      _cards.tag = state.config.dashTagShow ? renderDistribuicaoCard('Despesas por tag', tagData, 'ch-tag', 'tag', 'Tag') : '';
+      _cards.dist = renderDistribuicaoCard(dadosDist);
       return dashCardOrder().map(k => _cards[k] || '').join('');
     })()}
   `;
@@ -1768,10 +1805,38 @@ views.dashboard = (root) => {
       });
     }
 
-    mountDistribuicaoChart(root.querySelector('#ch-cat'), catData, 'Cat');
-    mountDistribuicaoChart(root.querySelector('#ch-invest'), investData, 'Invest');
-    mountDistribuicaoChart(root.querySelector('#ch-tag'), tagData, 'Tag');
+    // Só o eixo ativo tem canvas na tela; os outros nem existem no DOM.
+    for (const e of DIST_EIXOS) {
+      mountDistribuicaoChart(root.querySelector('#' + e.canvas), dadosDist[e.id], e.prefix);
+    }
   }
+
+  // Troca de eixo: DOM direto, sem render(). Um render() aqui subiria o scroll,
+  // replayaria a entrada de todos os cards e recriaria os outros gráficos —
+  // pra mudar um pedaço da tela que já está montado.
+  const chipsWrap = root.querySelector('.dist-chips');
+  if (chipsWrap) chipsWrap.addEventListener('click', (ev) => {
+    const chip = ev.target.closest('.dist-chip');
+    if (!chip || chip.classList.contains('active')) return;
+    const eixo = DIST_EIXOS.find(e => e.id === chip.dataset.eixo);
+    if (!eixo) return;
+
+    chipsWrap.querySelectorAll('.dist-chip').forEach(c => {
+      const ativo = c === chip;
+      c.classList.toggle('active', ativo);
+      c.setAttribute('aria-selected', ativo);
+    });
+
+    const corpo = root.querySelector('.dist-body');
+    corpo.innerHTML = renderDistribuicaoBody(dadosDist[eixo.id], eixo.canvas, eixo.prefix);
+    // O canvas é novo, então precisa de uma instância nova do Chart.js. A
+    // animação segue a regra de sempre: aqui é interação do usuário, não
+    // entrada de aba, então `entrandoNaAba` é false e o gráfico não redesenha.
+    mountDistribuicaoChart(corpo.querySelector('#' + eixo.canvas), dadosDist[eixo.id], eixo.prefix, true);
+
+    // Persiste device-wide, como as outras preferências de aparência.
+    updateConfig({ dashDistAtivo: eixo.id });
+  });
 };
 
 // valueChips() vivia aqui: a faixa de chips de mês/trimestre do cabeçalho.
@@ -1861,8 +1926,11 @@ const animarSaldo = (root) => {
 // Opções de animação do Chart.js na mesma regra do resto: desenha ao entrar na
 // aba, instantâneo ao repintar. Sem isto vale o default da biblioteca (1s), e
 // cada "marcar como paga" replayava um segundo de gráfico.
-const chartAnim = () =>
-  (entrandoNaAba && !reduzMovimento())
+// `forcar` cobre o caso que não é entrada de aba mas TAMBÉM não é repintura:
+// trocar o chip do bloco de distribuição é um pedido explícito de conteúdo
+// novo, e aí o gráfico desenhando é justamente o retorno da ação.
+const chartAnim = (forcar = false) =>
+  ((forcar || entrandoNaAba) && !reduzMovimento())
     ? { duration: durMs('--dur-slow'), easing: 'easeOutQuart' }
     : false;
 
@@ -2804,7 +2872,7 @@ views.config = (root) => {
         <div class="divided-block">
           <div class="checkbox-row flush">
             <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
-            <label for="f-dash-tag-show">Exibir card de despesas por tag</label>
+            <label for="f-dash-tag-show">Oferecer o eixo "Tag" no gráfico</label>
           </div>
           <label class="field spaced tight">
             <span class="with-info">Despesas com várias tags${infoBtn('"Dividir": despesa de R$ 100 com 2 tags vira R$ 50 em cada, e a soma bate com o total real. "Contar em cada": cada tag recebe o valor inteiro, então a soma pode passar do total.')}</span>
@@ -2838,7 +2906,7 @@ views.config = (root) => {
         </div>
         <div class="checkbox-row divided">
           <input id="f-dash-invest-show" type="checkbox" ${state.config.dashInvestShow!==false?'checked':''}/>
-          <label for="f-dash-invest-show">Investimentos por categoria</label>
+          <label for="f-dash-invest-show">Oferecer o eixo "Investimentos" no gráfico</label>
         </div>
         <div class="divided-block">
           <div class="block-label">

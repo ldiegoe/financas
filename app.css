@@ -1310,6 +1310,45 @@ label.field span .info-btn svg,
 .chart-wrap { position: relative; height: 240px; }
 .chart-wrap.donut { height: 260px; }
 
+/* --- Bloco de distribuição -------------------------------------------------
+   Categoria, tag e investimentos eram TRÊS cards empilhados (~1350px de
+   rolagem só de gráfico). Viraram um card com seletor de chips: um gráfico
+   por vez, e o chip ativo é o título — por isso este card não tem <h2>. */
+.dist-card { padding-top: var(--sp-3); }
+/* Faixa rolável: com três eixos cabe na tela, mas a régua não pode depender
+   disso — nome de eixo é texto do domínio e pode crescer. */
+.dist-chips {
+  display: flex; gap: var(--sp-2);
+  overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  /* Sangra até a borda do card pra faixa não parecer cortada ao rolar. */
+  margin: 0 calc(-1 * var(--sp-4)) var(--sp-3);
+  padding: 0 var(--sp-4) var(--sp-1);
+}
+.dist-chips::-webkit-scrollbar { display: none; }
+.dist-chip {
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-full);
+  border: 1px solid var(--separator);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: var(--fs-sm); font-weight: 600;
+  font-family: inherit; cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+.dist-chip:active { transform: scale(.96); }
+/* Selecionado é estado de interação: azul, e sem borda pra ler como sólido. */
+.dist-chip.active {
+  background: var(--tint); color: #fff; border-color: var(--tint);
+}
+/* Sem animação própria no corpo: quem confirma a troca é o gráfico se
+   redesenhando (ver chartAnim no app.js). Um fade aqui além disso tocaria no
+   render da tela e NÃO na troca de chip — o .dist-body sobrevive à troca,
+   só o conteúdo dele é substituído. */
+
 .search-row { margin-bottom: var(--sp-2); }
 .search-row input[type="search"] {
   background: var(--bg-elev);
