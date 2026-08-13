@@ -13,6 +13,8 @@ export const DEVICE_CONFIG_KEYS = [
   'dashGoalsShow', 'dashHealthShow', 'dashCollapsed', 'dashOrder',
   // Qual eixo (categoria/tag/investimentos) está aberto no bloco de gráfico.
   'dashDistAtivo',
+  // Se o detalhe do card de saldo (receitas/despesas/já pago) está expandido.
+  'dashSaldoAberto',
   'dashInvestShow', 'dashInvestDonutShow', 'dashInvestDonutType',
   'dashInvestDonutInnerPct', 'dashInvestListShow', 'dashInvestListPct',
   'onboardingDone', 'showCategoryIcons',

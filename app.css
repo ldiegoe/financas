@@ -552,7 +552,31 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
 /* Card unico no topo do dashboard com Receitas, Despesas e Saldo. Linha
    por metrica + divisoria e linha "Saldo" levemente maior pra hierarquia.
    Gradiente sutil baseado no sinal do saldo da personalidade sem cafona. */
-.summary-card { padding: var(--sp-4); position: relative; overflow: hidden; }
+.summary-card { padding: var(--sp-4); position: relative; overflow: hidden; cursor: pointer; }
+/* Detalhe do saldo (receitas, despesas, gastos, já pago): fechado por padrão,
+   abre ao tocar no card. `grid-template-rows: 0fr → 1fr` é o jeito de animar
+   altura DESCONHECIDA — com max-height seria preciso chutar um número maior
+   que o conteúdo, e o chute define a velocidade real da animação. O filho
+   precisa de `min-height: 0` senão o grid se recusa a encolher abaixo do
+   conteúdo e nada fecha. */
+.summary-detalhe {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-out);
+}
+.summary-card.aberto .summary-detalhe { grid-template-rows: 1fr; }
+.summary-detalhe > div { overflow: hidden; min-height: 0; }
+/* O chevron aponta pra baixo fechado e pra cima aberto — diz o que o próximo
+   toque faz, não o estado atual. */
+.saldo-chevron {
+  flex: 0 0 auto; color: var(--text-2);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.summary-card.aberto .saldo-chevron { transform: rotate(180deg); }
+/* A linha do saldo é o controle: o rótulo vira flex pra acomodar o chevron. */
+#saldo-toggle { cursor: pointer; }
+#saldo-toggle .summary-label { display: inline-flex; align-items: center; gap: var(--sp-2); }
+#saldo-toggle:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; border-radius: var(--r-sm); }
 .summary-card.positive { background-image: linear-gradient(135deg, transparent 40%, rgba(48,209,88,.06) 100%); }
 .summary-card.negative { background-image: linear-gradient(135deg, transparent 40%, rgba(255,69,58,.06) 100%); }
 .summary-row {

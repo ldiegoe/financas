@@ -1413,6 +1413,10 @@ views.dashboard = (root) => {
   // um deles depois da tela montada.
   const dadosDist = { cat: catData, tag: tagData, invest: investData };
 
+  // O card de saldo nasce fechado: mostra a conclusão, não a memória de
+  // cálculo. Quem quiser o detalhe toca — e a escolha fica guardada.
+  const saldoAberto = state.config.dashSaldoAberto === true;
+
   // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
   const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
   const monthLabels = months.map(({m}) => monthName(m, true));
@@ -1450,28 +1454,41 @@ views.dashboard = (root) => {
     ${backupBanner}
     ${periodHeader()}
 
-    <div class="card summary-card ${saldo >= 0 ? 'positive' : 'negative'}">
-      <div class="summary-row">
-        <span class="summary-label">Receitas</span>
-        <span class="summary-value positive">${fmtBRL(totalRenda)}</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Despesas</span>
-        <span class="summary-value negative">${fmtBRL(totalDespesa)}</span>
-      </div>
-      ${totalGuardado > 0 ? `
-        <div class="summary-sub">
-          <span>Gastos <strong>${fmtBRL(totalGastos)}</strong></span>
-          <span>Investido <strong>${fmtBRL(totalGuardado)}</strong></span>
+    <!-- O card mostra só a conclusão (saldo e atual); a memória de cálculo
+         que leva até ela abre ao toque. O card inteiro é a área de toque, mas
+         quem carrega o estado pra leitor de tela é a linha do saldo. -->
+    <div class="card summary-card ${saldo >= 0 ? 'positive' : 'negative'} ${saldoAberto ? 'aberto' : ''}" id="summary-card">
+      <div class="summary-detalhe" id="summary-detalhe" ${saldoAberto ? '' : 'aria-hidden="true"'}>
+        <div>
+          <div class="summary-row">
+            <span class="summary-label">Receitas</span>
+            <span class="summary-value positive">${fmtBRL(totalRenda)}</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Despesas</span>
+            <span class="summary-value negative">${fmtBRL(totalDespesa)}</span>
+          </div>
+          ${totalGuardado > 0 ? `
+            <div class="summary-sub">
+              <span>Gastos <strong>${fmtBRL(totalGastos)}</strong></span>
+              <span>Investido <strong>${fmtBRL(totalGuardado)}</strong></span>
+            </div>
+          ` : ''}
+          <div class="summary-sub">
+            <span>Já pago <strong>${fmtBRL(totalPago)}</strong></span>
+            <span>A pagar <strong>${fmtBRL(totalPendente)}</strong></span>
+          </div>
+          <div class="summary-divider"></div>
         </div>
-      ` : ''}
-      <div class="summary-sub">
-        <span>Já pago <strong>${fmtBRL(totalPago)}</strong></span>
-        <span>A pagar <strong>${fmtBRL(totalPendente)}</strong></span>
       </div>
-      <div class="summary-divider"></div>
-      <div class="summary-row summary-row-main">
-        <span class="summary-label">Saldo</span>
+      <div class="summary-row summary-row-main" id="saldo-toggle" role="button" tabindex="0"
+           aria-controls="summary-detalhe" aria-expanded="${saldoAberto}">
+        <span class="summary-label">
+          Saldo
+          <svg class="saldo-chevron" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
+            <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
         <!-- data-cents guarda o saldo em centavos pro contador saber de onde
              e até onde ir; o texto já vem formatado pra tela nunca depender
              do JS de animação ter rodado. -->
@@ -1809,6 +1826,32 @@ views.dashboard = (root) => {
     for (const e of DIST_EIXOS) {
       mountDistribuicaoChart(root.querySelector('#' + e.canvas), dadosDist[e.id], e.prefix);
     }
+  }
+
+  // Abrir/fechar o detalhe do saldo. DOM direto: um render() aqui repintaria
+  // a tela inteira e recriaria os gráficos pra mostrar quatro linhas.
+  const cardSaldo = root.querySelector('#summary-card');
+  if (cardSaldo) {
+    const alvo = cardSaldo.querySelector('#saldo-toggle');
+    const detalhe = cardSaldo.querySelector('#summary-detalhe');
+    const alternar = () => {
+      const aberto = !cardSaldo.classList.contains('aberto');
+      cardSaldo.classList.toggle('aberto', aberto);
+      alvo.setAttribute('aria-expanded', aberto);
+      // Fechado, o detalhe tem altura zero mas continua no DOM — sem isto o
+      // leitor de tela leria receitas e despesas que a tela não mostra.
+      if (aberto) detalhe.removeAttribute('aria-hidden');
+      else detalhe.setAttribute('aria-hidden', 'true');
+      updateConfig({ dashSaldoAberto: aberto });
+    };
+    // O card inteiro é a área de toque, mas o controle anunciado é a linha do
+    // saldo: `role=button` no card faria o leitor ler o card todo como rótulo.
+    cardSaldo.addEventListener('click', alternar);
+    alvo.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault();   // espaço rolaria a página
+      alternar();
+    });
   }
 
   // Troca de eixo: DOM direto, sem render(). Um render() aqui subiria o scroll,
