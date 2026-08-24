@@ -59,6 +59,7 @@ import { infoBtn, mountInfoPopover } from './src/ui/info-popover.js';
 import { createSheetRenda } from './src/ui/sheets/renda.js';
 import { createSheetApagarTudo } from './src/ui/sheets/apagar-tudo.js';
 import { createSheetPeriodo } from './src/ui/sheets/periodo.js';
+import { createSheetSaldoDetalhe } from './src/ui/sheets/saldo-detalhe.js';
 import { createSheetAlerts } from './src/ui/sheets/alerts.js';
 import { createSheetsProfiles } from './src/ui/sheets/profiles.js';
 import { createSheetCategoria } from './src/ui/sheets/categoria.js';
@@ -1131,20 +1132,24 @@ const distEixoAtivo = (visiveis) => {
   return visiveis.find(e => e.id === salvo) || visiveis[0];
 };
 
-// Bloco único de distribuição: chips no topo, um gráfico por vez. Substituiu
-// três cards empilhados que somavam ~1350px de rolagem.
+// Bloco único de distribuição: seletor de eixo + um gráfico por vez.
+// Substituiu três cards empilhados que somavam ~1350px de rolagem.
+//
+// A faixa de chips fica FORA do card, como um seletor da seção — dentro dele
+// parecia um controle do card, e não o rótulo do que está sendo mostrado. Por
+// isso ela sangra até a borda da tela e rola por baixo dela.
 const renderDistribuicaoCard = (dados) => {
   const visiveis = distEixosVisiveis(dados);
   if (visiveis.length === 0) return '';
   const ativo = distEixoAtivo(visiveis);
   return `
+    <div class="dist-chips" role="tablist" aria-label="Eixo do gráfico">
+      ${visiveis.map(e => `
+        <button type="button" role="tab" class="dist-chip ${e.id === ativo.id ? 'active' : ''}"
+                data-eixo="${e.id}" aria-controls="dist-body" aria-selected="${e.id === ativo.id}">${escapeHTML(e.chip)}</button>
+      `).join('')}
+    </div>
     <div class="card dist-card">
-      <div class="dist-chips" role="tablist" aria-label="Eixo do gráfico">
-        ${visiveis.map(e => `
-          <button type="button" role="tab" class="dist-chip ${e.id === ativo.id ? 'active' : ''}"
-                  data-eixo="${e.id}" aria-controls="dist-body" aria-selected="${e.id === ativo.id}">${escapeHTML(e.chip)}</button>
-        `).join('')}
-      </div>
       <div class="dist-body" id="dist-body" role="tabpanel">${renderDistribuicaoBody(dados[ativo.id], ativo.canvas, ativo.prefix)}</div>
     </div>`;
 };
@@ -1413,9 +1418,6 @@ views.dashboard = (root) => {
   // um deles depois da tela montada.
   const dadosDist = { cat: catData, tag: tagData, invest: investData };
 
-  // O card de saldo nasce fechado: mostra a conclusão, não a memória de
-  // cálculo. Quem quiser o detalhe toca — e a escolha fica guardada.
-  const saldoAberto = state.config.dashSaldoAberto === true;
 
   // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
   const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
@@ -1454,41 +1456,14 @@ views.dashboard = (root) => {
     ${backupBanner}
     ${periodHeader()}
 
-    <!-- O card mostra só a conclusão (saldo e atual); a memória de cálculo
-         que leva até ela abre ao toque. O card inteiro é a área de toque, mas
-         quem carrega o estado pra leitor de tela é a linha do saldo. -->
-    <div class="card summary-card ${saldo >= 0 ? 'positive' : 'negative'} ${saldoAberto ? 'aberto' : ''}" id="summary-card">
-      <div class="summary-detalhe" id="summary-detalhe" ${saldoAberto ? '' : 'aria-hidden="true"'}>
-        <div>
-          <div class="summary-row">
-            <span class="summary-label">Receitas</span>
-            <span class="summary-value positive">${fmtBRL(totalRenda)}</span>
-          </div>
-          <div class="summary-row">
-            <span class="summary-label">Despesas</span>
-            <span class="summary-value negative">${fmtBRL(totalDespesa)}</span>
-          </div>
-          ${totalGuardado > 0 ? `
-            <div class="summary-sub">
-              <span>Gastos <strong>${fmtBRL(totalGastos)}</strong></span>
-              <span>Investido <strong>${fmtBRL(totalGuardado)}</strong></span>
-            </div>
-          ` : ''}
-          <div class="summary-sub">
-            <span>Já pago <strong>${fmtBRL(totalPago)}</strong></span>
-            <span>A pagar <strong>${fmtBRL(totalPendente)}</strong></span>
-          </div>
-          <div class="summary-divider"></div>
-        </div>
-      </div>
+    <!-- Só a conclusão fica no card; a memória de cálculo abre num sheet.
+         O card inteiro é a área de toque, mas quem é anunciado como controle
+         é a linha do saldo — role=button no card faria o leitor de tela ler
+         o card inteiro como rótulo do botão. -->
+    <div class="card summary-card ${saldo >= 0 ? 'positive' : 'negative'}" id="summary-card">
       <div class="summary-row summary-row-main" id="saldo-toggle" role="button" tabindex="0"
-           aria-controls="summary-detalhe" aria-expanded="${saldoAberto}">
-        <span class="summary-label">
-          Saldo
-          <svg class="saldo-chevron" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
-            <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
+           aria-label="Saldo do mês. Toque para ver o detalhe.">
+        <span class="summary-label">Saldo</span>
         <!-- data-cents guarda o saldo em centavos pro contador saber de onde
              e até onde ir; o texto já vem formatado pra tela nunca depender
              do JS de animação ter rodado. -->
@@ -1828,29 +1803,21 @@ views.dashboard = (root) => {
     }
   }
 
-  // Abrir/fechar o detalhe do saldo. DOM direto: um render() aqui repintaria
-  // a tela inteira e recriaria os gráficos pra mostrar quatro linhas.
+  // Toque no card de saldo abre o detalhe como sheet. Os totais vão JÁ
+  // CALCULADOS: são os mesmos que pintaram o card, e recalcular lá dentro
+  // abriria espaço pros dois números divergirem.
   const cardSaldo = root.querySelector('#summary-card');
   if (cardSaldo) {
-    const alvo = cardSaldo.querySelector('#saldo-toggle');
-    const detalhe = cardSaldo.querySelector('#summary-detalhe');
-    const alternar = () => {
-      const aberto = !cardSaldo.classList.contains('aberto');
-      cardSaldo.classList.toggle('aberto', aberto);
-      alvo.setAttribute('aria-expanded', aberto);
-      // Fechado, o detalhe tem altura zero mas continua no DOM — sem isto o
-      // leitor de tela leria receitas e despesas que a tela não mostra.
-      if (aberto) detalhe.removeAttribute('aria-hidden');
-      else detalhe.setAttribute('aria-hidden', 'true');
-      updateConfig({ dashSaldoAberto: aberto });
-    };
-    // O card inteiro é a área de toque, mas o controle anunciado é a linha do
-    // saldo: `role=button` no card faria o leitor ler o card todo como rótulo.
-    cardSaldo.addEventListener('click', alternar);
-    alvo.addEventListener('keydown', (ev) => {
+    const abrirDetalhe = () => sheetSaldoDetalhe({
+      periodo: periodLabel(),
+      totalRenda, totalDespesa, totalGastos, totalGuardado,
+      totalPago, totalPendente, saldo, saldoAtual, rendaProgramada,
+    });
+    cardSaldo.addEventListener('click', abrirDetalhe);
+    cardSaldo.querySelector('#saldo-toggle').addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter' && ev.key !== ' ') return;
       ev.preventDefault();   // espaço rolaria a página
-      alternar();
+      abrirDetalhe();
     });
   }
 
@@ -3614,6 +3581,8 @@ const render = (opts = {}) => {
 const sheetRenda = createSheetRenda({ openSheet, closeSheet, db, render, toast });
 // setPeriod usa Object.assign porque `period` é const mutado no lugar — a
 // identidade do objeto precisa sobreviver à troca.
+// Só leitura: não recebe db nem render, porque não grava nada.
+const sheetSaldoDetalhe = createSheetSaldoDetalhe({ openSheet, closeSheet, fmtBRL });
 const sheetPeriodo = createSheetPeriodo({
   openSheet, closeSheet, render,
   getPeriod: () => period,

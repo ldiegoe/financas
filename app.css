@@ -549,33 +549,17 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
 .card .big-sub .ico { display: inline-flex; }
 .card .big-sub strong { font-variant-numeric: tabular-nums; }
 
-/* Card unico no topo do dashboard com Receitas, Despesas e Saldo. Linha
-   por metrica + divisoria e linha "Saldo" levemente maior pra hierarquia.
-   Gradiente sutil baseado no sinal do saldo da personalidade sem cafona. */
-.summary-card { padding: var(--sp-4); position: relative; overflow: hidden; cursor: pointer; }
-/* Detalhe do saldo (receitas, despesas, gastos, já pago): fechado por padrão,
-   abre ao tocar no card. `grid-template-rows: 0fr → 1fr` é o jeito de animar
-   altura DESCONHECIDA — com max-height seria preciso chutar um número maior
-   que o conteúdo, e o chute define a velocidade real da animação. O filho
-   precisa de `min-height: 0` senão o grid se recusa a encolher abaixo do
-   conteúdo e nada fecha. */
-.summary-detalhe {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--dur-base) var(--ease-out);
+/* Card do topo do dashboard: mostra só a CONCLUSÃO (saldo do mês e saldo
+   atual). Receitas, despesas e o que já foi pago são a memória de cálculo e
+   abrem num sheet ao toque — antes ocupavam o card inteiro e empurravam o
+   número que importa pra baixo da dobra.
+   Gradiente sutil baseado no sinal do saldo dá personalidade sem cafona;
+   afunda de leve ao toque, como tudo que abre outra tela. */
+.summary-card {
+  padding: var(--sp-4); position: relative; overflow: hidden; cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
 }
-.summary-card.aberto .summary-detalhe { grid-template-rows: 1fr; }
-.summary-detalhe > div { overflow: hidden; min-height: 0; }
-/* O chevron aponta pra baixo fechado e pra cima aberto — diz o que o próximo
-   toque faz, não o estado atual. */
-.saldo-chevron {
-  flex: 0 0 auto; color: var(--text-2);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.summary-card.aberto .saldo-chevron { transform: rotate(180deg); }
-/* A linha do saldo é o controle: o rótulo vira flex pra acomodar o chevron. */
-#saldo-toggle { cursor: pointer; }
-#saldo-toggle .summary-label { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.summary-card:active { transform: scale(.985); }
 #saldo-toggle:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; border-radius: var(--r-sm); }
 .summary-card.positive { background-image: linear-gradient(135deg, transparent 40%, rgba(48,209,88,.06) 100%); }
 .summary-card.negative { background-image: linear-gradient(135deg, transparent 40%, rgba(255,69,58,.06) 100%); }
@@ -604,9 +588,9 @@ main#view[class*="view-in-"] .list > li:nth-child(6) { animation-delay: calc(var
 /* Linha de fechamento do card-resumo ("A receber / Atual"): não é um par
    rótulo↔valor como as demais, então agrupa à direita, sob o saldo. */
 .summary-sub.end { justify-content: flex-end; gap: var(--sp-4); }
-/* O saldo é a conclusão do card, não mais uma linha: ganha respiro extra
-   acima pra se destacar do bloco de receitas/despesas que o alimenta. */
-.summary-row-main { padding-top: var(--sp-3); }
+/* O saldo agora abre o card, então não precisa mais do respiro que o
+   separava do bloco de receitas/despesas — esse bloco foi pro sheet. */
+.summary-row-main { padding-top: 0; }
 .summary-row-main .summary-label { color: var(--text); font-weight: 600; font-size: var(--fs-md); }
 /* O saldo é o número herói da tela — o maior elemento tipográfico do app,
    junto do título da página. Dado acima de navegação. */
@@ -1336,28 +1320,30 @@ label.field span .info-btn svg,
 
 /* --- Bloco de distribuição -------------------------------------------------
    Categoria, tag e investimentos eram TRÊS cards empilhados (~1350px de
-   rolagem só de gráfico). Viraram um card com seletor de chips: um gráfico
-   por vez, e o chip ativo é o título — por isso este card não tem <h2>. */
-.dist-card { padding-top: var(--sp-3); }
-/* Faixa rolável: com três eixos cabe na tela, mas a régua não pode depender
-   disso — nome de eixo é texto do domínio e pode crescer. */
+   rolagem só de gráfico). Viraram um gráfico por vez, com um seletor de eixo.
+   O card não tem <h2>: o chip ativo é o título. */
+.dist-card { padding-top: var(--sp-4); }
+/* A faixa fica FORA do card: é seletor da seção, não controle de um card.
+   Sangra até a borda da TELA (o #view tem --sp-4 de padding lateral) e rola
+   por baixo dela, então o último chip nunca parece cortado. A régua não pode
+   depender de caberem três — nome de eixo é texto do domínio e pode crescer. */
 .dist-chips {
   display: flex; gap: var(--sp-2);
   overflow-x: auto; overscroll-behavior-x: contain;
   scrollbar-width: none;
-  /* Sangra até a borda do card pra faixa não parecer cortada ao rolar. */
   margin: 0 calc(-1 * var(--sp-4)) var(--sp-3);
-  padding: 0 var(--sp-4) var(--sp-1);
+  padding: var(--sp-1) var(--sp-4);
 }
 .dist-chips::-webkit-scrollbar { display: none; }
 .dist-chip {
   flex: 0 0 auto;
-  padding: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  min-height: 44px;              /* alvo de toque, como os demais botões */
   border-radius: var(--r-full);
   border: 1px solid var(--separator);
-  background: var(--bg);
+  background: var(--bg-elev);
   color: var(--text-2);
-  font-size: var(--fs-sm); font-weight: 600;
+  font-size: var(--fs-md); font-weight: 600;
   font-family: inherit; cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease-out),
               color var(--dur-fast) var(--ease-out),
@@ -1931,3 +1917,21 @@ label.field span .info-btn svg,
   background: var(--bg-elev); border-top: 1px solid var(--separator);
 }
 .imp-footer button { flex: 1; }
+
+/* ----- Detalhe do saldo (sheet) -----
+   Pares rótulo↔valor. As linhas principais (Receitas, Despesas, Saldo) têm o
+   peso; as de apoio recuam e ficam neutras — só o que é polaridade real de
+   dinheiro recebe cor. */
+.sd-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--sp-3); padding: var(--sp-2) 0;
+  font-variant-numeric: tabular-nums;
+}
+.sd-label { color: var(--text); font-size: var(--fs-md); font-weight: 600; }
+.sd-value { font-size: var(--fs-lg); font-weight: 600; text-align: right; word-break: break-all; }
+.sd-value.positive { color: var(--green); }
+.sd-value.negative { color: var(--red); }
+.sd-sub { padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); }
+.sd-sub .sd-label { color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
+.sd-sub .sd-value { color: var(--text-2); font-size: var(--fs-sm); font-weight: 600; }
+.sd-divider { height: 1px; background: var(--separator); margin: var(--sp-3) 0; }
