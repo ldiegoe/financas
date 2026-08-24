@@ -1,15 +1,20 @@
-// Ordem dos cards do dashboard, com migração dos três gráficos de
-// distribuição para o bloco único de chips.
+// Ordem dos cards da Início.
 //
 // Migração de ordem falha em silêncio: nada quebra, o card só aparece no lugar
-// errado. E falha exatamente pra quem mais personalizou — quem nunca arrastou
-// nada não tem ordem salva e não vê problema nenhum.
+// errado — ou some. E falha exatamente pra quem mais personalizou, já que quem
+// nunca arrastou nada não tem ordem salva e não vê problema nenhum.
+//
+// Duas mudanças de layout já passaram por aqui: os três gráficos de
+// distribuição viraram um bloco só, e depois os blocos de análise saíram da
+// Início pra tela de Análise.
 
 import { describe, it, expect } from 'vitest';
-import { ordemDeCards, LEGADO_DIST } from '../src/domain/dash-order.js';
+import { ordemDeCards } from '../src/domain/dash-order.js';
 
-// A lista de hoje: os três gráficos viraram 'dist'.
-const CHAVES = ['goals', 'health', 'upcoming', 'compare', 'bars', 'dist'];
+// A lista de hoje: só o que é card da Início.
+const CHAVES = ['goals', 'health', 'upcoming'];
+// Chaves que já foram cards desta tela e hoje vivem em Análise.
+const MUDOU_DE_TELA = ['compare', 'bars', 'dist', 'cat', 'invest', 'tag'];
 
 describe('ordemDeCards — sem ordem salva', () => {
   it('devolve a lista completa na ordem padrão', () => {
@@ -24,49 +29,39 @@ describe('ordemDeCards — sem ordem salva', () => {
   });
 });
 
-describe('ordemDeCards — migração dos gráficos', () => {
-  it('o bloco novo assume a posição do PRIMEIRO gráfico antigo', () => {
-    // Sem isto, 'dist' iria pro fim e o gráfico saltaria pro rodapé.
-    const salva = ['cat', 'goals', 'invest', 'health', 'tag'];
-    expect(ordemDeCards(salva, CHAVES)).toEqual(
-      ['dist', 'goals', 'health', 'upcoming', 'compare', 'bars'],
-    );
+describe('ordemDeCards — cards que mudaram de tela', () => {
+  it('descarta as chaves que hoje vivem em Análise', () => {
+    const salva = ['dist', 'goals', 'bars', 'health', 'compare', 'upcoming'];
+    expect(ordemDeCards(salva, CHAVES)).toEqual(['goals', 'health', 'upcoming']);
   });
 
-  it('funciona com o gráfico no meio da ordem salva', () => {
-    const salva = ['goals', 'cat', 'invest', 'tag', 'health'];
+  it('descarta também as chaves do layout anterior a esse', () => {
+    // Quem não abre o app há duas versões tem 'cat'/'invest'/'tag' salvos.
+    const salva = ['cat', 'goals', 'invest', 'tag', 'health'];
     const r = ordemDeCards(salva, CHAVES);
-    expect(r.slice(0, 3)).toEqual(['goals', 'dist', 'health']);
+    for (const antigo of MUDOU_DE_TELA) expect(r).not.toContain(antigo);
+    expect(r.slice(0, 2)).toEqual(['goals', 'health']);
   });
 
-  it('os outros dois gráficos somem sem deixar buraco nem duplicar', () => {
-    const r = ordemDeCards(['cat', 'invest', 'tag'], CHAVES);
-    expect(r.filter((k) => k === 'dist')).toHaveLength(1);
-    for (const antigo of LEGADO_DIST) expect(r).not.toContain(antigo);
-  });
-
-  it('ordem que já tem "dist" salvo não duplica ao encontrar um legado', () => {
-    // Estado possível entre versões: ordem gravada depois da migração, mas
-    // ainda com um resto antigo dentro.
-    const r = ordemDeCards(['dist', 'goals', 'cat'], CHAVES);
-    expect(r.filter((k) => k === 'dist')).toHaveLength(1);
-    expect(r[0]).toBe('dist');
+  it('ordem só com chaves que saíram volta ao padrão, sem tela vazia', () => {
+    expect(ordemDeCards(MUDOU_DE_TELA, CHAVES)).toEqual(CHAVES);
   });
 });
 
 describe('ordemDeCards — invariantes', () => {
   const CASOS = [
     ['vazia', []],
-    ['só legado', ['cat', 'invest', 'tag']],
-    ['legado + atuais', ['cat', 'goals', 'invest', 'health', 'tag']],
-    ['com chave morta', ['goals', 'chave-que-nao-existe', 'bars']],
+    ['só chaves que saíram', MUDOU_DE_TELA],
+    ['mistura', ['cat', 'goals', 'bars', 'health', 'dist']],
+    ['com chave morta', ['goals', 'chave-que-nao-existe', 'upcoming']],
     ['completa', CHAVES],
-    ['com repetição', ['goals', 'goals', 'bars', 'bars']],
+    ['com repetição', ['goals', 'goals', 'health', 'health']],
+    ['ordem invertida', ['upcoming', 'health', 'goals']],
   ];
 
   it('devolve sempre exatamente as chaves válidas, sem faltar nem sobrar', () => {
     // Verificação independente do algoritmo: seja qual for a entrada, a saída
-    // é uma permutação de CHAVES. Card sumido do dashboard é o pior defeito
+    // é uma permutação de CHAVES. Card sumido da tela é o pior defeito
     // possível aqui, e é o que ninguém percebe ao escrever.
     for (const [nome, salva] of CASOS) {
       const r = ordemDeCards(salva, CHAVES);
@@ -76,14 +71,13 @@ describe('ordemDeCards — invariantes', () => {
   });
 
   it('nunca inventa chave que não está na lista válida', () => {
-    const r = ordemDeCards(['goals', 'inexistente', 'cat'], CHAVES);
+    const r = ordemDeCards(['goals', 'inexistente', 'dist'], CHAVES);
     expect(r.every((k) => CHAVES.includes(k))).toBe(true);
   });
 
   it('preserva a ordem relativa do que o usuário arrastou', () => {
-    const salva = ['bars', 'health', 'goals'];
-    const r = ordemDeCards(salva, CHAVES);
-    expect(r.slice(0, 3)).toEqual(['bars', 'health', 'goals']);
+    expect(ordemDeCards(['upcoming', 'health', 'goals'], CHAVES))
+      .toEqual(['upcoming', 'health', 'goals']);
   });
 
   it('card novo (ainda não na ordem salva) entra no fim', () => {

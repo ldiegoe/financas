@@ -1935,3 +1935,7 @@ label.field span .info-btn svg,
 .sd-sub .sd-label { color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
 .sd-sub .sd-value { color: var(--text-2); font-size: var(--fs-sm); font-weight: 600; }
 .sd-divider { height: 1px; background: var(--separator); margin: var(--sp-3) 0; }
+
+/* Cartão de navegação pra Análise, no fim da Início. Azul porque é interação
+   (leva a outra tela) — o de Investimentos, na Carteira, segue o mesmo papel. */
+.nav-card-ico.analise { background: rgba(10,132,255,.14); color: var(--tint); }

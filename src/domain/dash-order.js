@@ -1,37 +1,34 @@
-// Ordem dos cards do dashboard.
+// Ordem dos cards da Início.
 //
 // Puro de propósito: a ordem é persistida no aparelho do usuário e sobrevive a
 // mudanças de layout, então toda vez que a lista de cards muda existe um
 // problema de migração — e migração errada é silenciosa (o card só aparece no
-// lugar errado, ninguém "quebra").
+// lugar errado, ou some, sem nada "quebrar").
 //
-// O caso que criou este módulo: os três gráficos de distribuição (categoria,
-// tag, investimentos) viraram UM bloco com seletor. Quem já tinha ordem salva
-// tem 'cat', 'invest' e 'tag' como itens separados lá dentro. Sem migrar, o
-// filtro de chaves válidas descartaria os três e o bloco novo cairia no FIM da
-// lista — o gráfico saltaria pro rodapé do dashboard justamente de quem mais
-// mexeu nas preferências.
-
-// Chaves que os três gráficos separados ocupavam antes da consolidação.
-export const LEGADO_DIST = ['cat', 'invest', 'tag'];
+// Já aconteceram duas mudanças assim:
+//   1. categoria, tag e investimentos (três cards) viraram um bloco só;
+//   2. esse bloco, mais "receitas vs despesas" e "comparação", saíram da
+//      Início pra tela de Análise.
+// Depois da segunda, nenhuma dessas chaves é card da Início — então elas
+// simplesmente não constam mais em `chaves` e são descartadas aqui. Não há
+// mapeamento a fazer: o destino delas é outra tela, não outra posição.
 
 // `salva`  — o que está em state.config.dashOrder (pode ser qualquer coisa)
 // `chaves` — DASH_CARD_KEYS, a lista válida de hoje
 //
-// Devolve a ordem efetiva: a salva, migrada e filtrada, mais os cards que
-// ainda não aparecem nela (cobre card novo depois de uma ordem já salva).
-export const ordemDeCards = (salva, chaves, { legado = LEGADO_DIST, novo = 'dist' } = {}) => {
+// Devolve a ordem efetiva: a salva, filtrada e sem repetição, mais os cards
+// que ainda não aparecem nela (cobre card novo depois de uma ordem já salva).
+export const ordemDeCards = (salva, chaves) => {
   const lista = Array.isArray(salva) ? salva : [];
   const vistos = new Set();
   const saida = [];
 
   for (const k of lista) {
-    // Onde estava o PRIMEIRO dos gráficos antigos entra o bloco novo; os
-    // outros dois somem sem deixar buraco, porque agora são chips dele.
-    const chave = legado.includes(k) ? novo : k;
-    if (!chaves.includes(chave) || vistos.has(chave)) continue;
-    vistos.add(chave);
-    saida.push(chave);
+    // Chave que não é card desta tela (herdada de um layout antigo, ou lixo)
+    // é descartada em silêncio — e a repetida entra uma vez só.
+    if (!chaves.includes(k) || vistos.has(k)) continue;
+    vistos.add(k);
+    saida.push(k);
   }
 
   return [...saida, ...chaves.filter((k) => !vistos.has(k))];

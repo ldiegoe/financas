@@ -146,18 +146,15 @@ let activeProfileId = _profilesMeta.current;
 // Cards reordenáveis do dashboard (o card de saldo fica fixo no topo, fora
 // desta lista). DASH_CARD_KEYS é a ordem padrão; o usuário reordena em Ajustes
 // e a ordem fica em state.config.dashOrder.
-// 'dist' é o bloco único de distribuição: categoria, tag e investimentos
-// viraram chips dentro dele em vez de três cards empilhados (eram ~1350px de
-// rolagem só de gráfico). A migração de ordens já salvas está em
+// Cards reordenáveis da Início. Os blocos de análise (distribuição, receitas
+// vs despesas, comparação) saíram daqui pra tela de Análise e por isso não
+// estão nesta lista — ordens salvas que ainda os citam são filtradas em
 // src/domain/dash-order.js.
-const DASH_CARD_KEYS = ['goals','health','upcoming','compare','bars','dist'];
+const DASH_CARD_KEYS = ['goals','health','upcoming'];
 const DASH_CARD_NAMES = {
   goals: 'Objetivos',
   health: 'Saúde financeira',
   upcoming: 'Vencimentos',
-  compare: 'Comparação com mês anterior',
-  bars: 'Receitas vs Despesas',
-  dist: 'Gráficos de distribuição',
 };
 
 // Os eixos do bloco de distribuição, na ordem em que viram chips. `prefix` é o
@@ -1252,7 +1249,7 @@ const mountDistribuicaoChart = (canvas, data, prefix, animar = false) => {
   new Chart(canvas, chartConfig);
 };
 
-// ----- Dashboard -----
+// ----- Início -----
 views.dashboard = (root) => {
   const hoje = todayISO();
   const rendasPeriod   = expandWithRecurring(state.rendas, period);
@@ -1280,152 +1277,6 @@ views.dashboard = (root) => {
   // poupanca paga). Considera que o que esta "guardado" ja foi transferido.
   const totalDespesaPaga = despesasPeriod.filter(d => d._pago).reduce((s, d) => s + (d.valor || 0), 0);
   const saldoAtual       = rendaRecebida - totalDespesaPaga;
-
-  // Período anterior: total + despesas por categoria, para comparação.
-  const prev = previousPeriod(period);
-  const prevRendas    = expandWithRecurring(state.rendas, prev);
-  const prevDespesas  = expandWithRecurring(state.despesas, prev);
-  const prevRenda     = sumAmount(prevRendas);
-  const prevDespesa   = sumAmount(prevDespesas);
-  const prevSaldo     = prevRenda - prevDespesa;
-
-  // calcula delta + classe ('good'/'bad'/'flat') já considerando que para
-  // despesas mais gasto = ruim, e para receitas mais é bom.
-  const computeDelta = (curr, prevVal, isExpense) => {
-    if (curr === prevVal) return { sign: '·', label: 'sem mudança', cls: 'flat' };
-    if (prevVal === 0) {
-      return {
-        sign: curr > 0 ? '↑' : '↓',
-        label: '—',
-        cls: curr > 0 ? (isExpense ? 'bad' : 'good') : (isExpense ? 'good' : 'bad'),
-      };
-    }
-    const diff = curr - prevVal;
-    const pct = Math.abs((diff / prevVal) * 100);
-    const cls = diff > 0
-      ? (isExpense ? 'bad' : 'good')
-      : (isExpense ? 'good' : 'bad');
-    return { sign: diff > 0 ? '↑' : '↓', label: `${pct.toFixed(0)}%`, cls };
-  };
-
-  const deltaDesp   = computeDelta(totalDespesa, prevDespesa, true);
-  const deltaRenda  = computeDelta(totalRenda,   prevRenda,   false);
-  const deltaSaldo  = computeDelta(saldo,        prevSaldo,   false);
-
-  // Variações por categoria (apenas despesas), top 3 em valor absoluto
-  const currCatMap = new Map();
-  for (const d of despesasPeriod) currCatMap.set(d.categoriaId || '_sem', (currCatMap.get(d.categoriaId || '_sem') || 0) + (d.valor || 0));
-  const prevCatMap = new Map();
-  for (const d of prevDespesas)   prevCatMap.set(d.categoriaId || '_sem', (prevCatMap.get(d.categoriaId || '_sem') || 0) + (d.valor || 0));
-  const allIds = new Set([...currCatMap.keys(), ...prevCatMap.keys()]);
-  const topChanges = [...allIds].map(id => {
-    const c = state.categorias.find(x => x.id === id);
-    return {
-      id,
-      nome: c ? c.nome : 'Sem categoria',
-      cor:  c ? c.cor  : '#999',
-      icone: catEmoji(c),
-      diff: (currCatMap.get(id) || 0) - (prevCatMap.get(id) || 0),
-    };
-  }).filter(x => x.diff !== 0)
-    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
-    .slice(0, 3);
-
-  // Despesas por categoria (exclui investimento — que tem card próprio).
-  const porCategoria = new Map();
-  for (const d of gastosPeriod) {
-    const id = d.categoriaId || '_sem';
-    porCategoria.set(id, (porCategoria.get(id) || 0) + (d.valor || 0));
-  }
-  const catData = [...porCategoria.entries()].map(([id, valor]) => {
-    const c = state.categorias.find(x => x.id === id);
-    return {
-      id,
-      nome: c ? c.nome : 'Sem categoria',
-      cor:  c ? c.cor  : '#999',
-      meta: c ? c.meta : null,
-      icone: catEmoji(c),
-      poupanca: false,
-      valor,
-    };
-  }).sort((a, b) => b.valor - a.valor);
-
-  // Investimentos por categoria (categorias marcadas como investimento). Card
-  // próprio no dashboard; hideTag evita repetir o selo "Investimento" em todas
-  // as linhas. poupanca:true mantém a barra de meta "sempre verde" (superar a
-  // meta de investir é bom).
-  const porInvest = new Map();
-  for (const d of despesasPeriod) {
-    if (!poupancaIds.has(d.categoriaId)) continue;
-    porInvest.set(d.categoriaId, (porInvest.get(d.categoriaId) || 0) + (d.valor || 0));
-  }
-  const investData = [...porInvest.entries()].map(([id, valor]) => {
-    const c = state.categorias.find(x => x.id === id);
-    return {
-      id,
-      nome: c ? c.nome : 'Investimento',
-      cor:  c ? c.cor  : '#30d158',
-      meta: c ? c.meta : null,
-      icone: catEmoji(c),
-      poupanca: true,
-      hideTag: true,
-      valor,
-    };
-  }).sort((a, b) => b.valor - a.valor);
-
-  // Despesas por tag — bucket "Sem tag" para despesas sem nenhuma tag.
-  // Modo de contagem multi-tag controlado por state.config.dashTagSplit:
-  //   - true (default): valor eh dividido igualitariamente entre as tags
-  //     (R$100 com [a,b] = R$50 em cada). Soma bate com total real, donut e
-  //     lista somam 100%.
-  //   - false: cada tag recebe o valor inteiro (R$100 em cada). Bom pra
-  //     quem usa tags como "dimensoes" — soma pode passar do total real.
-  const tagSplit = state.config.dashTagSplit !== false;
-  const porTag = new Map();
-  for (const d of despesasPeriod) {
-    const tags = d.tags || [];
-    if (tags.length === 0) {
-      const cur = porTag.get('_sem') || { name: 'Sem tag', valor: 0 };
-      cur.valor += d.valor || 0;
-      porTag.set('_sem', cur);
-    } else if (tagSplit) {
-      // Math.floor + restante na primeira pra soma ficar exata em centavos
-      const baseShare = Math.floor((d.valor || 0) / tags.length);
-      const rem = (d.valor || 0) - baseShare * tags.length;
-      tags.forEach((t, i) => {
-        const k = t.toLowerCase();
-        const cur = porTag.get(k) || { name: t, valor: 0 };
-        cur.valor += baseShare + (i === 0 ? rem : 0);
-        porTag.set(k, cur);
-      });
-    } else {
-      for (const t of tags) {
-        const k = t.toLowerCase();
-        const cur = porTag.get(k) || { name: t, valor: 0 };
-        cur.valor += d.valor || 0;
-        porTag.set(k, cur);
-      }
-    }
-  }
-  const tagData = assignTagColors(
-    [...porTag.entries()]
-      .map(([k, v]) => ({ id: k, nome: v.name, meta: null, valor: v.valor }))
-      .sort((a, b) => b.valor - a.valor)
-  );
-
-  // Os três eixos do bloco de distribuição, indexados pelo id do chip. Fica
-  // num objeto só porque o handler de troca de chip precisa alcançar qualquer
-  // um deles depois da tela montada.
-  const dadosDist = { cat: catData, tag: tagData, invest: investData };
-
-
-  // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
-  const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
-  const monthLabels = months.map(({m}) => monthName(m, true));
-  const monthsRenda = months.map(({y, m}) =>
-    sumAmount(expandWithRecurring(state.rendas,   { type:'month', year:y, value:m })));
-  const monthsDespesa = months.map(({y, m}) =>
-    sumAmount(expandWithRecurring(state.despesas, { type:'month', year:y, value:m })));
 
   // Banner de lembrete de backup. Aparece quando o lembrete esta ativado e
   // (a) nunca houve backup, ou (b) o intervalo configurado ja foi excedido.
@@ -1669,53 +1520,23 @@ views.dashboard = (root) => {
           `}
         </div>`;
       })();
-      _cards.compare = state.config.dashCompareShow !== false ? `
-      <div class="card">
-        ${collapseHeader('compare', `Comparação com ${labelOfPeriod(prev)}`)}
-        ${isCollapsed('compare') ? '' : `
-          ${[
-            { rotulo: 'Despesas', atual: totalDespesa, anterior: prevDespesa, delta: deltaDesp },
-            { rotulo: 'Receitas', atual: totalRenda,   anterior: prevRenda,   delta: deltaRenda },
-            { rotulo: 'Saldo',    atual: saldo,        anterior: prevSaldo,   delta: deltaSaldo },
-          ].map(l => `
-            <div class="compare-row">
-              <span class="label">${l.rotulo}</span>
-              <span class="amount">
-                ${fmtBRL(l.atual)}
-                <small>antes ${fmtBRL(l.anterior)}</small>
-              </span>
-              <span class="delta ${l.delta.cls}">${l.delta.sign} ${l.delta.label}</span>
-            </div>
-          `).join('')}
-
-          ${topChanges.length > 0 ? `
-            <div class="section-title in-card">Maiores variações por categoria</div>
-            <ul class="compare-changes">
-              ${topChanges.map(c => `
-                <li>
-                  ${c.icone
-                    ? `<span class="compare-emoji">${c.icone}</span>`
-                    : `<span class="swatch" style="background:${c.cor}"></span>`}
-                  <span class="name">${escapeHTML(c.nome)}</span>
-                  <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
-                </li>`).join('')}
-            </ul>
-          ` : ''}
-        `}
-      </div>
-    ` : '';
-      _cards.bars = state.config.dashBarsShow !== false ? `
-      <div class="card">
-        ${collapseHeader('bars', 'Receitas vs Despesas')}
-        ${isCollapsed('bars') ? '' : `<div class="chart-wrap"><canvas id="ch-bars"></canvas></div>`}
-      </div>
-    ` : '';
-      _cards.dist = renderDistribuicaoCard(dadosDist);
       return dashCardOrder().map(k => _cards[k] || '').join('');
     })()}
+
+    <button class="nav-card" id="go-analise" type="button">
+      <span class="nav-card-ico analise">${icon('chart', 20)}</span>
+      <span class="nav-card-body">
+        <span class="nav-card-title">Análise</span>
+        <span class="nav-card-sub">Gráficos por categoria e tag, evolução e comparação com o mês anterior</span>
+      </span>
+      <span class="nav-card-caret">›</span>
+    </button>
   `;
 
   bindPeriodHeader(root);
+
+  const goAnalise = root.querySelector('#go-analise');
+  if (goAnalise) goAnalise.addEventListener('click', () => { location.hash = '#/analise'; });
 
   // Toggle de minimizar/expandir cards do dashboard. Preserva o scroll para
   // o usuario nao perder o lugar quando minimiza um card abaixo da dobra.
@@ -1780,6 +1601,248 @@ views.dashboard = (root) => {
     render();
   });
 
+  // Toque no card de saldo abre o detalhe como sheet. Os totais vão JÁ
+  // CALCULADOS: são os mesmos que pintaram o card, e recalcular lá dentro
+  // abriria espaço pros dois números divergirem.
+  const cardSaldo = root.querySelector('#summary-card');
+  if (cardSaldo) {
+    const abrirDetalhe = () => sheetSaldoDetalhe({
+      periodo: periodLabel(),
+      totalRenda, totalDespesa, totalGastos, totalGuardado,
+      totalPago, totalPendente, saldo, saldoAtual, rendaProgramada,
+    });
+    cardSaldo.addEventListener('click', abrirDetalhe);
+    cardSaldo.querySelector('#saldo-toggle').addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault();   // espaço rolaria a página
+      abrirDetalhe();
+    });
+  }
+
+};
+
+
+// ----- Análise -----
+// Tudo que responde "para onde foi e como evoluiu": distribuição por eixo,
+// receitas vs despesas no tempo, e comparação com o período anterior. Saiu da
+// Início, que ficou com o estado atual e o que exige ação.
+//
+// Não tem aba própria: entra pelo ícone da topbar ou pelo cartão da Início, e
+// a aba "Início" segue acesa — mesmo padrão já usado por `investimentos`.
+// O `period` é estado do módulo, então trocar de mês aqui vale na Início e
+// vice-versa, sem sincronização explícita.
+views.analise = (root) => {
+  const rendasPeriod   = expandWithRecurring(state.rendas, period);
+  const despesasPeriod = expandWithRecurring(state.despesas, period);
+  const totalRenda     = sumAmount(rendasPeriod);
+  const totalDespesa   = sumAmount(despesasPeriod);
+  const saldo          = totalRenda - totalDespesa;
+  const poupancaIds    = new Set(state.categorias.filter(c => c.poupanca).map(c => c.id));
+  const gastosPeriod   = despesasPeriod.filter(d => !poupancaIds.has(d.categoriaId));
+
+  // Período anterior: total + despesas por categoria, para comparação.
+  const prev = previousPeriod(period);
+  const prevRendas    = expandWithRecurring(state.rendas, prev);
+  const prevDespesas  = expandWithRecurring(state.despesas, prev);
+  const prevRenda     = sumAmount(prevRendas);
+  const prevDespesa   = sumAmount(prevDespesas);
+  const prevSaldo     = prevRenda - prevDespesa;
+
+  // calcula delta + classe ('good'/'bad'/'flat') já considerando que para
+  // despesas mais gasto = ruim, e para receitas mais é bom.
+  const computeDelta = (curr, prevVal, isExpense) => {
+    if (curr === prevVal) return { sign: '·', label: 'sem mudança', cls: 'flat' };
+    if (prevVal === 0) {
+      return {
+        sign: curr > 0 ? '↑' : '↓',
+        label: '—',
+        cls: curr > 0 ? (isExpense ? 'bad' : 'good') : (isExpense ? 'good' : 'bad'),
+      };
+    }
+    const diff = curr - prevVal;
+    const pct = Math.abs((diff / prevVal) * 100);
+    const cls = diff > 0
+      ? (isExpense ? 'bad' : 'good')
+      : (isExpense ? 'good' : 'bad');
+    return { sign: diff > 0 ? '↑' : '↓', label: `${pct.toFixed(0)}%`, cls };
+  };
+
+  const deltaDesp   = computeDelta(totalDespesa, prevDespesa, true);
+  const deltaRenda  = computeDelta(totalRenda,   prevRenda,   false);
+  const deltaSaldo  = computeDelta(saldo,        prevSaldo,   false);
+
+  // Variações por categoria (apenas despesas), top 3 em valor absoluto
+  const currCatMap = new Map();
+  for (const d of despesasPeriod) currCatMap.set(d.categoriaId || '_sem', (currCatMap.get(d.categoriaId || '_sem') || 0) + (d.valor || 0));
+  const prevCatMap = new Map();
+  for (const d of prevDespesas)   prevCatMap.set(d.categoriaId || '_sem', (prevCatMap.get(d.categoriaId || '_sem') || 0) + (d.valor || 0));
+  const allIds = new Set([...currCatMap.keys(), ...prevCatMap.keys()]);
+  const topChanges = [...allIds].map(id => {
+    const c = state.categorias.find(x => x.id === id);
+    return {
+      id,
+      nome: c ? c.nome : 'Sem categoria',
+      cor:  c ? c.cor  : '#999',
+      icone: catEmoji(c),
+      diff: (currCatMap.get(id) || 0) - (prevCatMap.get(id) || 0),
+    };
+  }).filter(x => x.diff !== 0)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, 3);
+
+  // Despesas por categoria (exclui investimento — que tem card próprio).
+  const porCategoria = new Map();
+  for (const d of gastosPeriod) {
+    const id = d.categoriaId || '_sem';
+    porCategoria.set(id, (porCategoria.get(id) || 0) + (d.valor || 0));
+  }
+  const catData = [...porCategoria.entries()].map(([id, valor]) => {
+    const c = state.categorias.find(x => x.id === id);
+    return {
+      id,
+      nome: c ? c.nome : 'Sem categoria',
+      cor:  c ? c.cor  : '#999',
+      meta: c ? c.meta : null,
+      icone: catEmoji(c),
+      poupanca: false,
+      valor,
+    };
+  }).sort((a, b) => b.valor - a.valor);
+
+  // Investimentos por categoria (categorias marcadas como investimento). Card
+  // próprio no dashboard; hideTag evita repetir o selo "Investimento" em todas
+  // as linhas. poupanca:true mantém a barra de meta "sempre verde" (superar a
+  // meta de investir é bom).
+  const porInvest = new Map();
+  for (const d of despesasPeriod) {
+    if (!poupancaIds.has(d.categoriaId)) continue;
+    porInvest.set(d.categoriaId, (porInvest.get(d.categoriaId) || 0) + (d.valor || 0));
+  }
+  const investData = [...porInvest.entries()].map(([id, valor]) => {
+    const c = state.categorias.find(x => x.id === id);
+    return {
+      id,
+      nome: c ? c.nome : 'Investimento',
+      cor:  c ? c.cor  : '#30d158',
+      meta: c ? c.meta : null,
+      icone: catEmoji(c),
+      poupanca: true,
+      hideTag: true,
+      valor,
+    };
+  }).sort((a, b) => b.valor - a.valor);
+
+  // Despesas por tag — bucket "Sem tag" para despesas sem nenhuma tag.
+  // Modo de contagem multi-tag controlado por state.config.dashTagSplit:
+  //   - true (default): valor eh dividido igualitariamente entre as tags
+  //     (R$100 com [a,b] = R$50 em cada). Soma bate com total real, donut e
+  //     lista somam 100%.
+  //   - false: cada tag recebe o valor inteiro (R$100 em cada). Bom pra
+  //     quem usa tags como "dimensoes" — soma pode passar do total real.
+  const tagSplit = state.config.dashTagSplit !== false;
+  const porTag = new Map();
+  for (const d of despesasPeriod) {
+    const tags = d.tags || [];
+    if (tags.length === 0) {
+      const cur = porTag.get('_sem') || { name: 'Sem tag', valor: 0 };
+      cur.valor += d.valor || 0;
+      porTag.set('_sem', cur);
+    } else if (tagSplit) {
+      // Math.floor + restante na primeira pra soma ficar exata em centavos
+      const baseShare = Math.floor((d.valor || 0) / tags.length);
+      const rem = (d.valor || 0) - baseShare * tags.length;
+      tags.forEach((t, i) => {
+        const k = t.toLowerCase();
+        const cur = porTag.get(k) || { name: t, valor: 0 };
+        cur.valor += baseShare + (i === 0 ? rem : 0);
+        porTag.set(k, cur);
+      });
+    } else {
+      for (const t of tags) {
+        const k = t.toLowerCase();
+        const cur = porTag.get(k) || { name: t, valor: 0 };
+        cur.valor += d.valor || 0;
+        porTag.set(k, cur);
+      }
+    }
+  }
+  const tagData = assignTagColors(
+    [...porTag.entries()]
+      .map(([k, v]) => ({ id: k, nome: v.name, meta: null, valor: v.valor }))
+      .sort((a, b) => b.valor - a.valor)
+  );
+
+  // Os três eixos do bloco de distribuição, indexados pelo id do chip. Fica
+  // num objeto só porque o handler de troca de chip precisa alcançar qualquer
+  // um deles depois da tela montada.
+  const dadosDist = { cat: catData, tag: tagData, invest: investData };
+
+
+  // Linha do tempo (12 meses do ano corrente para visão anual; ou meses do período)
+  const months = monthsInPeriod(period.type === 'month' ? { ...period, type: 'year' } : period);
+  const monthLabels = months.map(({m}) => monthName(m, true));
+  const monthsRenda = months.map(({y, m}) =>
+    sumAmount(expandWithRecurring(state.rendas,   { type:'month', year:y, value:m })));
+  const monthsDespesa = months.map(({y, m}) =>
+    sumAmount(expandWithRecurring(state.despesas, { type:'month', year:y, value:m })));
+
+  root.innerHTML = `
+    ${periodHeader()}
+    ${renderDistribuicaoCard(dadosDist)}
+    ${state.config.dashBarsShow !== false ? `
+      <div class="card">
+        ${collapseHeader('bars', 'Receitas vs Despesas')}
+        ${isCollapsed('bars') ? '' : `<div class="chart-wrap"><canvas id="ch-bars"></canvas></div>`}
+      </div>
+    ` : ''}
+    ${state.config.dashCompareShow !== false ? `
+      <div class="card">
+        ${collapseHeader('compare', `Comparação com ${labelOfPeriod(prev)}`)}
+        ${isCollapsed('compare') ? '' : `
+          ${[
+            { rotulo: 'Despesas', atual: totalDespesa, anterior: prevDespesa, delta: deltaDesp },
+            { rotulo: 'Receitas', atual: totalRenda,   anterior: prevRenda,   delta: deltaRenda },
+            { rotulo: 'Saldo',    atual: saldo,        anterior: prevSaldo,   delta: deltaSaldo },
+          ].map(l => `
+            <div class="compare-row">
+              <span class="label">${l.rotulo}</span>
+              <span class="amount">
+                ${fmtBRL(l.atual)}
+                <small>antes ${fmtBRL(l.anterior)}</small>
+              </span>
+              <span class="delta ${l.delta.cls}">${l.delta.sign} ${l.delta.label}</span>
+            </div>
+          `).join('')}
+
+          ${topChanges.length > 0 ? `
+            <div class="section-title in-card">Maiores variações por categoria</div>
+            <ul class="compare-changes">
+              ${topChanges.map(c => `
+                <li>
+                  ${c.icone
+                    ? `<span class="compare-emoji">${c.icone}</span>`
+                    : `<span class="swatch" style="background:${c.cor}"></span>`}
+                  <span class="name">${escapeHTML(c.nome)}</span>
+                  <span class="diff ${c.diff > 0 ? 'bad' : 'good'}">${c.diff > 0 ? '+' : '−'}${fmtBRL(Math.abs(c.diff))}</span>
+                </li>`).join('')}
+            </ul>
+          ` : ''}
+        `}
+      </div>` : ''}
+  `;
+
+  bindPeriodHeader(root);
+
+  // Minimizar/expandir card. Preserva o scroll pra não perder o lugar.
+  root.querySelectorAll('[data-collapse]').forEach(h => {
+    h.addEventListener('click', () => {
+      const key = h.dataset.collapse;
+      const cur = state.config.dashCollapsed || {};
+      updateConfig({ dashCollapsed: { ...cur, [key]: !isCollapsed(key) } });
+      render({ preserveScroll: true });
+    });
+  });
+
   // Gráficos
   if (window.Chart) {
     const barsEl = root.querySelector('#ch-bars');
@@ -1801,24 +1864,6 @@ views.dashboard = (root) => {
     for (const e of DIST_EIXOS) {
       mountDistribuicaoChart(root.querySelector('#' + e.canvas), dadosDist[e.id], e.prefix);
     }
-  }
-
-  // Toque no card de saldo abre o detalhe como sheet. Os totais vão JÁ
-  // CALCULADOS: são os mesmos que pintaram o card, e recalcular lá dentro
-  // abriria espaço pros dois números divergirem.
-  const cardSaldo = root.querySelector('#summary-card');
-  if (cardSaldo) {
-    const abrirDetalhe = () => sheetSaldoDetalhe({
-      periodo: periodLabel(),
-      totalRenda, totalDespesa, totalGastos, totalGuardado,
-      totalPago, totalPendente, saldo, saldoAtual, rendaProgramada,
-    });
-    cardSaldo.addEventListener('click', abrirDetalhe);
-    cardSaldo.querySelector('#saldo-toggle').addEventListener('keydown', (ev) => {
-      if (ev.key !== 'Enter' && ev.key !== ' ') return;
-      ev.preventDefault();   // espaço rolaria a página
-      abrirDetalhe();
-    });
   }
 
   // Troca de eixo: DOM direto, sem render(). Um render() aqui subiria o scroll,
@@ -2882,7 +2927,7 @@ views.config = (root) => {
         <div class="divided-block">
           <div class="checkbox-row flush">
             <input id="f-dash-tag-show" type="checkbox" ${state.config.dashTagShow?'checked':''}/>
-            <label for="f-dash-tag-show">Oferecer o eixo "Tag" no gráfico</label>
+            <label for="f-dash-tag-show">Análise: oferecer o eixo "Tag"</label>
           </div>
           <label class="field spaced tight">
             <span class="with-info">Despesas com várias tags${infoBtn('"Dividir": despesa de R$ 100 com 2 tags vira R$ 50 em cada, e a soma bate com o total real. "Contar em cada": cada tag recebe o valor inteiro, então a soma pode passar do total.')}</span>
@@ -2896,11 +2941,11 @@ views.config = (root) => {
       const cardsControls = `
         <div class="checkbox-row flush">
           <input id="f-dash-compare-show" type="checkbox" ${state.config.dashCompareShow!==false?'checked':''}/>
-          <label for="f-dash-compare-show">Comparação com mês anterior</label>
+          <label for="f-dash-compare-show">Análise: Comparação com mês anterior</label>
         </div>
         <div class="checkbox-row divided">
           <input id="f-dash-bars-show" type="checkbox" ${state.config.dashBarsShow!==false?'checked':''}/>
-          <label for="f-dash-bars-show">Gráfico de Receitas vs Despesas</label>
+          <label for="f-dash-bars-show">Análise: Gráfico de Receitas vs Despesas</label>
         </div>
         <div class="checkbox-row divided">
           <input id="f-dash-upcoming-show" type="checkbox" ${state.config.dashUpcomingShow!==false?'checked':''}/>
@@ -2916,11 +2961,11 @@ views.config = (root) => {
         </div>
         <div class="checkbox-row divided">
           <input id="f-dash-invest-show" type="checkbox" ${state.config.dashInvestShow!==false?'checked':''}/>
-          <label for="f-dash-invest-show">Oferecer o eixo "Investimentos" no gráfico</label>
+          <label for="f-dash-invest-show">Análise: oferecer o eixo "Investimentos"</label>
         </div>
         <div class="divided-block">
           <div class="block-label">
-            Ordem dos cards${infoBtn('Arraste pelo ≡ pra mudar a ordem em que aparecem no dashboard. O card de saldo fica sempre fixo no topo.')}
+            Ordem dos cards${infoBtn('Arraste pelo ≡ pra mudar a ordem em que aparecem na Início. O card de saldo fica sempre fixo no topo, e os gráficos ficam na tela de Análise.')}
           </div>
           <ul class="list" id="dash-order-list">
             ${dashCardOrder().map(k => `
@@ -2951,8 +2996,8 @@ views.config = (root) => {
 
       return `
         <div class="card">
-          <h2>Dashboard</h2>
-          ${subSection('ajGrpCards',  'Cards do dashboard', cardsControls)}
+          <h2>Início e Análise</h2>
+          ${subSection('ajGrpCards',  'Cards da Início', cardsControls)}
           ${subSection('ajGrpHealth', 'Metas da saúde financeira', healthControls,
             'Definem a cor dos indicadores e a nota do índice. A linha de "atenção" é derivada da meta.')}
           ${subSection('ajGrpCat',    'Gráfico de despesas por categoria', dashControls('Cat', 'cat'))}
@@ -3368,7 +3413,7 @@ views.config = (root) => {
 };
 
 // --------------------------- Period header (shared) -------------------------
-// Cabecalho usado em Dashboard, Carteira e Despesas. Layout:
+// Cabecalho usado em Início, Análise, Carteira e Despesas. Layout:
 //   - Titulo do periodo grande e centralizado (foco visual)
 //   - Stepper de ano sutil logo abaixo (pula pro ano anterior/proximo)
 //   - Segmented com tipo (Mes/Tri/Sem/Ano)
@@ -3484,7 +3529,9 @@ function bindSwipe(root) {
 // escapeHTML/escapeAttr vêm de ./src/ui/escape.js (importados acima).
 
 // --------------------------- Router & init ---------------------------------
-const tabs = ['dashboard','carteira','despesas','investimentos','categorias','config'];
+// 'investimentos' e 'analise' são rotas SEM aba própria: entram por dentro de
+// outra tela e acendem a aba de origem (ver `abaAcesa` no setTab).
+const tabs = ['dashboard','carteira','despesas','investimentos','analise','categorias','config'];
 // Gestos e regras que não se descobrem olhando a tela. Viram um "i" no título
 // da aba em vez de um parágrafo fixo no topo da lista, visto a cada visita.
 const TAB_INFO = {
@@ -3493,7 +3540,8 @@ const TAB_INFO = {
 };
 
 const titles = {
-  dashboard: 'Dashboard',
+  dashboard: 'Início',
+  analise: 'Análise',
   carteira: 'Carteira',
   despesas: 'Despesas',
   investimentos: 'Investimentos',
@@ -3513,10 +3561,12 @@ const setTab = (name) => {
   if (name !== 'dashboard') { vencSelMode = false; vencSel.clear(); }
   const prevIdx = tabs.indexOf(currentTab);
   currentTab = name;
-  // Investimentos não tem aba própria (entra pela Carteira), mas continua sendo
-  // uma rota válida — deep link, notificação e voltar do histórico funcionam.
-  // Acende a Carteira pra o usuário não ficar numa tela sem aba destacada.
-  const abaAcesa = name === 'investimentos' ? 'carteira' : name;
+  // Rotas sem aba própria acendem a aba de onde se entra nelas: Investimentos
+  // vem da Carteira, Análise vem da Início. Continuam sendo rotas de verdade —
+  // deep link, notificação e voltar do histórico funcionam.
+  const abaAcesa = name === 'investimentos' ? 'carteira'
+    : name === 'analise' ? 'dashboard'
+    : name;
   document.querySelectorAll('.tabbar a').forEach(a => {
     a.classList.toggle('active', a.dataset.tab === abaAcesa);
   });
@@ -3664,6 +3714,9 @@ document.getElementById('quick-add').addEventListener('click', () => sheetImport
 
 // Sino na topbar: abre a sheet de notificacoes.
 document.getElementById('alerts-btn').addEventListener('click', sheetAlerts);
+// Atalho pra Análise. É navegação, não ação: por isso muda o hash em vez de
+// abrir sheet, e assim deep link e voltar do histórico funcionam.
+document.getElementById('analise-btn').addEventListener('click', () => { location.hash = '#/analise'; });
 
 // Chip do perfil na topbar: abre a sheet de troca/criacao.
 document.getElementById('profile-chip').addEventListener('click', sheetProfiles);
@@ -3682,8 +3735,10 @@ document.getElementById('toggle-values').addEventListener('click', () => {
 const ONBOARDING_SLIDES = [
   { icon: 'shield',    title: 'Bem-vindo ao Finanças',
     body: 'Controle pessoal sem servidor — todos os dados ficam neste aparelho. Sem cadastro, sem conta.' },
-  { icon: 'dashboard', title: 'Dashboard',
-    body: 'Receitas, despesas, saldo, comparações e saúde financeira. Em Ajustes você escolhe quais cards aparecem e arrasta pra mudar a ordem.' },
+  { icon: 'dashboard', title: 'Início',
+    body: 'Saldo do mês, vencimentos, objetivos e saúde financeira — o que você precisa saber agora. Em Ajustes você escolhe quais cards aparecem e arrasta pra mudar a ordem.' },
+  { icon: 'chart',     title: 'Análise',
+    body: 'Pelo ícone de rosca no topo (ou pelo cartão no fim da Início): para onde o dinheiro foi, por categoria ou tag, a evolução mês a mês e a comparação com o mês anterior.' },
   { icon: 'wallet',    title: 'Cadastre suas receitas',
     body: 'Na aba Carteira: salário, freelas, dividendos. Receitas mensais (com duração opcional) e datas futuras viram "programadas" até a data chegar.' },
   { icon: 'card',      title: 'Cadastre suas despesas',
