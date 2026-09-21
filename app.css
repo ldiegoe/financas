@@ -1939,3 +1939,120 @@ label.field span .info-btn svg,
 /* Cartão de navegação pra Análise, no fim da Início. Azul porque é interação
    (leva a outra tela) — o de Investimentos, na Carteira, segue o mesmo papel. */
 .nav-card-ico.analise { background: rgba(10,132,255,.14); color: var(--tint); }
+
+/* ----- Treino (rota escondida: timer de circuito HIIT) ----- */
+/* NOTA SOBRE COR: a política do app reserva verde/vermelho para polaridade de
+   dinheiro. O player é uma tela cheia de contexto totalmente separado — não há
+   nenhum valor em R$ nela —, então aqui a cor volta a ser funcional: distingue
+   "trabalhando" de "descansando" à distância de um braço, que é como a tela vai
+   ser lida. Isso não abre exceção para o resto do app. */
+
+.tr-row { gap: var(--sp-2); }
+.tr-editar, .tr-play-btn {
+  appearance: none; border: 0; cursor: pointer; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: var(--r-full);
+  font-family: inherit;
+}
+.tr-editar   { background: transparent; color: var(--text-2); }
+.tr-play-btn { background: rgba(10,132,255,.14); color: var(--tint); font-size: var(--fs-lg); }
+.tr-editar:active   { background: var(--separator); }
+.tr-play-btn:active { background: rgba(10,132,255,.28); }
+.tr-nova { width: 100%; margin-top: var(--sp-3); }
+
+/* Editor de rotina */
+.tr-nums { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-3); }
+.tr-num { position: relative; margin-bottom: 0; }
+.tr-num small {
+  position: absolute; right: var(--sp-3); bottom: var(--sp-3);
+  color: var(--text-2); font-size: var(--fs-sm); pointer-events: none;
+}
+.tr-lista { list-style: none; margin: 0 0 var(--sp-2); padding: 0; }
+.tr-ex { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.tr-ex-n {
+  flex: 0 0 24px; text-align: center;
+  color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+}
+.tr-ex-nome { flex: 1; min-width: 0; }
+.tr-ex-del {
+  appearance: none; border: 0; background: transparent; color: var(--text-2);
+  width: 36px; height: 36px; flex: 0 0 auto; border-radius: var(--r-full);
+  cursor: pointer; font-family: inherit;
+}
+.tr-ex-del:active { background: var(--separator); }
+.tr-vazio { color: var(--text-2); font-size: var(--fs-sm); padding: var(--sp-2) 0; }
+.tr-resumo {
+  margin-top: var(--sp-4); padding: var(--sp-3);
+  border-radius: var(--r-md); background: var(--bg);
+  color: var(--text-2); font-size: var(--fs-sm); text-align: center;
+}
+.tr-resumo strong { color: var(--text); }
+
+/* Player em tela cheia */
+#treino-player {
+  position: fixed; inset: 0; z-index: 950;
+  display: flex; flex-direction: column;
+  padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-4) calc(var(--safe-bottom) + var(--sp-4));
+  background: var(--bg); color: var(--text);
+  /* A cor de fundo muda por fase — a transição evita o corte seco ao virar. */
+  transition: background-color var(--dur-slow) var(--ease-out);
+}
+#treino-player[data-fase="exec"]      { background: #0b3d1e; color: #fff; }
+#treino-player[data-fase="intervalo"] { background: #3d2a0b; color: #fff; }
+#treino-player[data-fase="descanso"]  { background: #0b2a3d; color: #fff; }
+#treino-player[data-fase="prep"]      { background: var(--bg-elev); }
+#treino-player[data-fase="fim"]       { background: #0b3d1e; color: #fff; }
+#treino-player.pausado                { background: var(--bg-elev); color: var(--text); }
+
+.tp-top { display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto; }
+.tp-sair {
+  appearance: none; border: 0; background: transparent; color: currentColor;
+  width: 44px; height: 44px; margin-left: calc(-1 * var(--sp-3));
+  border-radius: var(--r-full); font-size: var(--fs-xl); cursor: pointer;
+  opacity: var(--o-soft); font-family: inherit;
+}
+.tp-serie    { flex: 1; text-align: center; font-size: var(--fs-md); font-weight: 600; opacity: var(--o-soft); }
+.tp-restante { font-size: var(--fs-md); font-variant-numeric: tabular-nums; opacity: var(--o-soft); min-width: 52px; text-align: right; }
+
+.tp-palco {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  gap: var(--sp-2); min-height: 0;
+}
+.tp-tipo {
+  font-size: var(--fs-sm); font-weight: 600;
+  text-transform: uppercase; letter-spacing: var(--track-caps); opacity: var(--o-soft);
+}
+.tp-nome {
+  font-size: var(--fs-2xl); font-weight: 700; line-height: 1.15;
+  letter-spacing: var(--track-tight); max-width: 100%; overflow-wrap: break-word;
+}
+/* O contador é o elemento que se lê de longe, suando: tão grande quanto a
+   viewport permitir, com tabular-nums pra não "dançar" a cada segundo. */
+.tp-conta {
+  font-size: clamp(88px, 34vw, 190px);
+  font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-tight);
+}
+.tp-prox { font-size: var(--fs-md); opacity: var(--o-soft); min-height: 1.4em; }
+
+.tp-barra {
+  flex: 0 0 auto; height: 6px; border-radius: var(--r-full);
+  background: rgba(127,127,127,.28); overflow: hidden; margin-bottom: var(--sp-5);
+}
+.tp-barra-fill { height: 100%; background: currentColor; opacity: var(--o-soft); width: 0; }
+
+.tp-controles {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: var(--sp-5);
+}
+.tp-btn {
+  appearance: none; border: 0; cursor: pointer; font-family: inherit;
+  color: currentColor; background: rgba(127,127,127,.20);
+  width: 60px; height: 60px; border-radius: var(--r-full);
+  font-size: var(--fs-xl);
+  display: flex; align-items: center; justify-content: center;
+}
+.tp-btn:active { background: rgba(127,127,127,.36); }
+.tp-play { width: 84px; height: 84px; font-size: var(--fs-2xl); }

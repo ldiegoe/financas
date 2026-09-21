@@ -59,6 +59,9 @@ import { infoBtn, mountInfoPopover } from './src/ui/info-popover.js';
 import { createSheetRenda } from './src/ui/sheets/renda.js';
 import { createSheetApagarTudo } from './src/ui/sheets/apagar-tudo.js';
 import { createSheetPeriodo } from './src/ui/sheets/periodo.js';
+import { createSheetTreinoRotina } from './src/ui/sheets/treino-rotina.js';
+import { createTreinoPlayer } from './src/ui/treino-player.js';
+import { construirLinha, duracaoTotal, fmtMMSS } from './src/domain/treino.js';
 import { createSheetSaldoDetalhe } from './src/ui/sheets/saldo-detalhe.js';
 import { createSheetAlerts } from './src/ui/sheets/alerts.js';
 import { createSheetsProfiles } from './src/ui/sheets/profiles.js';
@@ -77,6 +80,10 @@ import { createSheetFilters } from './src/ui/sheets/filters.js';
 const PROFILES_KEY     = 'financas:profiles';
 const PROFILE_PREFIX   = 'financas:profile:';
 const DEVICE_CONFIG_KEY = 'financas:device-config';
+// Timer de treino: chave PRÓPRIA, fora do state do perfil. O state é dado
+// financeiro e sincroniza pro Dropbox — rotina de treino não tem relação com
+// finanças e não deve viajar junto nem entrar no backup/exportação.
+const TREINO_KEY = 'financas:treino';
 const LEGACY_KEY       = 'financas:v1';
 
 const uid = () =>
@@ -1631,6 +1638,74 @@ views.dashboard = (root) => {
 // a aba "Início" segue acesa — mesmo padrão já usado por `investimentos`.
 // O `period` é estado do módulo, então trocar de mês aqui vale na Início e
 // vice-versa, sem sincronização explícita.
+// ----- Treino (rota escondida) -----
+// Timer de circuito HIIT. Não tem relação com finanças — é uma função pessoal
+// escondida atrás de 5 toques no título de Ajustes. Mora numa chave própria de
+// localStorage, então não entra no backup nem na sincronização do Dropbox.
+const treinoStore = {
+  ler() {
+    try { return JSON.parse(localStorage.getItem(TREINO_KEY)) || { rotinas: [] }; }
+    catch { return { rotinas: [] }; }
+  },
+  rotinas() { return this.ler().rotinas || []; },
+  salvar(rotina) {
+    const rotinas = this.rotinas();
+    const i = rotinas.findIndex(x => x.id === rotina.id);
+    if (i >= 0) rotinas[i] = rotina; else rotinas.push(rotina);
+    localStorage.setItem(TREINO_KEY, JSON.stringify({ rotinas }));
+  },
+  remover(id) {
+    const rotinas = this.rotinas().filter(x => x.id !== id);
+    localStorage.setItem(TREINO_KEY, JSON.stringify({ rotinas }));
+  },
+};
+
+views.treino = (root) => {
+  const rotinas = treinoStore.rotinas();
+
+  root.innerHTML = `
+    ${rotinas.length === 0 ? `
+      <div class="empty"><span class="ico">${icon('clock', 48)}</span>
+        Nenhuma rotina ainda.<br/><br/>
+        Crie um circuito com seus exercícios e os tempos de execução,
+        intervalo e descanso entre séries.
+      </div>
+    ` : `
+      <div class="section-title">Rotinas</div>
+      <ul class="list">
+        ${rotinas.map(r => {
+          const total = duracaoTotal(construirLinha(r));
+          return `
+          <li class="tr-row" data-id="${escapeAttr(r.id)}">
+            <div class="grow">
+              <div class="t">${escapeHTML(r.nome)}</div>
+              <div class="s">${r.exercicios.length} exercícios &middot; ${r.execucao}s / ${r.intervalo}s &middot; ${r.series}x &middot; ${fmtMMSS(total)}</div>
+            </div>
+            <button class="tr-editar" data-id="${escapeAttr(r.id)}" type="button" aria-label="Editar">${icon('settings', 18)}</button>
+            <button class="tr-play-btn" data-id="${escapeAttr(r.id)}" type="button" aria-label="Iniciar treino">&#9654;</button>
+          </li>`;
+        }).join('')}
+      </ul>
+    `}
+
+    <button class="secondary tr-nova" id="tr-nova" type="button">+ Nova rotina</button>
+  `;
+
+  // Listeners nos elementos recriados a cada innerHTML, nunca no `root` — ele
+  // é o #view persistente, e ligar nele empilharia um handler por render (dois
+  // players simultâneos depois de salvar uma rotina, cada um com seu wake lock).
+  root.querySelector('#tr-nova').addEventListener('click', () => sheetTreinoRotina());
+
+  root.querySelectorAll('.tr-editar').forEach(b => b.addEventListener('click', () => {
+    sheetTreinoRotina(rotinas.find(x => x.id === b.dataset.id));
+  }));
+
+  root.querySelectorAll('.tr-play-btn').forEach(b => b.addEventListener('click', () => {
+    const r = rotinas.find(x => x.id === b.dataset.id);
+    if (r) treinoPlayer(r);
+  }));
+};
+
 views.analise = (root) => {
   const rendasPeriod   = expandWithRecurring(state.rendas, period);
   const despesasPeriod = expandWithRecurring(state.despesas, period);
@@ -3531,7 +3606,7 @@ function bindSwipe(root) {
 // --------------------------- Router & init ---------------------------------
 // 'investimentos' e 'analise' são rotas SEM aba própria: entram por dentro de
 // outra tela e acendem a aba de origem (ver `abaAcesa` no setTab).
-const tabs = ['dashboard','carteira','despesas','investimentos','analise','categorias','config'];
+const tabs = ['dashboard','carteira','despesas','investimentos','analise','treino','categorias','config'];
 // Gestos e regras que não se descobrem olhando a tela. Viram um "i" no título
 // da aba em vez de um parágrafo fixo no topo da lista, visto a cada visita.
 const TAB_INFO = {
@@ -3542,6 +3617,7 @@ const TAB_INFO = {
 const titles = {
   dashboard: 'Início',
   analise: 'Análise',
+  treino: 'Treino',
   carteira: 'Carteira',
   despesas: 'Despesas',
   investimentos: 'Investimentos',
@@ -3566,6 +3642,7 @@ const setTab = (name) => {
   // deep link, notificação e voltar do histórico funcionam.
   const abaAcesa = name === 'investimentos' ? 'carteira'
     : name === 'analise' ? 'dashboard'
+    : name === 'treino' ? 'config'
     : name;
   document.querySelectorAll('.tabbar a').forEach(a => {
     a.classList.toggle('active', a.dataset.tab === abaAcesa);
@@ -3633,6 +3710,11 @@ const sheetRenda = createSheetRenda({ openSheet, closeSheet, db, render, toast }
 // identidade do objeto precisa sobreviver à troca.
 // Só leitura: não recebe db nem render, porque não grava nada.
 const sheetSaldoDetalhe = createSheetSaldoDetalhe({ openSheet, closeSheet, fmtBRL });
+const sheetTreinoRotina = createSheetTreinoRotina({
+  openSheet, closeSheet, escapeHTML, escapeAttr, render, toast,
+  salvar: (r) => treinoStore.salvar(r),
+});
+const treinoPlayer = createTreinoPlayer();
 const sheetPeriodo = createSheetPeriodo({
   openSheet, closeSheet, render,
   getPeriod: () => period,
@@ -3717,6 +3799,26 @@ document.getElementById('alerts-btn').addEventListener('click', sheetAlerts);
 // Atalho pra Análise. É navegação, não ação: por isso muda o hash em vez de
 // abrir sheet, e assim deep link e voltar do histórico funcionam.
 document.getElementById('analise-btn').addEventListener('click', () => { location.hash = '#/analise'; });
+
+// Easter egg: 5 toques seguidos no título "Ajustes" abrem o timer de treino —
+// função pessoal que não tem por que ocupar espaço na navegação de finanças.
+// A contagem zera após 1,2s sem toque e só vale na aba Ajustes, então tocar no
+// título de outra tela (ou devagar) nunca dispara por acidente.
+(() => {
+  let toques = 0;
+  let expira = 0;
+  document.getElementById('title').addEventListener('click', (e) => {
+    if (currentTab !== 'config') { toques = 0; return; }
+    if (e.target.closest('.info-btn')) return;   // o "i" tem função própria
+    clearTimeout(expira);
+    expira = setTimeout(() => { toques = 0; }, 1200);
+    if (++toques >= 5) {
+      toques = 0;
+      clearTimeout(expira);
+      location.hash = '#/treino';
+    }
+  });
+})();
 
 // Chip do perfil na topbar: abre a sheet de troca/criacao.
 document.getElementById('profile-chip').addEventListener('click', sheetProfiles);
